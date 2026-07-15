@@ -10,12 +10,13 @@ from enum import Enum
 class Provider(str, Enum):
     anthropic = "anthropic"
     openai = "openai"
+    gemini = "gemini"
     openai_compatible = "openai-compatible"
     ollama = "ollama"
 
     @property
     def requires_api_key(self) -> bool:
-        return self in (Provider.anthropic, Provider.openai)
+        return self in (Provider.anthropic, Provider.openai, Provider.gemini)
 
     @property
     def requires_base_url(self) -> bool:

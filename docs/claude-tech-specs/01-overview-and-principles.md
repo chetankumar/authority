@@ -40,7 +40,7 @@ A zen writing environment wrapped in a book-management system. The author writes
 
 ## Tech stack (locked)
 
-**Backend:** Python 3.11+, FastAPI + Uvicorn (single worker, pinned), GitPython (requires git installed on the machine), LangChain (`langchain-core`, `langchain-anthropic`, `langchain-openai`, `langchain-ollama`), `python-multipart`, `filelock` (single-instance lock). Serves the built SPA statically. No ORM, no database engine — a per-book in-memory data manager over JSON files (doc 03, Data Safety).
+**Backend:** Python 3.11+, FastAPI + Uvicorn (single worker, pinned), GitPython (requires git installed on the machine), LangChain (`langchain-core`, `langchain-anthropic`, `langchain-openai`, `langchain-google-genai`, `langchain-ollama`), `python-multipart`, `filelock` (single-instance lock). Serves the built SPA statically. No ORM, no database engine — a per-book in-memory data manager over JSON files (doc 03, Data Safety).
 
 **Frontend:** React + TypeScript + Vite, TipTap (`@tiptap/react` + `tiptap-markdown`) for the editor, D3 for the scene graph, **AG Grid Community** (MIT, free — no license key) for tables, TanStack Query for server state, Tailwind CSS.
 

@@ -31,12 +31,16 @@ from app.models.settings import (
     ModelConfigOut,
     ModelCreate,
     ModelPatch,
+    ModelTestResult,
     Placeholder,
     UserPatch,
     UserSettings,
     to_model_out,
 )
+from app.services.model_factory import KeyResolutionError, ModelFactory
 from app.services.placeholder_registry import PlaceholderRegistry
+
+_TEST_TIMEOUT_SECONDS = 30
 
 log = logging.getLogger("authority.settings")
 
@@ -51,6 +55,19 @@ def _new_id(prefix: str, existing: set[str]) -> str:
 def _is_http_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def _friendly_model_error(exc: Exception) -> str:
+    """Condense a provider/network exception into a one-line, actionable reason."""
+    text = str(exc).strip() or exc.__class__.__name__
+    lowered = text.lower()
+    if "connection" in lowered or "connect" in lowered or "refused" in lowered:
+        return "Couldn't reach the model — check the base URL and that the server is running."
+    if "api key" in lowered or "authentication" in lowered or "401" in lowered or "unauthorized" in lowered:
+        return "Authentication failed — check the API key."
+    if "not found" in lowered or "404" in lowered or "does not exist" in lowered:
+        return "The model name wasn't recognized by the provider."
+    return text[:300]
 
 
 class SettingsService:
@@ -142,9 +159,9 @@ class SettingsService:
 
     @staticmethod
     def _validate_provider(provider: Provider, api_key: str | None, base_url: str | None) -> None:
+        # API keys are optional at save: an empty key means "use the provider's
+        # default environment variable" (resolved by ModelFactory at call time).
         fields: dict[str, str] = {}
-        if provider.requires_api_key and not api_key:
-            fields["apiKey"] = "This provider requires an API key."
         if provider.requires_base_url:
             if not base_url:
                 fields["baseUrl"] = "This provider requires a base URL."
@@ -206,6 +223,33 @@ class SettingsService:
 
             data.models = [m for m in data.models if m.id != model_id]
             self._save(data)
+
+    async def test_model(self, model_id: str) -> ModelTestResult:
+        """Build the model and send one 'hello model' completion (read-only)."""
+        cfg = self._find_model(self._load(), model_id)  # 404 if unknown
+
+        try:
+            model = ModelFactory.build(cfg)
+        except KeyResolutionError as exc:
+            return ModelTestResult(ok=False, error=str(exc))
+        except Exception as exc:  # missing adapter, bad config
+            return ModelTestResult(ok=False, error=f"Couldn't build the model: {exc}")
+
+        start = time.perf_counter()
+        try:
+            response = await asyncio.wait_for(
+                model.ainvoke("hello model"), timeout=_TEST_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            return ModelTestResult(ok=False, error="The model didn't respond within 30 seconds.")
+        except Exception as exc:
+            return ModelTestResult(ok=False, error=_friendly_model_error(exc))
+
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        content = getattr(response, "content", "")
+        text = content if isinstance(content, str) else str(content)
+        excerpt = text.strip()[:200] or "(empty reply)"
+        return ModelTestResult(ok=True, message=excerpt, latencyMs=latency_ms)
 
     # -- ai (utility model) --------------------------------------------------
 

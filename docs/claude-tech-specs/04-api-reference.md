@@ -67,7 +67,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 ### 2.1 Enums
 
 **`provider`** — which LangChain adapter ModelFactory constructs:
-`anthropic` (ChatAnthropic; apiKey required) · `openai` (ChatOpenAI; apiKey required) · `openai-compatible` (ChatOpenAI with `base_url`; baseUrl required, apiKey optional — LM Studio etc.) · `ollama` (ChatOllama; baseUrl required).
+`anthropic` (ChatAnthropic; apiKey optional — defaults to `ANTHROPIC_API_KEY`) · `openai` (ChatOpenAI; apiKey optional — defaults to `OPENAI_API_KEY`) · `gemini` (ChatGoogleGenerativeAI; apiKey optional — defaults to `GOOGLE_API_KEY`) · `openai-compatible` (ChatOpenAI with `base_url`; baseUrl required, apiKey optional — LM Studio etc.) · `ollama` (ChatOllama; baseUrl required).
 
 **`outputType`** — how an AI-Job's model response is treated by ConversationService after streaming completes:
 - `chat` — freeform reply; stored as a plain assistant message; no parsing, no proposals.
@@ -93,6 +93,12 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "modelName": "claude-sonnet-4-6", "apiKeyMasked": "sk-ant-…x4Kd", "baseUrl": null }
 ```
 `label` display name (UI dropdowns) · `modelName` the provider's model string, passed verbatim to the SDK · `apiKeyMasked` responses never carry the real key; requests carry `apiKey` (literal or `${ENV_VAR}`) · `baseUrl` endpoint override, required per provider rules above.
+
+**ModelTestResult** (live model check)
+```json
+{ "ok": true, "message": "Hello! How can I help?", "error": null, "latencyMs": 412 }
+```
+`ok` whether the model answered · `message` a short excerpt of the reply (present when `ok`) · `error` a human-readable failure reason (present when not `ok`) · `latencyMs` round-trip time. Secrets never appear here.
 
 **AIJobDefinition**
 ```json
@@ -198,13 +204,16 @@ Launcher readiness poll; frontend disconnect detection. **Response** `{ "status"
 **Request** `{ "label": string, "provider": provider, "modelName": string, "apiKey"?: string, "baseUrl"?: string }`
 - `apiKey` — literal secret or `${ENV_VAR}`; stored as given, resolved at call time by ModelFactory.
 
-**Logic:** 1) Provider rules: `anthropic`/`openai` require apiKey (422); `openai-compatible`/`ollama` require baseUrl (422; baseUrl must parse as http(s) URL). 2) Generate `mdl-` id; persist. **Response:** the ModelConfig (masked). No connectivity test at save (models may be offline local servers); first failed use surfaces the error in job/chat context.
+**Logic:** 1) Provider rules: `openai-compatible`/`ollama` require baseUrl (422; baseUrl must parse as http(s) URL). `apiKey` is **optional for every provider** — an empty key means "use the provider's default environment variable" (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`), resolved by ModelFactory at call time; a `${ENV_VAR}` reference or a literal are also accepted. 2) Generate `mdl-` id; persist. **Response:** the ModelConfig (masked). No connectivity test at save (models may be offline local servers); the model-test endpoint or first real use surfaces a missing/invalid key.
 
 ### PATCH /api/settings/models/{id}
 **Request:** same fields, all optional. Omitted `apiKey` keeps the stored secret (clients round-trip the masked form by *not* sending the field). Re-validates provider rules against the merged result. 404 unknown id.
 
 ### DELETE /api/settings/models/{id}
 **Logic:** SettingsService collects references — AI-Job `defaultModelId`s and `ai.utilityModelId`. Any → **409** `{ "blockedBy": { "aiJobs": [{id,name}], "utilityModel": true } }`. Else remove. (Conversations referencing it historically are unaffected; a later message-send with a deleted model → 422 at send time.)
+
+### POST /api/settings/models/{id}/test
+**Logic:** SettingsService loads the stored config and asks ModelFactory to build the LangChain chat model, resolving a `${ENV_VAR}` key at call time; it then sends a single `"hello model"` chat completion (guarded by a ~30s timeout). **Response** 200 `ModelTestResult`: `ok:true` with a short reply excerpt + `latencyMs`, or `ok:false` with a human-readable `error` (unset env var, auth failure, unreachable base URL, timeout). **404** unknown id. This is the only settings endpoint that performs network I/O and it never mutates `app.json`; failures are results, not error responses (still 200), so the client renders them inline. No connectivity test happens on model create/patch — this endpoint is the explicit, on-demand check.
 
 ### GET /api/settings/ai
 **Response** `{ "utilityModelId": "mdl-..|null" }` — the model EnrichmentService and git suggest-message use.

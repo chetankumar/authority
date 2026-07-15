@@ -147,6 +147,7 @@ Models table (AG Grid not needed — plain table): Label · Provider · Model na
 | [Add model] | Opens model modal | |
 | Model modal: Provider select | Drives contextual fields: cloud → Key required; `openai-compatible`/`ollama` → Base URL required, highlighted, placeholder shows LM Studio/Ollama example URLs | Provider rules (doc 04 §3) are taught by the form, not the error message |
 | Key input, hint "Paste a key or use ${ENV_VAR}" | `POST/PATCH /settings/models`; edit modal leaves the field blank-but-untouched (omit = keep stored key) | Secrets never round-trip to the client |
+| Row **Test** ↯ | `POST /settings/models/{id}/test` → button enters a spinner; success → green "OK · {latencyMs}ms" chip + toast "{label} replied"; failure → red "Failed" chip (reason on hover) + persistent error toast naming the fix (unset env var, bad key, unreachable base URL, timeout) | A model config that *looks* right isn't trustworthy until it has actually answered; the check turns "configured" into "works" without leaving Settings — especially for local `ollama`/`openai-compatible` servers that may simply be off |
 | Row edit ✎ / delete 🗑 | Delete → confirm → `DELETE`; 409 → blocked dialog listing AI-Jobs / utility-model references | A model in use can't silently vanish from under jobs |
 | **Default utility model** select | Below the table; `PATCH /settings/ai` | The model that acts without a conversation (enrichment, commit messages) must be an explicit, visible choice |
 

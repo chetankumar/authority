@@ -36,7 +36,7 @@ Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` char
 }
 ```
 
-- `provider` ∈ `anthropic | openai | openai-compatible | ollama`. `baseUrl` required for the latter two (LM Studio: `http://localhost:1234/v1`; Ollama: `http://localhost:11434`).
+- `provider` ∈ `anthropic | openai | gemini | openai-compatible | ollama`. `baseUrl` required for the latter two (LM Studio: `http://localhost:1234/v1`; Ollama: `http://localhost:11434`).
 - `apiKey` may be a literal or `${ENV_VAR}` reference, resolved at call time. Keys live only at app level — never inside a book folder, so they can never be committed/pushed.
 - `outputType` ∈ `chat | edit-proposals | metadata-proposals`.
 - **No bookshelf registry.** The shelf is a live scan of `booksHome` for subfolders containing `config/book.json`. Subfolders without it are silently ignored.

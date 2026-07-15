@@ -6,7 +6,7 @@ Parent: [project root](../../CLAUDE.md). Specs: [02 Architecture](../../docs/cla
 
 ## Tech stack (locked)
 
-Python 3.11+, FastAPI + Uvicorn (single worker, pinned), GitPython (requires system `git`), LangChain (`langchain-core`, `langchain-anthropic`, `langchain-openai`, `langchain-ollama`), `python-multipart`, `filelock`. No ORM, no database engine — a per-book in-memory data manager over JSON files.
+Python 3.11+, FastAPI + Uvicorn (single worker, pinned), GitPython (requires system `git`), LangChain (`langchain-core`, `langchain-anthropic`, `langchain-openai`, `langchain-google-genai`, `langchain-ollama`), `python-multipart`, `filelock`. No ORM, no database engine — a per-book in-memory data manager over JSON files.
 
 ## Files to create here
 

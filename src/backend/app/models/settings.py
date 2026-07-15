@@ -53,6 +53,15 @@ class ModelConfigOut(BaseModel):
     baseUrl: str | None = None
 
 
+class ModelTestResult(BaseModel):
+    """Result of a live `hello model` check. Failures are results, not errors."""
+
+    ok: bool
+    message: str | None = None
+    error: str | None = None
+    latencyMs: int | None = None
+
+
 class ModelCreate(BaseModel):
     label: str = Field(min_length=1)
     provider: Provider

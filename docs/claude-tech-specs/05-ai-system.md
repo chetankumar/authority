@@ -8,10 +8,11 @@ One factory: `model_config → BaseChatModel`.
 |---|---|---|
 | `anthropic` | `ChatAnthropic` | apiKey required |
 | `openai` | `ChatOpenAI` | apiKey required |
+| `gemini` | `ChatGoogleGenerativeAI` | apiKey optional — defaults to `GOOGLE_API_KEY` |
 | `openai-compatible` | `ChatOpenAI(base_url=...)` | LM Studio etc.; baseUrl required, key optional |
 | `ollama` | `ChatOllama(base_url=...)` | baseUrl required |
 
-`${ENV_VAR}` apiKey syntax resolved at call time. Everything downstream (chat, jobs, streaming, tool-calling) is provider-agnostic.
+Key resolution at call time: a literal key is used verbatim; `${ENV_VAR}` reads that environment variable; an **empty** key falls back to the provider's default environment variable (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`), so authors who already export the standard variable need not enter anything. A missing/unset variable surfaces as a clear error (at model-test or first use). Everything downstream (chat, jobs, streaming, tool-calling) is provider-agnostic.
 
 **Utility model** (`app.json → ai.utilityModelId`): used for system tasks — enrichment, commit-message suggestion. If unset, those features skip gracefully with a visible notice.
 

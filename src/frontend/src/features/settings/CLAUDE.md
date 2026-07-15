@@ -10,7 +10,8 @@ Three pages sharing a 640px centered column; forms label-over-field; Save is the
 ## AI Settings
 
 - Models table (plain, not AG Grid): Label · Provider · Model name · Key (masked) · Base URL · actions.
-- **Model modal:** Provider select drives contextual fields — cloud → Key required; openai-compatible/ollama → Base URL required + example placeholders. Key hint "Paste a key or use ${ENV_VAR}"; edit modal leaves key blank = keep stored. `POST/PATCH /settings/models`; delete → confirm → 409 → BlockedDeletionDialog (AI-Jobs / utility-model refs).
+- **Model modal:** Provider select drives contextual fields — openai-compatible/ollama → Base URL required + example placeholders. Key is optional: blank uses the provider's default env var (anthropic→`ANTHROPIC_API_KEY`, openai→`OPENAI_API_KEY`, gemini→`GOOGLE_API_KEY`); a literal or `${ENV_VAR}` also work. Edit modal leaves key blank = keep stored. `POST/PATCH /settings/models`; delete → confirm → 409 → BlockedDeletionDialog (AI-Jobs / utility-model refs).
+- **Test row action** (↯): `POST /settings/models/{id}/test` runs a live `hello model` completion. Spinner while in flight; result renders as a chip (green "OK · {ms}ms" / red "Failed", reason on hover) plus a toast. Failures arrive as 200 `ModelTestResult` bodies, not thrown errors.
 - **Default utility model** select below table → `PATCH /settings/ai`.
 
 ## AI-Jobs

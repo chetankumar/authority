@@ -16,6 +16,7 @@ from app.models.settings import (
     ModelConfigOut,
     ModelCreate,
     ModelPatch,
+    ModelTestResult,
     Placeholder,
     UserPatch,
     UserSettings,
@@ -62,6 +63,11 @@ async def patch_model(model_id: str, patch: ModelPatch, svc: SettingsService = S
 async def delete_model(model_id: str, svc: SettingsService = Service) -> Response:
     await svc.delete_model(model_id)
     return Response(status_code=204)
+
+
+@router.post("/models/{model_id}/test", response_model=ModelTestResult)
+async def test_model(model_id: str, svc: SettingsService = Service) -> ModelTestResult:
+    return await svc.test_model(model_id)
 
 
 # -- ai (utility model) -----------------------------------------------------
