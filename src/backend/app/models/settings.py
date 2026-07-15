@@ -1,0 +1,154 @@
+"""Settings schemas (doc 04 §2.2, §3; doc 03 app.json).
+
+Three layers per resource: the persisted shape (stored in app.json), the
+request bodies (create/patch), and the response shape (secrets masked).
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from app.models.enums import OutputType, Provider
+
+# ---------------------------------------------------------------------------
+# User
+# ---------------------------------------------------------------------------
+
+
+class UserSettings(BaseModel):
+    name: str | None = None
+    booksHome: str | None = None
+
+
+class UserPatch(BaseModel):
+    name: str | None = None
+    booksHome: str | None = None
+    createBooksHome: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Models (LLM configs)
+# ---------------------------------------------------------------------------
+
+
+class ModelConfig(BaseModel):
+    """Persisted form (app.json) — carries the real key/reference."""
+
+    id: str
+    label: str
+    provider: Provider
+    modelName: str
+    apiKey: str | None = None
+    baseUrl: str | None = None
+
+
+class ModelConfigOut(BaseModel):
+    """Response form — the real key never leaves the server."""
+
+    id: str
+    label: str
+    provider: Provider
+    modelName: str
+    apiKeyMasked: str | None = None
+    baseUrl: str | None = None
+
+
+class ModelCreate(BaseModel):
+    label: str = Field(min_length=1)
+    provider: Provider
+    modelName: str = Field(min_length=1)
+    apiKey: str | None = None
+    baseUrl: str | None = None
+
+
+class ModelPatch(BaseModel):
+    label: str | None = None
+    provider: Provider | None = None
+    modelName: str | None = None
+    # Omitted apiKey keeps the stored secret; clients round-trip the masked form
+    # by simply not sending the field.
+    apiKey: str | None = None
+    baseUrl: str | None = None
+
+
+def mask_key(key: str | None) -> str | None:
+    """Return a masked hint of a stored key/reference, never the secret itself."""
+    if not key:
+        return None
+    tail = key[-4:] if len(key) >= 4 else key
+    return f"\u2026{tail}"
+
+
+def to_model_out(model: ModelConfig) -> ModelConfigOut:
+    return ModelConfigOut(
+        id=model.id,
+        label=model.label,
+        provider=model.provider,
+        modelName=model.modelName,
+        apiKeyMasked=mask_key(model.apiKey),
+        baseUrl=model.baseUrl,
+    )
+
+
+# ---------------------------------------------------------------------------
+# AI (utility model)
+# ---------------------------------------------------------------------------
+
+
+class AISettings(BaseModel):
+    utilityModelId: str | None = None
+
+
+class AISettingsPatch(BaseModel):
+    utilityModelId: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# AI-Jobs
+# ---------------------------------------------------------------------------
+
+
+class AIJobDefinition(BaseModel):
+    id: str
+    name: str
+    prompt: str
+    defaultModelId: str
+    outputType: OutputType
+
+
+class AIJobCreate(BaseModel):
+    name: str = Field(min_length=1)
+    prompt: str = ""
+    defaultModelId: str
+    outputType: OutputType
+    force: bool = False
+
+
+class AIJobPatch(BaseModel):
+    name: str | None = None
+    prompt: str | None = None
+    defaultModelId: str | None = None
+    outputType: OutputType | None = None
+    force: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Placeholders
+# ---------------------------------------------------------------------------
+
+
+class Placeholder(BaseModel):
+    name: str
+    description: str
+
+
+# ---------------------------------------------------------------------------
+# app.json root
+# ---------------------------------------------------------------------------
+
+
+class AppData(BaseModel):
+    user: UserSettings = Field(default_factory=UserSettings)
+    ai: AISettings = Field(default_factory=AISettings)
+    models: list[ModelConfig] = Field(default_factory=list)
+    aiJobs: list[AIJobDefinition] = Field(default_factory=list)

@@ -1,0 +1,18 @@
+/* Design tokens — doc 06 §1.2. Ink-and-paper study palette: a cool, quiet room.
+   Components reference these via Tailwind names, never raw hex. */
+:root {
+  --paper: #fafaf8;
+  --surface: #ffffff;
+  --ink: #1f2328;
+  --ink-soft: #5c6470;
+  --ink-faint: #9aa1ab;
+  --line: #e4e4df;
+  --accent: #2f5a78;
+  --accent-wash: #ebf1f5;
+  --attn: #b7791f;
+  --attn-wash: #fbf3e4;
+  --ok: #2f7d4f;
+  --ok-wash: #eaf4ee;
+  --danger: #a3382c;
+  --danger-wash: #f9ecea;
+}
