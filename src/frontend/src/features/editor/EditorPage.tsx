@@ -33,10 +33,15 @@ export default function EditorPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [createNext, setCreateNext] = useState(false);
   const [title, setTitle] = useState("");
+  const [sourceMode, setSourceMode] = useState(false);
+  const [sourceText, setSourceText] = useState("");
+  const sourceRef = useRef<HTMLTextAreaElement>(null);
 
   const loadedScene = useRef<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirty = useRef(false);
+  const sourceModeRef = useRef(false);
+  const sourceTextRef = useRef("");
 
   const doSave = useCallback(
     async (markdown: string) => {
@@ -99,15 +104,47 @@ export default function EditorPage() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        if (editor) void doSave(getMarkdown(editor));
+        const md = sourceModeRef.current ? sourceTextRef.current : editor ? getMarkdown(editor) : null;
+        if (md != null) void doSave(md);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      if (editor && dirty.current) void doSave(getMarkdown(editor));
+      if (dirty.current) {
+        const md = sourceModeRef.current ? sourceTextRef.current : editor ? getMarkdown(editor) : null;
+        if (md != null) void doSave(md);
+      }
     };
   }, [editor, doSave]);
+
+  sourceModeRef.current = sourceMode;
+  sourceTextRef.current = sourceText;
+
+  const toggleSource = () => {
+    if (!editor) return;
+    if (!sourceMode) {
+      if (dirty.current) void doSave(getMarkdown(editor));
+      setSourceText(getMarkdown(editor));
+      setSourceMode(true);
+      setTimeout(() => sourceRef.current?.focus(), 0);
+    } else {
+      editor.commands.setContent(sourceText);
+      setSourceMode(false);
+      dirty.current = true;
+      if (debounce.current) clearTimeout(debounce.current);
+      debounce.current = setTimeout(() => void doSave(sourceText), 2000);
+    }
+  };
+
+  const onSourceChange = (value: string) => {
+    setSourceText(value);
+    const wc = value.trim() ? value.trim().split(/\s+/).length : 0;
+    setWords(wc);
+    dirty.current = true;
+    if (debounce.current) clearTimeout(debounce.current);
+    debounce.current = setTimeout(() => void doSave(value), 2000);
+  };
 
   const togglePane = () => {
     setPaneOpen((o) => {
@@ -126,14 +163,21 @@ export default function EditorPage() {
   const hasPrev = !!scene?.previousSceneId && scene.previousSceneId !== START_ID;
   const hasNext = !!scene?.nextSceneId && scene.nextSceneId !== END_ID;
 
+  const flushBeforeNav = () => {
+    if (!dirty.current) return;
+    const md = sourceMode ? sourceText : editor ? getMarkdown(editor) : null;
+    if (md != null) void doSave(md);
+  };
   const goPrev = () => {
-    if (editor && dirty.current) void doSave(getMarkdown(editor));
+    flushBeforeNav();
+    if (sourceMode) setSourceMode(false);
     if (hasPrev) navigate(`/book/${bookId}/scene/${scene!.previousSceneId}`);
   };
   const goNext = () => {
-    if (editor && dirty.current) void doSave(getMarkdown(editor));
+    flushBeforeNav();
+    if (sourceMode) setSourceMode(false);
     if (hasNext) navigate(`/book/${bookId}/scene/${scene!.nextSceneId}`);
-    else setCreateNext(true); // create-with-previous flow
+    else setCreateNext(true);
   };
 
   if (sceneQ.isLoading) return <div className="px-6 py-6 text-[0.875rem] text-ink-soft">Opening the scene…</div>;
@@ -158,12 +202,20 @@ export default function EditorPage() {
         {/* TipTap toolbar */}
         {editor && (
           <div className="flex items-center gap-1 border-b border-line px-4 py-1.5 text-[0.8125rem]">
-            <MarkButton editor={editor} label="B" cmd={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")} />
-            <MarkButton editor={editor} label="I" cmd={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive("italic")} />
-            <MarkButton editor={editor} label="H₁" cmd={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive("heading", { level: 1 })} />
-            <MarkButton editor={editor} label="H₂" cmd={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive("heading", { level: 2 })} />
-            <MarkButton editor={editor} label="❝" cmd={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive("blockquote")} />
-            <MarkButton editor={editor} label="•" cmd={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive("bulletList")} />
+            {!sourceMode && (
+              <>
+                <MarkButton editor={editor} label="B" cmd={() => editor.chain().focus().toggleBold().run()} active={editor.isActive("bold")} />
+                <MarkButton editor={editor} label="I" cmd={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive("italic")} />
+                <MarkButton editor={editor} label="H₁" cmd={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive("heading", { level: 1 })} />
+                <MarkButton editor={editor} label="H₂" cmd={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive("heading", { level: 2 })} />
+                <MarkButton editor={editor} label="❝" cmd={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive("blockquote")} />
+                <MarkButton editor={editor} label="•" cmd={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive("bulletList")} />
+              </>
+            )}
+            {sourceMode && <span className="text-[0.75rem] text-ink-faint">Markdown source</span>}
+            <div className="ml-auto">
+              <MarkButton editor={editor} label="&lt;&gt;" cmd={toggleSource} active={sourceMode} />
+            </div>
           </div>
         )}
 
@@ -177,7 +229,18 @@ export default function EditorPage() {
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
               className="mb-6 w-full bg-transparent font-prose text-[1.75rem] font-semibold text-ink outline-none"
             />
-            <EditorContent editor={editor} />
+            {sourceMode ? (
+              <textarea
+                ref={sourceRef}
+                value={sourceText}
+                onChange={(e) => onSourceChange(e.target.value)}
+                onBlur={() => { if (dirty.current) void doSave(sourceText); }}
+                className="min-h-[60vh] w-full resize-none bg-transparent font-mono text-[0.875rem] leading-relaxed text-ink outline-none"
+                spellCheck={false}
+              />
+            ) : (
+              <EditorContent editor={editor} />
+            )}
           </div>
         </div>
 
