@@ -152,20 +152,18 @@ def compute_seq_placement(records: list[SceneRecord], relationship_scene_ids: se
             continue
         walk(r.id, Placement.unanchored)
 
-    # 3) Floating — no hard link but referenced by a soft relationship.
+    # 3) Floating — no hard link but referenced by a soft relationship. No seq.
     for r in sorted(active.values(), key=lambda x: x.id):
         if r.id in seen or has_hard_link(r):
             continue
         if r.id in relationship_scene_ids:
             seen.add(r.id)
-            seq += 1
-            result[r.id] = (seq, Placement.floating)
+            result[r.id] = (None, Placement.floating)
 
-    # 4) Orphan — everything else.
+    # 4) Orphan — everything else. No seq.
     for r in sorted(active.values(), key=lambda x: x.id):
         if r.id in seen:
             continue
-        seq += 1
-        result[r.id] = (seq, Placement.orphan)
+        result[r.id] = (None, Placement.orphan)
 
     return result

@@ -19,6 +19,7 @@ export interface LayoutNode {
   description?: string;
   isSentinel: boolean;
   placement?: Scene["placement"];
+  seq: number | null;
 }
 
 export interface LayoutEdge {
@@ -52,6 +53,7 @@ export function computeLayout(scenes: Scene[], relationships: SoftRelationship[]
       description: s?.description,
       isSentinel: sentinel,
       placement: s?.placement,
+      seq: s?.seq ?? null,
     });
 
   const of = (p: Scene["placement"]) => active.filter((s) => s.placement === p).sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));

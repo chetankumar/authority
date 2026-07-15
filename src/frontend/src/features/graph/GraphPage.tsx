@@ -165,7 +165,8 @@ export default function GraphPage() {
                   strokeWidth={1}
                 />
                 <text x={12} y={NODE_H / 2 + 4} fontSize="13.5" fill="var(--ink)">
-                  {truncate(n.title)}
+                  {n.seq != null && <tspan fill="var(--ink-soft)">#{n.seq} </tspan>}
+                  {truncate(n.title, n.seq != null ? 18 : 22)}
                 </text>
                 <title>{n.description || n.title}</title>
               </g>
