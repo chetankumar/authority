@@ -265,7 +265,11 @@ export default function ScenesTablePage() {
           onColumnResized={persist}
           onColumnVisible={persist}
           onSortChanged={persist}
-          onRowClicked={(e) => e.data && navigate(`/book/${bookId}/scene/${e.data.id}`)}
+          onRowClicked={(e) => {
+            const target = e.event?.target as HTMLElement | null;
+            if (target?.closest('[col-id="actions"]')) return;
+            if (e.data) navigate(`/book/${bookId}/scene/${e.data.id}`);
+          }}
           rowStyle={{ cursor: "pointer" }}
         />
       </div>

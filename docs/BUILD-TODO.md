@@ -207,6 +207,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | GRF-FE-07 | ✅ | Double-click → editor | Heavier gesture for prose. | Same as above |
 | GRF-FE-08 | ✅ | [＋ Add scene] floating | Create where imagining placement. | Same as above |
 | GRF-FE-09 | ✅ | [⤢ Fit] button | Reset zoom. | Same as above |
+| GRF-FE-10 | ⬜ | Sequence number on graph nodes | As an author viewing the scene graph, I want each placed scene to show its sequence number (e.g. "#3") before the title, so I can see the reading order at a glance. Unplaced scenes (floating/orphan) show no number. | `src/frontend/src/features/graph/layout.ts`, `src/frontend/src/features/graph/GraphPage.tsx` |
 | GRF-FE-10 | ✅ | Empty state | Invitation, not dead end. | Same as above |
 | GRF-FE-11 | ✅ | Node hover tooltip | Quick reminder. | Same as above |
 | GRF-FE-12 | ✅ | Soft edge hover tooltip | Lines explained. | Same as above |

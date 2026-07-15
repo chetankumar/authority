@@ -79,6 +79,7 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   const deleteRel = useDeleteRelationship(bookId);
   const saving = createScene.isPending || updateScene.isPending;
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [autofillNodes, setAutofillNodes] = useState(true);
   const isArchived = existing?.status === "archived";
 
   // Options: active scenes excluding self, in seq order.
@@ -119,11 +120,11 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   };
   const pickPrevious = (p: string | null) => {
     setPreviousSceneId(p);
-    setNextSceneId(p ? successorOf(p) : null); // clearing one clears both → floats
+    if (autofillNodes) setNextSceneId(p ? successorOf(p) : null);
   };
   const pickNext = (n: string | null) => {
     setNextSceneId(n);
-    setPreviousSceneId(n ? predecessorOf(n) : null);
+    if (autofillNodes) setPreviousSceneId(n ? predecessorOf(n) : null);
   };
 
   const setSoft = (i: number, patch: Partial<SoftRow>) =>
@@ -290,7 +291,18 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
         {/* Right column — placement */}
         <div className="space-y-4">
           <fieldset className="space-y-2">
-            <legend className="text-[0.75rem] font-medium text-ink-soft">Sequence</legend>
+            <div className="flex items-center justify-between">
+              <legend className="text-[0.75rem] font-medium text-ink-soft">Sequence</legend>
+              <label className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
+                <input
+                  type="checkbox"
+                  checked={autofillNodes}
+                  onChange={(e) => setAutofillNodes(e.target.checked)}
+                  className="accent-accent"
+                />
+                Autofill nodes
+              </label>
+            </div>
             <Field label="Previous">
               <SearchableSelect
                 options={previousOptions}

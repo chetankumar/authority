@@ -102,12 +102,15 @@ export function computeLayout(scenes: Scene[], relationships: SoftRelationship[]
   }
 
   // Soft edges (dotted; "around" has no arrowhead).
+  // "before" = fromScene comes before toScene → arrow from → to.
+  // "after"  = fromScene comes after toScene  → arrow to → from (reversed).
   for (const r of relationships) {
     if (byId.has(r.fromSceneId) && byId.has(r.toSceneId)) {
+      const reversed = r.type === "after";
       edges.push({
         id: r.id,
-        from: r.fromSceneId,
-        to: r.toSceneId,
+        from: reversed ? r.toSceneId : r.fromSceneId,
+        to: reversed ? r.fromSceneId : r.toSceneId,
         soft: true,
         arrow: r.type !== "around",
         label: `definitely ${r.type} ${byId.get(r.toSceneId)!.title}`,
