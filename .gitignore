@@ -1,0 +1,24 @@
+# Runtime logs (directory kept via logs/.gitignore)
+logs/*
+!logs/.gitignore
+
+# App runtime data (appDataRoot) — holds app.json with API keys; never commit
+data/
+
+# Atomic-write temp files
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.setup-complete
+
+# Node / Vite
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db

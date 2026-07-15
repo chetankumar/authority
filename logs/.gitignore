@@ -1,0 +1,4 @@
+# Keep this directory in the tree but ignore the runtime log files in it
+# (api.log is truncated at each launch — see docs/claude-tech-specs/02-architecture-and-launcher.md)
+*
+!.gitignore
