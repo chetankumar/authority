@@ -18,6 +18,9 @@ export default {
           DEFAULT: "var(--accent)",
           wash: "var(--accent-wash)",
         },
+        "on-accent": "var(--on-accent)",
+        "edge-soft": "var(--edge-soft)",
+        scrim: "var(--scrim)",
         attn: {
           DEFAULT: "var(--attn)",
           wash: "var(--attn-wash)",
@@ -41,7 +44,7 @@ export default {
         card: "10px",
       },
       boxShadow: {
-        overlay: "0 8px 24px rgb(0 0 0 / 0.10)",
+        overlay: "var(--shadow-overlay)",
       },
     },
   },

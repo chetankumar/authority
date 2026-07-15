@@ -27,3 +27,26 @@ class OutputType(str, Enum):
     chat = "chat"
     edit_proposals = "edit-proposals"
     metadata_proposals = "metadata-proposals"
+
+
+class SceneStatus(str, Enum):
+    active = "active"
+    archived = "archived"
+
+
+class RelationshipType(str, Enum):
+    """Soft placement: *fromScene is definitely-{type} toScene* (doc 04 §2.1)."""
+
+    before = "before"
+    after = "after"
+    around = "around"
+
+
+class Placement(str, Enum):
+    """Computed scene classification (ChainService); never stored (doc 04 §2.1)."""
+
+    trunk = "trunk"
+    unanchored = "unanchored"
+    floating = "floating"
+    orphan = "orphan"
+    archived = "archived"

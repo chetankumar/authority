@@ -26,6 +26,8 @@ from app.models.settings import (
     AIJobPatch,
     AISettings,
     AISettingsPatch,
+    Appearance,
+    AppearancePatch,
     AppData,
     ModelConfig,
     ModelConfigOut,
@@ -145,6 +147,18 @@ class SettingsService:
                 {"path": str(path)},
             ) from exc
         return path
+
+    # -- appearance ----------------------------------------------------------
+
+    def get_appearance(self) -> Appearance:
+        return self._load().appearance
+
+    async def patch_appearance(self, patch: AppearancePatch) -> Appearance:
+        async with self._lock:
+            data = self._load()
+            data.appearance.theme = patch.theme
+            self._save(data)
+            return data.appearance
 
     # -- models --------------------------------------------------------------
 

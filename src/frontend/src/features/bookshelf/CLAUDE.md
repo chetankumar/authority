@@ -17,3 +17,8 @@ Choose or create a book. Responsive card grid (200px covers, 3:4 ratio, 24px gut
 ## APIs
 
 `GET /books`, `POST /books`, `PATCH /books/{id}`, `GET /books/{id}/cover`.
+
+## Implementation status
+
+- **Built:** shelf grid via `useBooks()` (`GET /books`), the **Create book** modal (`POST /books` multipart with optional cover preview), cover thumbnails (`coverUrl` → `GET /books/{id}/cover`, falls back to a title placeholder on 404/error), the broken-book card (`error` flag, non-clickable), and the books-home-unset empty state with a Settings link. Book cards link to `/book/{id}`; creating a book toasts and navigates into it (see [features/book](../book/CLAUDE.md)).
+- **Not yet:** no Edit Book modal (kebab menu). Multipart upload goes through `apiUpload` in `api/client.ts` (no `Content-Type` header so the browser sets the boundary).

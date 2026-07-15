@@ -13,6 +13,8 @@ from app.models.settings import (
     AIJobPatch,
     AISettings,
     AISettingsPatch,
+    Appearance,
+    AppearancePatch,
     ModelConfigOut,
     ModelCreate,
     ModelPatch,
@@ -68,6 +70,19 @@ async def delete_model(model_id: str, svc: SettingsService = Service) -> Respons
 @router.post("/models/{model_id}/test", response_model=ModelTestResult)
 async def test_model(model_id: str, svc: SettingsService = Service) -> ModelTestResult:
     return await svc.test_model(model_id)
+
+
+# -- appearance -------------------------------------------------------------
+
+
+@router.get("/appearance", response_model=Appearance)
+async def get_appearance(svc: SettingsService = Service) -> Appearance:
+    return svc.get_appearance()
+
+
+@router.patch("/appearance", response_model=Appearance)
+async def patch_appearance(patch: AppearancePatch, svc: SettingsService = Service) -> Appearance:
+    return await svc.patch_appearance(patch)
 
 
 # -- ai (utility model) -----------------------------------------------------

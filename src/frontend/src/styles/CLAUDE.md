@@ -9,9 +9,13 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06 §1.2–1.4](../../../../docs/claude-
 - `tokens.css` — the CSS variables (the §1.2 palette below) + typography + spacing scale.
 - Tailwind config mapping (in `frontend/tailwind.config.*`) that maps utility classes to these variables.
 
-## Color tokens
+## Color tokens & theming (doc 06 §1.2)
 
-`--paper #FAFAF8` (app bg) · `--surface #FFFFFF` (cards/modals/editor sheet) · `--ink #1F2328` (primary text) · `--ink-soft #5C6470` · `--ink-faint #9AA1AB` · `--line #E4E4DF` (borders) · `--accent #2F5A78` (primary/links/active/focus/trunk edges) · `--accent-wash #EBF1F5` · `--attn #B7791F` (amber — the single attention color) · `--attn-wash #FBF3E4` · `--ok #2F7D4F` / wash `#EAF4EE` · `--danger #A3382C` / wash `#F9ECEA`. Dark theme is out of v1 scope but tokens make it a drop-in.
+**Every color and elevation is a semantic token with a light and a dark value.** Light values on `:root`; dark values on `:root[data-theme="dark"]`. A controller sets `data-theme` on `<html>` from the resolved theme (`light | dark | system`, default `system`, app-level in `app.json`). Flipping the attribute recolors the whole app — Tailwind classes, the graph SVG (`var(--…)`), the editor, and the AG Grid theme all resolve the same variables.
+
+**Hard rule — no raw color, ever.** Components (Tailwind classes, inline SVG, AG Grid params, any CSS) reference **only tokens**, never a hex/rgb literal. A component that needs to differ between themes gets a **new token**, not a second stylesheet. There are no per-component light/dark rules.
+
+Palette (light / dark): `--paper #FAFAF8 / #14171A` · `--surface #FFFFFF / #1D2125` · `--ink #1F2328 / #E6E8EB` · `--ink-soft #5C6470 / #A2A9B4` · `--ink-faint #9AA1AB / #6C7480` · `--line #E4E4DF / #2C3237` · `--accent #2F5A78 / #5E9BC2` · `--accent-wash #EBF1F5 / #1F2E38` · `--on-accent #FFFFFF / #0E1417` (text on accent+danger fills) · `--attn #B7791F / #E0A94A` · `--attn-wash #FBF3E4 / #2C2513` · `--ok #2F7D4F / #4FB07C` · `--ok-wash #EAF4EE / #16281E` · `--danger #A3382C / #D9695C` · `--danger-wash #F9ECEA / #2E1A17` · `--edge-soft #5C6470 / #8A929E` (graph soft/dotted edges — stronger than `--ink-faint`) · `--scrim rgb(31 35 40 / 0.4) / rgb(0 0 0 / 0.6)` (overlay backdrop) · `--shadow-overlay` (theme-aware; weaker in dark, elevation leans on `--line`).
 
 ## Typography
 

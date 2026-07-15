@@ -221,6 +221,12 @@ Launcher readiness poll; frontend disconnect detection. **Response** `{ "status"
 ### PATCH /api/settings/ai
 **Request** `{ "utilityModelId": "mdl-..|null" }`. 422 if id unknown.
 
+### GET /api/settings/appearance
+**Response** `{ "theme": "light" | "dark" | "system" }` — the app-wide color theme (doc 06 §1.2). **Logic:** SettingsService reads `app.json.appearance`; missing/unknown → `system`.
+
+### PATCH /api/settings/appearance
+**Request** `{ "theme": "light" | "dark" | "system" }`. 422 if not one of the three. Persists `app.json` atomically. **Response** the updated appearance object. App-level only — there is no per-book theme.
+
 ### GET /api/settings/ai-jobs
 **Response** `[AIJobDefinition]`.
 

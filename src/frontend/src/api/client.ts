@@ -45,3 +45,9 @@ export async function apiSend<T>(method: string, path: string, body?: unknown): 
     }),
   );
 }
+
+// Multipart uploads (e.g. book cover). No Content-Type header — the browser
+// sets the multipart boundary itself.
+export async function apiUpload<T>(method: string, path: string, form: FormData): Promise<T> {
+  return parse<T>(await fetch(`/api${path}`, { method, body: form }));
+}

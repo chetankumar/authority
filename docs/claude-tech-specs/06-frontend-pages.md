@@ -14,26 +14,36 @@ Authority is a place to write a novel. Three consequences, applied everywhere:
 2. **Calm by default, loud only when the author must act.** Exactly one attention color (amber) and it means one thing: *something awaits your decision* — pending git changes, pending proposals, dependency todos. Nothing else competes for attention.
 3. **Copy is design material.** Buttons say exactly what happens, in sentence case, active voice ("Commit staged files", not "Submit"). An action keeps its name through the flow (button "Compile book" → success toast "Book compiled"). Errors state what went wrong and how to fix it; they never apologize and are never vague. Empty states are invitations to act, not dead ends.
 
-### 1.2 Color tokens (CSS variables; Tailwind maps to these — components never use raw hex)
+### 1.2 Color tokens & theming (CSS variables; Tailwind maps to these — components never use raw hex)
 
-Ink-and-paper study palette. Deliberately **not** the warm-cream/terracotta or dark-acid looks; a cool, quiet room.
+Ink-and-paper study palette. Deliberately **not** the warm-cream/terracotta or dark-acid looks; a cool, quiet room. **Every color and elevation ships as a semantic token with a light and a dark value; components reference only tokens, never a raw hex or rgb.** That single discipline is what makes theming work everywhere at once — Tailwind classes, the D3 graph SVG (`fill="var(--accent)"`), the editor sheet, and the AG Grid theme all resolve the same variables.
 
-| Token | Value | Use |
-|---|---|---|
-| `--paper` | `#FAFAF8` | App background |
-| `--surface` | `#FFFFFF` | Cards, modals, panels, editor sheet |
-| `--ink` | `#1F2328` | Primary text |
-| `--ink-soft` | `#5C6470` | Secondary text, labels, icons |
-| `--ink-faint` | `#9AA1AB` | Placeholders, disabled, timestamps |
-| `--line` | `#E4E4DF` | Borders, dividers, hairlines |
-| `--accent` | `#2F5A78` | Deep slate-blue: primary buttons, links, active nav, focus rings, trunk edges |
-| `--accent-wash` | `#EBF1F5` | Selected rows, active-nav background, hover fills |
-| `--attn` | `#B7791F` | Amber: everything pending an author decision (git badge, proposal cards, dependency todos, warnings) |
-| `--attn-wash` | `#FBF3E4` | Amber backgrounds |
-| `--ok` | `#2F7D4F` / wash `#EAF4EE` | Applied proposals, done states, success toasts |
-| `--danger` | `#A3382C` / wash `#F9ECEA` | Destructive actions, errors, blocked-deletion dialogs |
+**Theming mechanism.** Light values live on `:root`; dark values on `:root[data-theme="dark"]`. A controller sets `data-theme` on `<html>` from the resolved theme; flipping the attribute recolors the entire app in one move. There are **no per-component light/dark stylesheets, and none may be added** — a component that needs to differ between themes gets a *new token*, not a second rule.
 
-Dark theme: out of v1 scope; tokens make it a later drop-in.
+**Theme choice** is `light | dark | system` (`system` follows the OS via `prefers-color-scheme`), **default `system`**. It is an **app-level** preference — all books, the bookshelf, and Settings share it — stored in `app.json` (doc 03 `appearance.theme`; endpoints doc 04 §3). Never per book: a theme is a viewing preference, not part of the portable manuscript.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--paper` | `#FAFAF8` | `#14171A` | App background |
+| `--surface` | `#FFFFFF` | `#1D2125` | Cards, modals, panels, editor sheet (elevation reads by lightness in dark) |
+| `--ink` | `#1F2328` | `#E6E8EB` | Primary text |
+| `--ink-soft` | `#5C6470` | `#A2A9B4` | Secondary text, labels, icons |
+| `--ink-faint` | `#9AA1AB` | `#6C7480` | Placeholders, disabled, timestamps |
+| `--line` | `#E4E4DF` | `#2C3237` | Borders, dividers, hairlines (carry elevation in dark) |
+| `--accent` | `#2F5A78` | `#5E9BC2` | Primary buttons, links, active nav, focus rings, trunk edges |
+| `--accent-wash` | `#EBF1F5` | `#1F2E38` | Selected rows, active-nav background, hover fills |
+| `--on-accent` | `#FFFFFF` | `#0E1417` | Text/icons on `--accent` **and** `--danger` fills (dark flips to dark ink on the lighter fills) |
+| `--attn` | `#B7791F` | `#E0A94A` | Amber: everything pending an author decision (git badge, proposals, dependency todos, warnings) |
+| `--attn-wash` | `#FBF3E4` | `#2C2513` | Amber backgrounds |
+| `--ok` | `#2F7D4F` | `#4FB07C` | Applied proposals, done states, success |
+| `--ok-wash` | `#EAF4EE` | `#16281E` | Success backgrounds |
+| `--danger` | `#A3382C` | `#D9695C` | Destructive actions, errors, blocked-deletion dialogs |
+| `--danger-wash` | `#F9ECEA` | `#2E1A17` | Danger backgrounds |
+| `--edge-soft` | `#5C6470` | `#8A929E` | Soft-relationship dotted edges in the graph — deliberately stronger than `--ink-faint` so the dashes read (hard/trunk edges use `--accent`) |
+| `--scrim` | `rgb(31 35 40 / 0.4)` | `rgb(0 0 0 / 0.6)` | Modal/overlay backdrop |
+| `--shadow-overlay` | `0 8px 24px rgb(0 0 0 / 0.10)` | `0 10px 28px rgb(0 0 0 / 0.55)` | The one reserved overlay shadow (§1.4) |
+
+The specific dark hex values are the design's starting point and tunable in `tokens.css`; the token *names and contract* are fixed.
 
 ### 1.3 Typography
 
@@ -49,13 +59,13 @@ Type scale: 12 / 13 / 14 (base) / 16 / 20 / 24 / 30px. Page titles 20/semibold; 
 
 - **Spacing:** 4px scale. Page gutters 24px; card padding 16px; control height 32px (inputs, buttons); dense grids 28px rows.
 - **Radii:** 6px controls, 10px cards/modals, 999px pills (sentinels, status chips).
-- **Elevation:** borders over shadows. Flat surfaces + `--line` hairlines; one soft shadow level reserved for overlays (modals, popovers, tooltips): `0 8px 24px rgb(0 0 0 / 0.10)`.
+- **Elevation:** borders over shadows. Flat surfaces + `--line` hairlines; one soft shadow level reserved for overlays (modals, popovers, tooltips) via the `--shadow-overlay` token (§1.2). In dark mode elevation leans on `--line` and surface lightness; the token weakens the shadow accordingly.
 - **Motion:** 150ms ease-out for hover/fade; 200ms for modal/popover enter (fade + 4px rise); accordion height 200ms. Graph zoom/pan is direct (no easing lag). `prefers-reduced-motion` disables all non-essential transitions. Nothing bounces, nothing pulses except the single streaming-cursor blink in chat.
 
 ### 1.5 Component conventions (used by every page below)
 
 - **Buttons:** *Primary* (accent fill, white text — one per view maximum); *Secondary* (surface, `--line` border); *Ghost* (text-only, for toolbars); *Danger* (danger fill — only inside confirm dialogs, never bare on a page). Icon-buttons get tooltips (600ms delay).
-- **Modals:** centered, 560px (forms) / 720px (Scene Modal) / 800px (Conversation); scrim `rgb(31 35 40 / 0.4)`; Esc closes unless streaming or unsaved fields (then confirm). Title left, × right, actions bottom-right (primary rightmost).
+- **Modals:** centered, 560px (forms) / 720px (Scene Modal) / 800px (Conversation); scrim via `--scrim` (§1.2); Esc closes unless streaming or unsaved fields (then confirm). Title left, × right, actions bottom-right (primary rightmost).
 - **Popovers** (Bookkeeping, column chooser): anchored, 280px, close on outside-click/Esc.
 - **Toasts:** bottom-right, 4s, one line, past-tense confirmation ("Scene archived", "Committed 9f2c1a"). Errors persist until dismissed.
 - **Badges:** count pills; amber = pending decision, `--ink-faint` = neutral count.
@@ -105,6 +115,7 @@ frontend/src/
 | Book title breadcrumb | Right of logo, inside a book | Click → `/book/{id}` (graph) | Orients the author; one-click back to the book's home view |
 | **Git badge** | Top bar, center-right; only when dirty | Shows "{n} pending changes · Commit now?" in `--attn`; click → `/book/{id}/git`. Fed by `git-status` SSE; initial `GET git/status`. Clean → renders nothing | The nudge that makes deliberate commits happen without auto-commit; amber = decision awaits |
 | "Welcome, {name}" | Top bar, right | Static; from `GET /settings/user`; "Welcome" if unset | Confirms whose studio this is; motivates User Settings on first run |
+| **Theme toggle** | Top bar, right (before the greeting) | Sun/moon control cycling `light → dark → system`; writes the choice via `PATCH /settings/appearance` (doc 04 §3) and sets `data-theme` on `<html>` immediately; `system` tracks `prefers-color-scheme` live. Icon reflects the resolved theme | One instant, always-visible switch; theme is app-wide, so it lives in the global chrome rather than a settings page |
 | Left nav (outside book) | Home · Settings ▸ (User / AI / AI-Jobs, expands inline) | Route links; active item `--accent-wash` + accent text | |
 | Left nav (inside book) | Scene Graph · Scene Table · Character Sheet · Metadata · Tasks · Git — icons + labels | Route links | Fixed order = muscle memory; Graph first because it's the book's home |
 | Nav collapse chevron | Nav bottom | Toggles 208px ↔ 56px icon rail (tooltips on rail). Auto-rails on the editor page | Zen: reclaim width for prose; still one click from anywhere |

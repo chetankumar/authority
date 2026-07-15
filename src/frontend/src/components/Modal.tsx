@@ -20,8 +20,7 @@ export function Modal({ title, onClose, children, footer, width = 560 }: ModalPr
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-start justify-center overflow-auto p-6"
-      style={{ background: "rgb(31 35 40 / 0.4)" }}
+      className="fixed inset-0 z-40 flex items-start justify-center overflow-auto bg-scrim p-6"
       onMouseDown={onClose}
     >
       <div

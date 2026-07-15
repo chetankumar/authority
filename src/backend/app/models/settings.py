@@ -6,9 +6,13 @@ request bodies (create/patch), and the response shape (secrets masked).
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import OutputType, Provider
+
+Theme = Literal["light", "dark", "system"]
 
 # ---------------------------------------------------------------------------
 # User
@@ -100,6 +104,29 @@ def to_model_out(model: ModelConfig) -> ModelConfigOut:
 
 
 # ---------------------------------------------------------------------------
+# Appearance (app-wide theme)
+# ---------------------------------------------------------------------------
+
+
+class Appearance(BaseModel):
+    """App-level color theme (doc 06 §1.2). Lenient on load — an unknown or
+    missing value degrades to ``system`` rather than quarantining app.json."""
+
+    theme: str = "system"
+
+    @field_validator("theme", mode="before")
+    @classmethod
+    def _coerce(cls, value: object) -> str:
+        return value if value in ("light", "dark", "system") else "system"
+
+
+class AppearancePatch(BaseModel):
+    """Strict on input — a bad theme is a 422, not a silent coercion."""
+
+    theme: Theme
+
+
+# ---------------------------------------------------------------------------
 # AI (utility model)
 # ---------------------------------------------------------------------------
 
@@ -158,6 +185,7 @@ class Placeholder(BaseModel):
 
 class AppData(BaseModel):
     user: UserSettings = Field(default_factory=UserSettings)
+    appearance: Appearance = Field(default_factory=Appearance)
     ai: AISettings = Field(default_factory=AISettings)
     models: list[ModelConfig] = Field(default_factory=list)
     aiJobs: list[AIJobDefinition] = Field(default_factory=list)

@@ -3,10 +3,10 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAt
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 const BUTTON_STYLES: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-white hover:opacity-90 disabled:opacity-40",
+  primary: "bg-accent text-on-accent hover:opacity-90 disabled:opacity-40",
   secondary: "border border-line bg-surface text-ink hover:bg-accent-wash disabled:opacity-40",
   ghost: "text-ink-soft hover:bg-accent-wash disabled:opacity-40",
-  danger: "bg-danger text-white hover:opacity-90 disabled:opacity-40",
+  danger: "bg-danger text-on-accent hover:opacity-90 disabled:opacity-40",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

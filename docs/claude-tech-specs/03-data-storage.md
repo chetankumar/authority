@@ -23,6 +23,7 @@ Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` char
 ```json
 {
   "user": { "name": "Chetan", "booksHome": "/Users/chetan/Books" },
+  "appearance": { "theme": "system" },
   "ai": { "utilityModelId": "mdl-a1b2c3" },
   "models": [
     { "id": "mdl-a1b2c3", "label": "Sonnet 4.6", "provider": "anthropic",
@@ -36,6 +37,7 @@ Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` char
 }
 ```
 
+- `appearance.theme` ∈ `light | dark | system` (default `system`) — the app-wide color theme (doc 06 §1.2). App-level only; never stored per book. Missing/unknown → `system`.
 - `provider` ∈ `anthropic | openai | gemini | openai-compatible | ollama`. `baseUrl` required for the latter two (LM Studio: `http://localhost:1234/v1`; Ollama: `http://localhost:11434`).
 - `apiKey` may be a literal or `${ENV_VAR}` reference, resolved at call time. Keys live only at app level — never inside a book folder, so they can never be committed/pushed.
 - `outputType` ∈ `chat | edit-proposals | metadata-proposals`.

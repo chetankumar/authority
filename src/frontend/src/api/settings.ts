@@ -38,6 +38,12 @@ export interface ModelTestResult {
   latencyMs: number | null;
 }
 
+export type ThemePref = "light" | "dark" | "system";
+
+export interface Appearance {
+  theme: ThemePref;
+}
+
 export interface AISettings {
   utilityModelId: string | null;
 }
@@ -66,6 +72,11 @@ export interface Placeholder {
 // -- user -------------------------------------------------------------------
 export const getUser = () => apiGet<UserSettings>("/settings/user");
 export const patchUser = (patch: UserPatch) => apiSend<UserSettings>("PATCH", "/settings/user", patch);
+
+// -- appearance (app-wide theme) --------------------------------------------
+export const getAppearance = () => apiGet<Appearance>("/settings/appearance");
+export const patchAppearance = (theme: ThemePref) =>
+  apiSend<Appearance>("PATCH", "/settings/appearance", { theme });
 
 // -- models -----------------------------------------------------------------
 export const listModels = () => apiGet<ModelConfig[]>("/settings/models");
