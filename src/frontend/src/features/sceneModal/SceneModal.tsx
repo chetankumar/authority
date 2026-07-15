@@ -203,7 +203,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
       onClose();
     } catch (e) {
       setConfirmDelete(false);
-      setError(e instanceof ApiError ? e.message : "Couldn't delete the scene.");
+      const msg = e instanceof ApiError ? (e.blockedByMessage || e.message) : "Couldn't delete the scene.";
+      setError(msg);
     }
   }
 

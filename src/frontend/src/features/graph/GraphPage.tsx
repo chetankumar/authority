@@ -90,8 +90,6 @@ export default function GraphPage() {
     navigate(`/book/${bookId}/scene/${node.id}`);
   };
 
-  const activeCount = scenes.filter((s) => s.status === "active").length;
-
   return (
     <div className="relative h-full w-full overflow-hidden bg-paper">
       <svg ref={svgRef} className="h-full w-full">
@@ -174,18 +172,6 @@ export default function GraphPage() {
           })}
         </g>
       </svg>
-
-      {/* Empty state */}
-      {!isLoading && activeCount === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3">
-          <p className="text-[0.9375rem] text-ink-soft">No scenes yet.</p>
-          <div className="pointer-events-auto">
-            <Button variant="primary" onClick={() => setModal({ sceneId: null })}>
-              Add scene
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* Floating controls */}
       <div className="absolute bottom-6 right-6 flex items-center gap-2">

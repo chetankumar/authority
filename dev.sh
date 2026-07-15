@@ -43,7 +43,7 @@ trap cleanup INT TERM
 echo "[Authority DEV] Starting backend (reload mode) on port $PORT..."
 
 if [ "$USE_CONDA" = 1 ]; then
-    conda run -n "$ENV_NAME" --no-banner --no-capture-output python -m uvicorn app.main:app \
+    conda run -n "$ENV_NAME" --no-capture-output python -m uvicorn app.main:app \
         --host 127.0.0.1 --port "$PORT" --reload --app-dir "$BACKEND" &
 else
     source "$ROOT/.venv/bin/activate" 2>/dev/null || true

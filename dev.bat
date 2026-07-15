@@ -35,7 +35,7 @@ if %errorlevel%==0 (
 echo [Authority DEV] Starting backend (reload mode) on port %PORT%...
 
 if %USE_CONDA%==1 (
-    start "Authority API" cmd /k "conda run -n %ENV_NAME% --no-banner --no-capture-output python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --reload --app-dir "%BACKEND%""
+    start "Authority API" cmd /k "conda run -n %ENV_NAME% --no-capture-output python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --reload --app-dir "%BACKEND%""
 ) else (
     start "Authority API" cmd /k "call "%ROOT%.venv\Scripts\activate.bat" && python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --reload --app-dir "%BACKEND%""
 )

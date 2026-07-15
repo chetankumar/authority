@@ -182,12 +182,13 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | SCN-API-07 | ⬜ | `GET /books/{b}/scenes/{id}/conversations` | Notes/chats scoped to scene. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 7 (ConversationService) |
 | SCN-API-08 | ⬜ | `GET /books/{b}/scenes/{id}/todos` | Scene-scoped todos. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 6 (TodoService) |
 | SCN-API-09 | ⬜ | `GET /books/{b}/scenes/{id}/dependencies` | Depends-on + depended-on-by. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 6 (dependencies) |
-| SCN-API-10 | ✅ | `POST /books/{b}/relationships` | Soft placement edges. | `src/backend/app/api/relationships/router.py`, `src/backend/app/services/scene_service.py` |
-| SCN-API-11 | ✅ | `DELETE /books/{b}/relationships/{id}` | Remove obsolete soft links. | Same as above |
-| SCN-API-12 | ⬜ | `POST /books/{b}/dependencies` | Declare prerequisites between scenes. | **Create:** `src/backend/app/api/dependencies/router.py`, `src/backend/app/api/dependencies/__init__.py`; **Modify:** `src/backend/app/services/scene_service.py` (or new dep service), `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py` (register router); **Create model:** `src/backend/app/models/dependency.py` (or add to `scene.py`) |
-| SCN-API-13 | ⬜ | `PATCH /books/{b}/dependencies/{id}` | Refine reason. | Same as SCN-API-12 |
-| SCN-API-14 | ⬜ | `DELETE /books/{b}/dependencies/{id}` | Remove dependency. | Same as SCN-API-12 |
-| SCN-SVC-01 | ✅ | ChainService (splice, heal, seq/placement) | Deterministic story order. | `src/backend/app/services/chain_service.py` |
+| SCN-API-10 | ✅ | `DELETE /books/{b}/scenes/{id}` | As an author, I want to permanently delete an archived scene; if it has references (relationships, dependencies, todos, conversations, plotlines, running jobs) the API returns 409 with `blockedBy` details. The `.md` file moves to `.trash/`, never physically deleted. | `src/backend/app/api/scenes/router.py`, `src/backend/app/services/scene_service.py` |
+| SCN-API-11 | ✅ | `POST /books/{b}/relationships` | Soft placement edges. | `src/backend/app/api/relationships/router.py`, `src/backend/app/services/scene_service.py` |
+| SCN-API-12 | ✅ | `DELETE /books/{b}/relationships/{id}` | Remove obsolete soft links. | Same as above |
+| SCN-API-13 | ⬜ | `POST /books/{b}/dependencies` | Declare prerequisites between scenes. | **Create:** `src/backend/app/api/dependencies/router.py`, `src/backend/app/api/dependencies/__init__.py`; **Modify:** `src/backend/app/services/scene_service.py` (or new dep service), `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py` (register router); **Create model:** `src/backend/app/models/dependency.py` (or add to `scene.py`) |
+| SCN-API-14 | ⬜ | `PATCH /books/{b}/dependencies/{id}` | Refine reason. | Same as SCN-API-13 |
+| SCN-API-15 | ⬜ | `DELETE /books/{b}/dependencies/{id}` | Remove dependency. | Same as SCN-API-13 |
+| SCN-SVC-01 | ✅ | ChainService (splice, heal, seq/placement) | Deterministic story order. Floating/orphan scenes get `seq: null` — only hard-chain scenes are numbered. | `src/backend/app/services/chain_service.py` |
 | SCN-SVC-02 | ✅ | SceneService CRUD + content save | Only prose write paths guarded. | `src/backend/app/services/scene_service.py` |
 | SCN-SVC-03 | 🔄 | Content save — dependency todo fanout (stub) | Todos when depended-on scene changes. | **Modify:** `src/backend/app/services/scene_service.py` (line ~209, phase 6 hook) |
 | SCN-SVC-04 | 🔄 | Content save — enrichment settle timer (stub) | Summary/character updates after typing stops. | **Modify:** `src/backend/app/services/scene_service.py` (line ~212, phase 7 hook) |
@@ -207,11 +208,12 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | GRF-FE-07 | ✅ | Double-click → editor | Heavier gesture for prose. | Same as above |
 | GRF-FE-08 | ✅ | [＋ Add scene] floating | Create where imagining placement. | Same as above |
 | GRF-FE-09 | ✅ | [⤢ Fit] button | Reset zoom. | Same as above |
-| GRF-FE-10 | ⬜ | Sequence number on graph nodes | As an author viewing the scene graph, I want each placed scene to show its sequence number (e.g. "#3") before the title, so I can see the reading order at a glance. Unplaced scenes (floating/orphan) show no number. | `src/frontend/src/features/graph/layout.ts`, `src/frontend/src/features/graph/GraphPage.tsx` |
-| GRF-FE-10 | ✅ | Empty state | Invitation, not dead end. | Same as above |
-| GRF-FE-11 | ✅ | Node hover tooltip | Quick reminder. | Same as above |
-| GRF-FE-12 | ✅ | Soft edge hover tooltip | Lines explained. | Same as above |
-| GRF-FE-13 | ✅ | Archived hidden | Active story only. | Same as above |
+| GRF-FE-10 | ✅ | Sequence number on graph nodes | As an author viewing the scene graph, I want each placed scene to show its sequence number (e.g. "#3") before the title, so I can see the reading order at a glance. Unplaced scenes (floating/orphan) show no number. | `src/frontend/src/features/graph/layout.ts`, `src/frontend/src/features/graph/GraphPage.tsx` |
+| GRF-FE-11 | ✅ | Soft-relationship arrow direction fix | As an author, I want "definitely after" arrows to point from the earlier scene to this one (reversed from "before"), so the graph arrows match reading order. | `src/frontend/src/features/graph/layout.ts` |
+| GRF-FE-12 | ✅ | Empty state | Invitation, not dead end. | Same as above |
+| GRF-FE-13 | ✅ | Node hover tooltip | Quick reminder. | Same as above |
+| GRF-FE-14 | ✅ | Soft edge hover tooltip | Lines explained. | Same as above |
+| GRF-FE-15 | ✅ | Archived hidden | Active story only. | Same as above |
 
 ### Frontend — Scene table
 
@@ -230,8 +232,9 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | TBL-FE-09 | ✅ | Row click → editor | One click to write. | Same as above |
 | TBL-FE-10 | ✅ | Row ✎ → Scene Modal | Fix metadata inline. | Same as above |
 | TBL-FE-11 | ✅ | Row archive / unarchive | Set aside for compile hygiene. | Same as above |
-| TBL-FE-12 | 🔄 | Archive toast | Confirmation on archive. | **Modify:** `src/frontend/src/features/table/ScenesTablePage.tsx` (add `useToast` call) |
-| TBL-FE-13 | ⬜ | Seq header click → story order | One click to return to story sequence. | **Modify:** `src/frontend/src/features/table/ScenesTablePage.tsx` |
+| TBL-FE-12 | ✅ | Row delete (archived only) | As an author, I want a delete button on archived table rows that shows a confirm dialog, with a 409 blocked-deletion error toast if references exist. | `src/frontend/src/features/table/ScenesTablePage.tsx`, `src/frontend/src/components/ConfirmDialog.tsx` |
+| TBL-FE-13 | 🔄 | Archive toast | Confirmation on archive. | **Modify:** `src/frontend/src/features/table/ScenesTablePage.tsx` (add `useToast` call) |
+| TBL-FE-14 | ⬜ | Seq header click → story order | One click to return to story sequence. | **Modify:** `src/frontend/src/features/table/ScenesTablePage.tsx` |
 
 ### Frontend — Scene Modal
 
@@ -245,14 +248,16 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | MOD-FE-04 | ✅ | **Basics** — Soft placement | Planning links. | Same as above |
 | MOD-FE-05 | ✅ | **Basics** — Structure | Chapter/Part picks. | Same as above |
 | MOD-FE-06 | ✅ | Save scene | Single Save for Basics. | Same + `src/frontend/src/api/scenes.ts`, `src/frontend/src/api/relationships.ts`, `src/frontend/src/queries/scenes.ts` |
-| MOD-FE-07 | ✅ | Archive scene | Archive without confirm. | Same as above |
-| MOD-FE-08 | ✅ | Create mode — Basics only | Focused first save. | Same as above |
-| MOD-FE-09 | ⬜ | **Characters** tab — chips + add/remove | Tag characters in scene. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Create:** `src/frontend/src/api/characters.ts`; **Modify:** `src/frontend/src/queries/keys.ts` (add characters key); **Create:** `src/frontend/src/queries/characters.ts`; **Depends on:** STR-API-13 (characters API) |
-| MOD-FE-10 | ⬜ | **Characters** — ↻ AI-redo + unrecognized | Refresh from prose. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Modify:** `src/frontend/src/api/scenes.ts` (add `enrichScene`); **Depends on:** SCN-API-06, Phase 7 |
-| MOD-FE-11 | ⬜ | **Summary** tab — textarea + Save | Hand-write/edit summary. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; uses existing `src/frontend/src/api/scenes.ts` (`updateScene`) |
-| MOD-FE-12 | ⬜ | **Summary** — ↻ AI-redo + hint | Bookkeeping toggle visibility. | Same + `src/frontend/src/api/books.ts` (read bookkeeping); **Depends on:** Phase 7 |
-| MOD-FE-13 | ⬜ | **Dependencies** tab — list + add/edit/delete | Record scene prerequisites. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Create:** `src/frontend/src/api/dependencies.ts`; **Create:** `src/frontend/src/queries/dependencies.ts`; **Depends on:** SCN-API-09, SCN-API-12 |
-| MOD-FE-14 | ⬜ | **Dependencies** — depended-on-by (amber) | Warning before rewriting load-bearing scene. | Same as above |
+| MOD-FE-07 | ✅ | Archive / Unarchive scene | As an author, I want to archive a scene (reversible, no confirm) or unarchive an archived scene from the modal, so I can manage scene lifecycle without switching to the table. | Same as above |
+| MOD-FE-08 | ✅ | Delete scene (archived only) | As an author, I want to permanently delete an archived scene from the modal with a confirm dialog; if it has references, a blocked-deletion error tells me what to clean up first. The prose file moves to `.trash/`. | Same + `src/frontend/src/components/ConfirmDialog.tsx` |
+| MOD-FE-09 | ✅ | Autofill nodes toggle | As an author, I want a toggle to disable the automatic Previous↔Next coupling in the Sequence section, so I can manually set both endpoints independently when needed. | `src/frontend/src/features/sceneModal/SceneModal.tsx` |
+| MOD-FE-10 | ✅ | Create mode — Basics only | Focused first save. | Same as above |
+| MOD-FE-11 | ⬜ | **Characters** tab — chips + add/remove | Tag characters in scene. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Create:** `src/frontend/src/api/characters.ts`; **Modify:** `src/frontend/src/queries/keys.ts` (add characters key); **Create:** `src/frontend/src/queries/characters.ts`; **Depends on:** STR-API-13 (characters API) |
+| MOD-FE-12 | ⬜ | **Characters** — ↻ AI-redo + unrecognized | Refresh from prose. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Modify:** `src/frontend/src/api/scenes.ts` (add `enrichScene`); **Depends on:** SCN-API-06, Phase 7 |
+| MOD-FE-13 | ⬜ | **Summary** tab — textarea + Save | Hand-write/edit summary. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; uses existing `src/frontend/src/api/scenes.ts` (`updateScene`) |
+| MOD-FE-14 | ⬜ | **Summary** — ↻ AI-redo + hint | Bookkeeping toggle visibility. | Same + `src/frontend/src/api/books.ts` (read bookkeeping); **Depends on:** Phase 7 |
+| MOD-FE-15 | ⬜ | **Dependencies** tab — list + add/edit/delete | Record scene prerequisites. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Create:** `src/frontend/src/api/dependencies.ts`; **Create:** `src/frontend/src/queries/dependencies.ts`; **Depends on:** SCN-API-09, SCN-API-12 |
+| MOD-FE-16 | ⬜ | **Dependencies** — depended-on-by (amber) | Warning before rewriting load-bearing scene. | Same as above |
 
 ---
 
@@ -555,8 +560,10 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | INF-FE-05 | ✅ | SearchableSelect | Searchable dropdowns. | `src/frontend/src/components/SearchableSelect.tsx` |
 | INF-FE-06 | ✅ | BlockedDeletionDialog | 409 blockers mapped to fix locations. | `src/frontend/src/components/BlockedDeletionDialog.tsx` |
 | INF-FE-07 | ✅ | UI primitives (Button, Field, Input) | Consistent form controls. | `src/frontend/src/components/ui.tsx` |
-| INF-FE-08 | ⬜ | SSE helpers in `api/` | Typed EventSource wrappers. | **Modify:** `src/frontend/src/api/client.ts` |
-| INF-FE-09 | ⬜ | `events/useBookEvents` | SSE wired on book entry. | **Create:** `src/frontend/src/events/useBookEvents.ts` |
+| INF-FE-08 | ✅ | ConfirmDialog | Reusable confirm dialog for destructive/irreversible acts (doc 06 §1.5). Danger-styled confirm button. | `src/frontend/src/components/ConfirmDialog.tsx` |
+| INF-FE-08a | ✅ | `ApiError.blockedByMessage` | As an author, when a delete is blocked by references (409), I want the error to tell me exactly what's blocking it (e.g. "Blocked by: 2 soft relationships, 1 conversation") instead of a generic message. | `src/frontend/src/api/client.ts` |
+| INF-FE-09 | ⬜ | SSE helpers in `api/` | Typed EventSource wrappers. | **Modify:** `src/frontend/src/api/client.ts` |
+| INF-FE-10 | ⬜ | `events/useBookEvents` | SSE wired on book entry. | **Create:** `src/frontend/src/events/useBookEvents.ts` |
 
 ---
 

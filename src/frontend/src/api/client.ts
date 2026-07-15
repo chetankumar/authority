@@ -20,6 +20,30 @@ export class ApiError extends Error {
     const f = this.detail.fields;
     return f && typeof f === "object" ? (f as Record<string, string>) : {};
   }
+
+  /** 409 blockedBy detail formatted as a readable string. */
+  get blockedByMessage(): string | null {
+    const b = this.detail.blockedBy;
+    if (!b || typeof b !== "object") return null;
+    const blocked = b as Record<string, unknown>;
+    const parts: string[] = [];
+    if (blocked.reason && typeof blocked.reason === "string") return blocked.reason;
+    const labels: Record<string, string> = {
+      relationships: "soft relationship",
+      dependencies: "dependency",
+      todos: "todo",
+      conversations: "conversation",
+      plotlines: "plotline",
+      jobs: "running job",
+    };
+    for (const [key, label] of Object.entries(labels)) {
+      const arr = blocked[key];
+      if (Array.isArray(arr) && arr.length > 0) {
+        parts.push(`${arr.length} ${label}${arr.length > 1 ? (key === "dependency" ? "ies" : "s") : ""}`);
+      }
+    }
+    return parts.length > 0 ? `Blocked by: ${parts.join(", ")}` : null;
+  }
 }
 
 async function parse<T>(res: Response): Promise<T> {

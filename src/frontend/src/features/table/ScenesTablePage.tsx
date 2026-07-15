@@ -288,7 +288,8 @@ export default function ScenesTablePage() {
               setDeleteError(null);
             } catch (e) {
               setConfirmDelete(null);
-              setDeleteError(e instanceof ApiError ? e.message : "Couldn't delete the scene.");
+              const msg = e instanceof ApiError ? (e.blockedByMessage || e.message) : "Couldn't delete the scene.";
+              setDeleteError(msg);
             }
           }}
           onCancel={() => setConfirmDelete(null)}
