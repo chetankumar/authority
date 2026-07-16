@@ -11,7 +11,7 @@ The book's structural workshop. Sub-nav tabs **Parts · Chapters · Plotlines ·
 - **Parts:** ordered rows sorted by `seq`, drag-and-drop to reorder (`POST /parts/reorder`), inline title edit, delete (409 → BlockedDeletionDialog), [+ Add part].
 - **Chapters:** rows grouped under part headings + "Unassigned"; each row has a Part select (`PATCH {partId}`); drag-and-drop global reorder (`POST /chapters/reorder`); same CRUD pattern.
 - **Plotlines:** rows with computed scene-count badges (from `primaryPlotlineId`/`secondaryPlotlineIds` on scenes); CRUD inline (title, description); `DELETE` 409-blocked while any scene references the plotline.
-- **Book:** Story summary textarea · System prompt textarea (hint "Prepended to every AI request for this book") · Bookkeeping toggles (summaryOnSave, charactersOnSave) · [Save] → `PATCH /books/{id}`.
+- **Book:** Story summary textarea · System prompt textarea (hint "Prepended to every AI request for this book") · Bookkeeping toggles (summary/characters when leaving scene) · [Save] → `PATCH /books/{id}`.
 
 ## Implementation status
 

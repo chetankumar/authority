@@ -96,7 +96,7 @@ def parse_metadata_proposals(text: str, scene_id: str) -> tuple[str, list[Propos
 
 
 def parse_enrichment_result(text: str) -> dict[str, Any]:
-    """Parse enrichment JSON: {summary?, characterIds?, unrecognizedNames?}."""
+    """Parse enrichment JSON: {summary?, matched?, matchedCharacterIds?, unrecognizedNames?}."""
     _, parsed = extract_fenced_json(text)
     if isinstance(parsed, dict):
         return parsed

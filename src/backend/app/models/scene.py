@@ -13,7 +13,7 @@ who owns it:
 - ``SceneMeta`` — ``scenes/{id}/meta.json``: soft narrative metadata the
   author edits by hand (location/dateTime/mood/emotionalArc).
 - ``SceneBookkeeping`` — ``scenes/{id}/bookkeeping.json``: AI-owned fields
-  that churn on nearly every autosave/enrichment run (summary/characterIds)
+  that churn on enrichment (summary + characters with per-scene involvement)
   plus content-derived stats (contentHash/wordCount).
 
 ``Scene`` (the API response) is the assembled full shape — record + meta +
@@ -25,7 +25,7 @@ load (``SceneWithContent``).
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import Placement, RelationshipType, SceneStatus
 
@@ -63,14 +63,36 @@ class SceneMeta(BaseModel):
     updatedAt: str = ""
 
 
+class SceneCharacterRef(BaseModel):
+    """A cast member tagged on a scene, plus what they do/undergo there."""
+
+    characterId: str
+    involvement: str = ""
+
+
 class SceneBookkeeping(BaseModel):
     """Persisted in ``scenes/{id}/bookkeeping.json`` — AI-owned + content-derived."""
 
     summary: str = ""
-    characterIds: list[str] = Field(default_factory=list)
+    characters: list[SceneCharacterRef] = Field(default_factory=list)
     contentHash: str = ""
     wordCount: int = 0
     updatedAt: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_character_ids(cls, data: object) -> object:
+        """Old shape stored ``characterIds: string[]``; promote to involvement rows."""
+        if not isinstance(data, dict):
+            return data
+        if "characters" not in data and "characterIds" in data:
+            ids = data.pop("characterIds") or []
+            data["characters"] = [
+                {"characterId": cid, "involvement": ""} for cid in ids if isinstance(cid, str)
+            ]
+        else:
+            data.pop("characterIds", None)
+        return data
 
 
 class Scene(BaseModel):
@@ -94,7 +116,7 @@ class Scene(BaseModel):
     mood: str = ""
     emotionalArc: str = ""
     summary: str = ""
-    characterIds: list[str] = Field(default_factory=list)
+    characters: list[SceneCharacterRef] = Field(default_factory=list)
     status: SceneStatus = SceneStatus.active
     contentHash: str = ""
     wordCount: int = 0
@@ -173,7 +195,7 @@ class SceneUpdate(BaseModel):
     mood: str | None = None
     emotionalArc: str | None = None
     summary: str | None = None
-    characterIds: list[str] | None = None
+    characters: list[SceneCharacterRef] | None = None
     chapterId: str | None = None
     partId: str | None = None
     primaryPlotlineId: str | None = None

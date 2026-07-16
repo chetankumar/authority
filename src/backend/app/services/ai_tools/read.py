@@ -38,7 +38,7 @@ def build_read_tools(book_id: str, registry: BookRegistry) -> list[Any]:
             return json.dumps({"error": f"Scene {id} not found"})
         content = mgr.read_scene_content(rec.file)
         # Merge master + per-scene meta/bookkeeping so the AI still sees the
-        # full scene shape (mood/summary/characterIds etc.), unaware they now
+        # full scene shape (mood/summary/characters etc.), unaware they now
         # live in separate files (doc 03).
         data = rec.model_dump(mode="json")
         data.update(mgr.get_scene_meta(id).model_dump(mode="json"))

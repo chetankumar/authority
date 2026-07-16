@@ -5,6 +5,7 @@ SceneService. ``seq``/``placement`` are computed server-side on read.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from app.api.deps import get_conversation_service, get_enrichment_service, get_scene_service
@@ -68,6 +69,19 @@ async def enrich_scene(
 ) -> dict:
     job = await enrich.enrich_on_demand(book_id, scene_id, body.scope)
     return {"jobId": job.id}
+
+
+@router.post("/{scene_id}/enrich/auto")
+async def enrich_scene_auto(
+    book_id: str,
+    scene_id: str,
+    enrich: EnrichmentService = Depends(get_enrichment_service),
+) -> JSONResponse:
+    """Leave-scene path: respects bookkeeping toggles. 202 if queued, 200 if skipped."""
+    job = await enrich.enrich_auto(book_id, scene_id)
+    if job is None:
+        return JSONResponse({"queued": False}, status_code=200)
+    return JSONResponse({"queued": True, "jobId": job.id}, status_code=202)
 
 
 @router.get("/{scene_id}/conversations", response_model=list[ConversationSummary])

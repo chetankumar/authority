@@ -139,7 +139,7 @@ class ProposalService:
             "mood",
             "emotionalArc",
             "summary",
-            "characterIds",
+            "characters",
         }
         if field not in allowed:
             raise validation({"field": f"Cannot update field '{field}' via proposal."})
@@ -186,13 +186,15 @@ class ProposalService:
         if payload.sceneId:
             scene = next((s for s in mgr.get_scenes() if s.id == payload.sceneId), None)
             if scene is not None:
-                current_ids = mgr.get_scene_bookkeeping(payload.sceneId).characterIds
-                if chr_id not in current_ids:
-                    new_ids = [*current_ids, chr_id]
-                    body = SceneUpdate.model_construct(characterIds=new_ids)
-                    object.__setattr__(body, "__pydantic_fields_set__", {"characterIds"})
+                from app.models.scene import SceneCharacterRef
+
+                current = list(mgr.get_scene_bookkeeping(payload.sceneId).characters)
+                if not any(r.characterId == chr_id for r in current):
+                    new_chars = [*current, SceneCharacterRef(characterId=chr_id, involvement="")]
+                    body = SceneUpdate.model_construct(characters=new_chars)
+                    object.__setattr__(body, "__pydantic_fields_set__", {"characters"})
                     await self._scenes.update_scene(book_id, payload.sceneId, body)
-                    self._hub.emit(book_id, "scene-updated", {"id": payload.sceneId, "changed": ["characterIds"]})
+                    self._hub.emit(book_id, "scene-updated", {"id": payload.sceneId, "changed": ["characters"]})
 
         return {"characterId": chr_id}
 

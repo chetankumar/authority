@@ -119,18 +119,18 @@ Unknown tokens are left literal at resolve time but flagged at AI-Job definition
 
 ## Enrichment (system bookkeeping)
 
-Maintains `scene.summary` and `scene.characterIds`.
+Maintains `scene.summary` and `scene.characters` (each `{ characterId, involvement }`).
 
-**Trigger — settle-then-run:** every content save with a changed hash (re)sets a per-scene 60s settle timer. Timer fires → queue one `system` job scoped by the book's toggles (`summaryOnSave`, `charactersOnSave`; both off, or neither toggle's model resolves, → nothing queued). Saves while queued replace the queued job (never two per scene); navigation away settles immediately. On-demand: `POST /scenes/{id}/enrich` runs regardless of toggles.
+**Trigger — leave-scene + on-demand:** content saves never schedule enrichment. When the author **leaves** the scene editor (and prose changed this visit), the client calls `POST /scenes/{id}/enrich/auto`, which queues a `system` job scoped by the book's toggles (`summaryOnSave`, `charactersOnSave`; both off, or neither toggle's model resolves, → nothing queued). On-demand: `POST /scenes/{id}/enrich` (Scene Modal ↻ AI-redo) runs regardless of toggles. Saves while a system job is queued replace the queued job (never two per scene).
 
 **Execution — two independent calls, not one:** scope `summary` and scope `characters` are **separate model invocations**, each against its own configured model (`ai.sceneSummaryModelId` / `ai.characterParsingModelId`, doc 03/04) — this is what makes it possible to run summarization on one model and character-matching on another. Scope `both` runs both calls (even when they happen to resolve to the same model, for uniformity); either half is skipped independently if its model doesn't resolve (own slot → utility fallback → unset). A system `Job` no longer carries a single `modelId` at enqueue time — each half resolves its model at run time, and `job.result.modelsUsed` records which model served each half (`{"sceneSummary": "mdl-..", "characterParsing": "mdl-.."}`).
 
 Input for each call: scene prose (+ character directory of names/aliases, for the character-parsing call).
 
-- **Clear cases:** Summary call overwrites `scene.summary`. Character call sets `characterIds` to matched *existing* characters (exact name/alias + model-confirmed ids). Field changes emit `scene-updated` SSE.
+- **Clear cases:** Summary call overwrites `scene.summary`. Character call sets `characters` to matched *existing* cast members with a one-line `involvement` of what they do in this scene. Field changes emit `scene-updated` SSE.
 - **Unclear cases:** unmatched names, ambiguous matches, or “is this too minor?” → **EscalationService** opens a chat on the scene with a **caller-supplied short title** (enrichment uses `who is {name}?`) and seeds the thread with the longer question, defaulting the escalation chat's AI participant to the **character-parsing model** that produced the ambiguity (not the summary model). The AI may then `propose_character_create` (or other propose tools); the author Accepts before anything is written to the sheet. Enrichment **never silently creates** character records.
 
-**Toggle semantics:** toggle ON = AI owns the field and always wins on save for *clear* updates. Want a hand-written summary? Flip it off. No freeze flags.
+**Toggle semantics:** toggle ON = AI owns the field and may overwrite on leave-scene for *clear* updates. Want a hand-written summary? Flip it off. No freeze flags.
 
 ## AI tool-calling surface
 

@@ -196,38 +196,35 @@ Author writes. Two seconds after a pause:
 → SERVER  SceneService (lock): 1. atomic write [scenes/1f2e9b-the-arrival.md]
           2. wordCount 412 · new sha256 ≠ old →
              a. dependency fanout: no Dependency rows point here yet → none
-             b. EnrichmentService: (re)set 60s settle timer for scn-1f2e9b
-          3. persist [db/scenes.json] · git-status SSE (badge count updates)
+             b. (no enrichment timer — leave-scene / on-demand only)
+          3. persist [scenes/…/bookkeeping.json] · git-status SSE (badge count updates)
 → REPLY   { wordCount:412, contentHash:"sha256:…", todosCreated:[] }
 → UI      Bottom bar: "412 words · Saved 2:41pm". This repeats invisibly with
-          every pause; each save resets the settle timer.
+          every pause.
 ```
 
-## J12 — Enrichment fires (the system working alone)
+## J12 — Enrichment fires (leave scene)
 
-Author stops typing for 60s (or navigates away → immediate settle).
+Author finishes writing and navigates away (Prev/Next or leaves the editor).
 
 ```
-→ SERVER  settle timer fires → EnrichmentService reads book.json.bookkeeping
+→ HTTP    POST /scenes/scn-1f2e9b/enrich/auto   (only if prose changed this visit)
+→ SERVER  EnrichmentService reads book.json.bookkeeping
           {summaryOnSave:true, charactersOnSave:true} → JobService enqueues
           Job job-c2d4e6 {type:"system", scope:"both", sceneId, modelId: null}
           [db/jobs.json] · EventHub: job {status:"queued"}
 → WORKER  picks it up → job "running" (SSE) →
-          reads scene prose [scenes/….md] + character directory (memory; empty so far)
-          → two independent calls: AIOrchestrator + sceneSummaryModel → summary text;
-          AIOrchestrator + characterParsingModel → character matching finds
-          the name "Marlow" but no directory entry exists → never silently creates
-          (job.result.modelsUsed records both model ids)
-→ SERVER  (lock) scene.summary = generated text · characterIds for exact matches only ·
-          persist [db/scenes.json, db/jobs.json] ·
-          unmatched/ambiguous → EscalationService opens a chat on the scene seeded
-          with the question · SSE: scene-updated · job {status:"done", result}
-→ UI      Right pane → Notes/AI Jobs: escalation chat appears. Author answers;
-          AI may propose_character_create → Accept → character sheet (+ optional tag).
-          Clear bookkeeping writes need no confirm — the toggles are standing consent.
+          reads scene prose [scenes/….md] + character directory (memory)
+          → two independent calls: scene summary → summary text;
+             character parsing → matched [{characterId, involvement}] for existing cast only
+          → unmatched names escalate (never silently creates)
+→ SERVER  (lock) scene.summary = generated text · characters with involvement ·
+          persist [scenes/…/bookkeeping.json, db/jobs.json] ·
+          SSE: scene-updated {changed:["summary","characters"]} · job {status:"done"}
+→ UI      Right pane → Notes/AI Jobs: escalation chat appears when needed.
 ```
 
-**CLICK** in the escalation chat → author decides → proposal Accept (when Characters API exists) → later enrichment matches him → `scene-updated {changed:["characterIds"]}`.
+**CLICK** in the escalation chat → author decides → proposal Accept → later enrichment matches him → `scene-updated {changed:["characters"]}`.
 
 ## J13 — Stuck: chat from a selection
 
@@ -300,9 +297,9 @@ Author selects a paragraph, **CLICK** [Chat] in the tool panel.
 → SERVER  ProposalService (lock): locate via index → cnv-b8d1f0 → pending ✓ ·
           type edit → read [scenes/1f2e9b-the-arrival.md] · find first exact
           occurrence of payload.find — present → replace once → save through the
-          STANDARD content path: atomic write, hash recompute, dependency fanout,
-          settle-timer reset (an applied edit is a content change like any other) ·
-          proposal status "applied" + resolvedAt  [.md, db/scenes.json, cnv file]
+          STANDARD content path: atomic write, hash recompute, dependency fanout
+          (an applied edit is a content change like any other; enrichment waits for leave) ·
+          proposal status "applied" + resolvedAt  [.md, bookkeeping.json, cnv file]
           · SSE scene-updated, git-status
 → REPLY   { proposal, result:{ wordCount, contentHash } }
 → UI      Card turns green ✓. The editor (same scene open) reconciles content.
@@ -455,4 +452,4 @@ CLICK     [Compile book]
 
 J11 → J12 → J13/J14 → J15 → J16 → J17 is the author's daily cycle: write, let the system keep the books, consult when stuck, apply what's accepted, honor the dependencies, commit the day. J18 is the horizon it all points at.
 
-J12 and J16.5 are the two traces with no author in them — the system keeping its own books while the prose gets written. Both follow the same discipline: the expensive work (a model call, a `git status`) is deferred behind a settle timer and never blocks the save, and the author is told only when there's something to decide.
+J12 and J16.5 are the two traces with no author waiting on them — the system keeping its own books while the prose gets written. Both follow the same discipline: the expensive work (a model call, a `git status`) is deferred (leave-scene for enrichment; 5s debounce for git) and never blocks the save, and the author is told only when there's something to decide.

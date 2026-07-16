@@ -30,7 +30,7 @@ from app.models.conversation import Conversation, ConversationSummary
 from app.models.enums import ProposalStatus
 from app.models.job import Job
 from app.models.plotline import PlotlineRecord
-from app.models.scene import Dependency, SceneBookkeeping, SceneMeta, SceneRecord, SoftRelationship
+from app.models.scene import Dependency, SceneBookkeeping, SceneCharacterRef, SceneMeta, SceneRecord, SoftRelationship
 from app.services.book_scanner import _find_cover
 
 log = logging.getLogger("authority.books")
@@ -222,10 +222,22 @@ class BookDataManager:
 
     def _ensure_bookkeeping_loaded(self) -> dict[str, SceneBookkeeping]:
         if self._scene_bookkeeping is None:
-            self._scene_bookkeeping = {
-                rec.id: self._read_scene_object(self._scene_folder(rec.id) / "bookkeeping.json", SceneBookkeeping)
-                for rec in self.get_scenes()
-            }
+            loaded: dict[str, SceneBookkeeping] = {}
+            for rec in self.get_scenes():
+                path = self._scene_folder(rec.id) / "bookkeeping.json"
+                raw_had_ids = False
+                if path.exists():
+                    try:
+                        raw = json.loads(path.read_text(encoding="utf-8"))
+                        raw_had_ids = isinstance(raw, dict) and "characterIds" in raw and "characters" not in raw
+                    except Exception:
+                        raw_had_ids = False
+                bk = self._read_scene_object(path, SceneBookkeeping)
+                loaded[rec.id] = bk
+                # Persist the involvement-shape migration so we don't re-migrate forever.
+                if raw_had_ids:
+                    atomic_write_json(path, bk.model_dump(mode="json"))
+            self._scene_bookkeeping = loaded
         return self._scene_bookkeeping
 
     def get_scene_bookkeeping(self, scene_id: str) -> SceneBookkeeping:
@@ -397,7 +409,11 @@ class BookDataManager:
             )
             bookkeeping = SceneBookkeeping(
                 summary=row.get("summary", ""),
-                characterIds=row.get("characterIds") or [],
+                characters=[
+                    SceneCharacterRef(characterId=cid, involvement="")
+                    for cid in (row.get("characterIds") or [])
+                    if isinstance(cid, str)
+                ],
                 contentHash=row.get("contentHash", ""),
                 wordCount=row.get("wordCount", 0),
                 updatedAt=row.get("updatedAt", ""),

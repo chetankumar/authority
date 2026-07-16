@@ -319,7 +319,7 @@ class StructureService:
             scenes_blocking = [
                 {"id": sid, "title": titles_by_id.get(sid, sid)}
                 for sid, bk in all_bookkeeping.items()
-                if chr_id in bk.characterIds
+                if chr_id in {ref.characterId for ref in bk.characters}
             ]
             relationships_blocking = [
                 {"id": r.id, "title": f"{r.aToB} / {r.bToA}"}
@@ -340,8 +340,8 @@ class StructureService:
     def _character_scene_counts(bookkeeping_by_scene) -> dict[str, int]:
         counts: dict[str, int] = {}
         for bk in bookkeeping_by_scene.values():
-            for cid in bk.characterIds:
-                counts[cid] = counts.get(cid, 0) + 1
+            for ref in bk.characters:
+                counts[ref.characterId] = counts.get(ref.characterId, 0) + 1
         return counts
 
     # ---- Character relationships ------------------------------------------------

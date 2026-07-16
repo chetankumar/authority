@@ -180,14 +180,22 @@ class PlaceholderRegistry:
         def scene_characters() -> str:
             if scene is None:
                 return "(none tagged)"
-            character_ids = all_bookkeeping.get(scene.id, SceneBookkeeping()).characterIds
-            if not character_ids:
+            refs = all_bookkeeping.get(scene.id, SceneBookkeeping()).characters
+            if not refs:
                 return "(none tagged)"
             getter = getattr(mgr, "get_characters", None)
             if getter is None:
                 return "(character sheet not loaded)"
             by_id = {c.id: c for c in getter()}
-            entries = [format_character(by_id[i]) for i in character_ids if i in by_id]
+            entries = []
+            for ref in refs:
+                c = by_id.get(ref.characterId)
+                if c is None:
+                    continue
+                block = format_character(c)
+                if ref.involvement.strip():
+                    block = f"{block}\nIn this scene: {ref.involvement.strip()}"
+                entries.append(block)
             return "\n\n".join(entries) if entries else "(none tagged)"
 
         def plotlines() -> str:

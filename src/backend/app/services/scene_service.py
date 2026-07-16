@@ -8,7 +8,7 @@ one of only two routes that write scene ``.md`` files (the prose hard rule).
 Persistence is split three ways (doc 03): the master ``SceneRecord``
 (identity/hard-chain/structure, in ``db/scenes.json``), ``SceneMeta``
 (location/dateTime/mood/emotionalArc, in ``scenes/{id}/meta.json``), and
-``SceneBookkeeping`` (summary/characterIds/contentHash/wordCount, in
+``SceneBookkeeping`` (summary/characters/contentHash/wordCount, in
 ``scenes/{id}/bookkeeping.json``). This service is the one place that routes a
 flat ``SceneUpdate`` request across the three, and assembles the flat ``Scene``
 response back out of them — nothing outside this file needs to know the split
@@ -195,8 +195,21 @@ class SceneService:
             if "summary" in fields:
                 bookkeeping.summary = body.summary or ""
                 bookkeeping_touched = True
-            if "characterIds" in fields and body.characterIds is not None:
-                bookkeeping.characterIds = body.characterIds
+            if "characters" in fields and body.characters is not None:
+                seen: set[str] = set()
+                cleaned: list = []
+                for ref in body.characters:
+                    cid = ref.characterId
+                    if cid in seen:
+                        continue
+                    seen.add(cid)
+                    cleaned.append(ref)
+                if cleaned:
+                    known = {c.id for c in mgr.get_characters()}
+                    unknown = [r.characterId for r in cleaned if r.characterId not in known]
+                    if unknown:
+                        raise validation({"characters": f"Unknown character id(s): {', '.join(unknown)}"})
+                bookkeeping.characters = cleaned
                 bookkeeping_touched = True
 
             if "chapterId" in fields or "partId" in fields:
@@ -264,7 +277,6 @@ class SceneService:
             atomic_write_text(mgr.scene_file_path(record.file), content)
             word_count, content_hash = _content_metrics(content)
             bookkeeping = mgr.get_scene_bookkeeping(scene_id).model_copy()
-            hash_changed = content_hash != bookkeeping.contentHash
             bookkeeping.wordCount = word_count
             bookkeeping.contentHash = content_hash
             bookkeeping.updatedAt = _now()
@@ -273,13 +285,9 @@ class SceneService:
             # contend with or block a chain splice/heal on an unrelated scene.
             mgr.save_scene_bookkeeping(scene_id, bookkeeping)
 
-            todos_created: list[dict] = []
-            if hash_changed:
-                # Phase 6 hook — dependency-todo fanout (no dependency CRUD yet).
-                if self._enrichment is not None:
-                    self._enrichment.reset_settle_timer(book_id, scene_id)
-
-            return ContentSaveResult(wordCount=word_count, contentHash=content_hash, todosCreated=todos_created)
+            # Enrichment is leave-scene / on-demand only — content saves never
+            # schedule AI work (doc 05). Dependency-todo fanout lands with Phase 6c.
+            return ContentSaveResult(wordCount=word_count, contentHash=content_hash, todosCreated=[])
 
     # ---- soft relationships (doc 04 §6) -------------------------------------
 
@@ -377,7 +385,7 @@ class SceneService:
             chapterId=record.chapterId, partId=record.partId,
             primaryPlotlineId=record.primaryPlotlineId, secondaryPlotlineIds=record.secondaryPlotlineIds,
             mood=meta.mood, emotionalArc=meta.emotionalArc,
-            summary=bookkeeping.summary, characterIds=bookkeeping.characterIds,
+            summary=bookkeeping.summary, characters=bookkeeping.characters,
             status=record.status, contentHash=bookkeeping.contentHash, wordCount=bookkeeping.wordCount,
             seq=seq, placement=placement,
             createdAt=record.createdAt, updatedAt=updated_at,

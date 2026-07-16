@@ -8,7 +8,7 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06 §2](../../../../docs/claude-tech-spe
 
 | event | action |
 |---|---|
-| `scene-updated` | patch `['scenes', bookId]` (live summary/characterIds updates) |
+| `scene-updated` | patch `['scenes', bookId]` (live summary/characters updates) |
 | `job` | patch `['jobs', bookId, sceneId]` + streaming modal state |
 | `todos-created` | invalidate `['todos', bookId]` |
 | `git-status` | patch `['git', bookId]` (drives the top-bar amber badge) |

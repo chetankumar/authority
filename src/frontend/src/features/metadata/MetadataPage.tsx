@@ -770,7 +770,7 @@ function BookTab({ bookId }: { bookId: string }) {
             checked={summaryOnSave}
             onChange={(e) => setSummaryOnSave(e.target.checked)}
           />
-          Update summary on save
+          Update summary when leaving scene
         </label>
         <label className="flex items-center gap-2 font-ui text-[0.875rem] text-ink">
           <input
@@ -778,7 +778,7 @@ function BookTab({ bookId }: { bookId: string }) {
             checked={charactersOnSave}
             onChange={(e) => setCharactersOnSave(e.target.checked)}
           />
-          Update characters on save
+          Update character involvement when leaving scene
         </label>
       </div>
 

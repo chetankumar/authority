@@ -9,11 +9,11 @@ Auto-collapsed left nav (icon rail) · center writing column · right pane (320p
 ## Tool panel
 
 - **AI-Jobs ▾** — menu from `GET /settings/ai-jobs`; pick → `POST /ai-jobs/run` with sceneId + scope (`selection` if a selection is active, else `full`) → Conversation Modal opens streaming.
-- **Metadata** → Scene Modal. **Bookkeeping** → popover of toggles → `PATCH /books/{id} {bookkeeping}` (footer "Applies to this whole book"). **Chat** → `POST /conversations {kind:"chat", parent:scene}` → Conversation Modal (active selection rides the first message as context). **◫** pane toggle (persisted in ui.json).
+- **Metadata** → Scene Modal. **Bookkeeping** → popover of leave-scene toggles → `PATCH /books/{id} {bookkeeping}` (footer "Applies to this whole book"). Manual ↻ AI-redo is on the Scene Modal Characters/Summary tabs. **Chat** → `POST /conversations {kind:"chat", parent:scene}` → Conversation Modal (active selection rides the first message as context). **◫** pane toggle (persisted in ui.json).
 
 ## Writing surface
 
-TipTap + tiptap-markdown, contenteditable (Grammarly-compatible). Inline editable title → `PATCH {title}` (slug-renames the file). Autosave: 2s debounce + blur + route-leave → `PUT content`; Ctrl/Cmd+S immediate. Save indicator: "Saving…" → "Saved · 2:41pm"; failure → persistent amber "Not saved — retrying". Live local word count.
+TipTap + tiptap-markdown, contenteditable (Grammarly-compatible). Inline editable title → `PATCH {title}` (slug-renames the file). Autosave: 2s debounce + blur + route-leave → `PUT content`; Ctrl/Cmd+S immediate. On leave (if prose changed this visit) → `POST …/enrich/auto`. Save indicator: "Saving…" → "Saved · 2:41pm"; failure → persistent amber "Not saved — retrying". Live local word count.
 
 ## Prev / Next
 

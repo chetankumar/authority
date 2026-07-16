@@ -62,7 +62,7 @@ a3f9c2-my-great-novel/
     1f2e9b-the-arrival.md        # prose only; source of truth for content
     scn-1f2e9b/                  # per-scene folder — everything but identity/hard-chain/structure
       meta.json                  # location, dateTime, mood, emotionalArc
-      bookkeeping.json           # summary, characterIds, contentHash, wordCount
+      bookkeeping.json           # summary, characters[{characterId, involvement}], contentHash, wordCount
       dependencies.json          # this scene's outgoing depends-on edges
       relationships.json         # this scene's outgoing soft edges
   db/
@@ -133,11 +133,12 @@ neither shares a file, a write, or a corruption blast radius with this table.
 ## scenes/{id}/bookkeeping.json — AI-owned + content-derived
 
 ```json
-{ "summary": "", "characterIds": [], "contentHash": "sha256:...", "wordCount": 0, "updatedAt": "..." }
+{ "summary": "", "characters": [{ "characterId": "chr-x", "involvement": "Finds the key." }],
+  "contentHash": "sha256:...", "wordCount": 0, "updatedAt": "..." }
 ```
 
-- `summary` and `characterIds` are system-maintained (enrichment) when the corresponding toggle is on; manually editable regardless. Enrichment's two independent calls (doc 05) each write here — never to the master table.
-- `contentHash`/`wordCount` recomputed on every content save. Autosave now touches **only this file** — never `db/scenes.json` — so it can never contend with or block a chain splice/heal on an unrelated scene. A hash change triggers dependency-todo creation and the enrichment settle timer.
+- `summary` and `characters` (each entry: `characterId` + short `involvement` of what they do in **this** scene) are system-maintained (enrichment) when the corresponding toggle is on; manually editable regardless. Enrichment's two independent calls (doc 05) each write here — never to the master table. Load migrates legacy `characterIds: string[]` → `characters` with empty involvement.
+- `contentHash`/`wordCount` recomputed on every content save. Autosave now touches **only this file** — never `db/scenes.json` — so it can never contend with or block a chain splice/heal on an unrelated scene. A hash change triggers dependency-todo creation; enrichment is **not** scheduled from autosave (leave-scene / on-demand only — doc 05).
 
 ## scenes/{id}/relationships.json — this scene's outgoing soft edges
 
@@ -214,7 +215,7 @@ because fiction rarely wants a strict int, e.g. `"mid-30s"`) and **craft**
 (want = the external, plot-visible goal; need = the internal psychological
 truth, often in tension with want; flaw = what drives conflict; arc = how the
 character changes). `sceneCount` is **computed** on read (scanned from every
-scene's `scenes/{id}/bookkeeping.json` → `characterIds`), never stored — same
+scene's `scenes/{id}/bookkeeping.json` → `characters[].characterId`), never stored — same
 pattern as `Plotline.sceneCount` (which scans the master table's
 `primaryPlotlineId`/`secondaryPlotlineIds` instead, since those stayed there).
 

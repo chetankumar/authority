@@ -1,17 +1,25 @@
 // Scene Modal (doc 06 §8) — everything about a scene that isn't its prose.
-// Create shows Basics only; edit shows all tabs (Characters/Summary/Dependencies
-// arrive with later phases and render disabled for now). Basics is fully built:
-// Title/Description/free-text fields + Sequence (splice) + Soft placement + Structure.
-import { useMemo, useState } from "react";
+// Create shows Basics only; edit shows Basics · Characters · Summary · Dependencies
+// (Dependencies still soon). Characters rows carry per-scene involvement.
+import { useEffect, useMemo, useState } from "react";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Modal } from "../../components/Modal";
 import { SearchableSelect, type Option } from "../../components/SearchableSelect";
+import { useToast } from "../../components/Toast";
 import { Button, Field, Input } from "../../components/ui";
 import { ApiError } from "../../api/client";
-import { END_ID, START_ID, type RelationshipType, type Scene } from "../../api/scenes";
+import {
+  enrichScene,
+  END_ID,
+  START_ID,
+  type RelationshipType,
+  type Scene,
+  type SceneCharacterRef,
+} from "../../api/scenes";
 import type { Plotline } from "../../api/structure";
 import { useBook } from "../../queries/books";
+import { useCharacters } from "../../queries/characters";
 import {
   useCreateRelationship,
   useCreateScene,
@@ -50,11 +58,14 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   const scenesQ = useScenes(bookId);
   const bookQ = useBook(bookId);
   const plotlinesQ = usePlotlines(bookId);
+  const charactersQ = useCharacters(bookId);
+  const toast = useToast();
 
   const scenes = scenesQ.data?.scenes ?? [];
   const relationships = scenesQ.data?.relationships ?? [];
   const existing = isEdit ? scenes.find((s) => s.id === sceneId) : undefined;
   const plotlines: Plotline[] = plotlinesQ.data ?? [];
+  const cast = charactersQ.data ?? [];
 
   const [tab, setTab] = useState<(typeof TABS)[number]>("Basics");
   const [title, setTitle] = useState(existing?.title ?? "");
@@ -63,6 +74,10 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   const [dateTime, setDateTime] = useState(existing?.dateTime ?? "");
   const [mood, setMood] = useState(existing?.mood ?? "");
   const [emotionalArc, setEmotionalArc] = useState(existing?.emotionalArc ?? "");
+  const [summary, setSummary] = useState(existing?.summary ?? "");
+  const [sceneCharacters, setSceneCharacters] = useState<SceneCharacterRef[]>(
+    () => existing?.characters?.map((c) => ({ ...c })) ?? [],
+  );
   const [previousSceneId, setPreviousSceneId] = useState<string | null>(
     existing?.previousSceneId ?? initialPrevious,
   );
@@ -77,6 +92,15 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
       .map((r) => ({ type: r.type, sceneId: r.toSceneId, existingRelId: r.id })),
   );
   const [error, setError] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState<"summary" | "characters" | null>(null);
+  const [unrecognized, setUnrecognized] = useState<string[]>([]);
+
+  // Keep Characters/Summary local state in sync when SSE patches the scene.
+  useEffect(() => {
+    if (!existing) return;
+    setSummary(existing.summary ?? "");
+    setSceneCharacters(existing.characters?.map((c) => ({ ...c })) ?? []);
+  }, [existing?.summary, existing?.characters, existing?.updatedAt]);
 
   const createScene = useCreateScene(bookId);
   const updateScene = useUpdateScene(bookId);
@@ -220,9 +244,60 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
     }
   }
 
+  async function saveCharacters(next: SceneCharacterRef[]) {
+    if (!isEdit) return;
+    setError(null);
+    try {
+      await updateScene.mutateAsync({ sceneId: sceneId!, body: { characters: next } });
+      setSceneCharacters(next);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't save characters.");
+    }
+  }
+
+  async function saveSummary() {
+    if (!isEdit) return;
+    setError(null);
+    try {
+      await updateScene.mutateAsync({ sceneId: sceneId!, body: { summary } });
+      toast.success("Summary saved");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't save summary.");
+    }
+  }
+
+  async function runEnrich(scope: "summary" | "characters") {
+    if (!isEdit) return;
+    setError(null);
+    setEnriching(scope);
+    setUnrecognized([]);
+    try {
+      await enrichScene(bookId, sceneId!, scope);
+      toast.success(scope === "summary" ? "Summary enrichment queued" : "Character enrichment queued");
+    } catch (e) {
+      const msg =
+        e instanceof ApiError
+          ? e.message
+          : "Couldn't start enrichment.";
+      toast.error(msg);
+      setError(msg);
+    } finally {
+      setEnriching(null);
+    }
+  }
+
+  const castById = useMemo(() => new Map(cast.map((c) => [c.id, c])), [cast]);
+  const addCharacterOptions: Option[] = cast
+    .filter((c) => !sceneCharacters.some((r) => r.characterId === c.id))
+    .map((c) => ({ value: c.id, label: c.name }));
+
+  const summaryOnLeave = bookQ.data?.bookkeeping.summaryOnSave ?? false;
+
+  const showBasicsFooter = !isEdit || tab === "Basics";
+
   const footer = (
     <div className="flex w-full items-center justify-between">
-      {isEdit ? (
+      {isEdit && showBasicsFooter ? (
         <div className="flex gap-2">
           <Button variant="ghost" onClick={handleArchiveToggle} className={isArchived ? "text-accent" : "text-danger"}>
             {isArchived ? "Unarchive scene" : "Archive scene"}
@@ -238,11 +313,13 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
       )}
       <div className="flex gap-2">
         <Button variant="secondary" onClick={onClose}>
-          Cancel
+          {showBasicsFooter ? "Cancel" : "Close"}
         </Button>
-        <Button variant="primary" onClick={handleSave} disabled={saving}>
-          {saving ? "Saving…" : "Save scene"}
-        </Button>
+        {showBasicsFooter && (
+          <Button variant="primary" onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save scene"}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -252,7 +329,7 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
       {isEdit && (
         <div className="mb-4 flex gap-1 border-b border-line">
           {TABS.map((t) => {
-            const disabled = t !== "Basics";
+            const disabled = t === "Dependencies";
             return (
               <button
                 key={t}
@@ -271,6 +348,7 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
         </div>
       )}
 
+      {(!isEdit || tab === "Basics") && (
       <div className="grid grid-cols-2 gap-5">
         {/* Left column — the scene's facts */}
         <div className="space-y-3">
@@ -457,6 +535,122 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
           </fieldset>
         </div>
       </div>
+      )}
+
+      {isEdit && tab === "Characters" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-[0.8125rem] text-ink-soft">
+              Who appears in this scene, and what they do here.
+            </p>
+            <Button
+              variant="ghost"
+              onClick={() => void runEnrich("characters")}
+              disabled={enriching !== null}
+            >
+              {enriching === "characters" ? "↻ Working…" : "↻ AI-redo"}
+            </Button>
+          </div>
+
+          {sceneCharacters.length === 0 && (
+            <p className="text-[0.8125rem] text-ink-faint">No characters tagged yet.</p>
+          )}
+
+          <div className="space-y-3">
+            {sceneCharacters.map((ref, i) => {
+              const name = castById.get(ref.characterId)?.name ?? ref.characterId;
+              return (
+                <div key={ref.characterId} className="rounded-control border border-line bg-surface p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="font-ui text-[0.875rem] font-medium text-ink">{name}</span>
+                    <button
+                      type="button"
+                      className="text-ink-faint hover:text-danger"
+                      aria-label={`Remove ${name}`}
+                      onClick={() => {
+                        const next = sceneCharacters.filter((_, idx) => idx !== i);
+                        void saveCharacters(next);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={ref.involvement}
+                    placeholder="What they do or undergo in this scene…"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setSceneCharacters((rows) =>
+                        rows.map((r, idx) => (idx === i ? { ...r, involvement: value } : r)),
+                      );
+                    }}
+                    onBlur={(e) => {
+                      const value = e.target.value;
+                      const next = sceneCharacters.map((r, idx) =>
+                        idx === i ? { ...r, involvement: value } : r,
+                      );
+                      void saveCharacters(next);
+                    }}
+                    className="w-full rounded-control border border-line bg-paper px-2 py-1.5 text-[0.8125rem] text-ink outline-none focus:border-accent"
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          {addCharacterOptions.length > 0 && (
+            <Field label="Add character">
+              <SearchableSelect
+                options={addCharacterOptions}
+                value={null}
+                onChange={(v) => {
+                  if (!v) return;
+                  const next = [...sceneCharacters, { characterId: v, involvement: "" }];
+                  void saveCharacters(next);
+                }}
+                placeholder="Add character…"
+              />
+            </Field>
+          )}
+
+          {unrecognized.length > 0 && (
+            <div className="rounded-control border border-attn bg-attn-wash px-3 py-2 text-[0.8125rem] text-ink">
+              Unrecognized: {unrecognized.join(", ")}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isEdit && tab === "Summary" && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[0.8125rem] text-ink-soft">Scene summary</p>
+            <Button
+              variant="ghost"
+              onClick={() => void runEnrich("summary")}
+              disabled={enriching !== null}
+            >
+              {enriching === "summary" ? "↻ Working…" : "↻ AI-redo"}
+            </Button>
+          </div>
+          <textarea
+            rows={8}
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            className="w-full rounded-control border border-line bg-surface px-2 py-1.5 text-[0.875rem] text-ink outline-none focus:border-accent"
+            placeholder="What happens in this scene…"
+          />
+          <p className="text-[0.75rem] text-ink-faint">
+            {summaryOnLeave
+              ? "Auto-update when leaving the scene is on — manual edits may be overwritten."
+              : "Auto-update when leaving the scene is off — this summary is yours."}
+          </p>
+          <Button variant="primary" onClick={() => void saveSummary()} disabled={updateScene.isPending}>
+            {updateScene.isPending ? "Saving…" : "Save summary"}
+          </Button>
+        </div>
+      )}
 
       {error && <p className="mt-4 text-[0.8125rem] text-danger">{error}</p>}
 

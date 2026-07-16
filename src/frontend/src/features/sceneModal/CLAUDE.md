@@ -11,12 +11,12 @@ Left — Title*, Description* (textarea), Location, Date/Time, Mood, Emotional A
 
 ## Characters
 
-Chip row (✕ removes) + SearchableSelect "Add character…" → `PATCH {characterIds}`. **↻ AI-redo** → `POST /scenes/{id}/enrich {scope:"characters"}` → spinner; `scene-updated` patches chips live; `result.unrecognizedNames` → amber "Unrecognized: {name} — [Add to characters]".
+Rows: name + involvement textarea + ✕; SearchableSelect "Add character…" → `PATCH {characters}` (`[{characterId, involvement}]`). **↻ AI-redo** → `POST /scenes/{id}/enrich {scope:"characters"}` → spinner; `scene-updated` patches rows live; unrecognized names → amber note.
 
 ## Summary
 
-Textarea + [Save summary] (`PATCH {summary}`) · ↻ AI-redo (`enrich {scope:"summary"}`) · hint reflecting the book toggle ("Auto-update on save is **on** — manual edits may be overwritten" / "…**off** — this summary is yours").
+Textarea + [Save summary] (`PATCH {summary}`) · ↻ AI-redo (`enrich {scope:"summary"}`) · hint reflecting the leave-scene bookkeeping toggle.
 
 ## Dependencies
 
-Top "This scene depends on": rows *{title} — {reason}* with ✎ (`PATCH /dependencies/{id}`) and ✕ (`DELETE`). Add row: SearchableSelect (by Seq, self+sentinels excluded) + Reason* + [Add dependency] (`POST /dependencies`; Reason required). Bottom read-only "**Depended on by**" (`GET .../dependencies` dependedOnBy), amber-tinted — the warning before rewriting a scene others lean on.
+Top "This scene depends on": rows *{title} — {reason}* with ✎ (`PATCH /dependencies/{id}`) and ✕ (`DELETE`). Add row: SearchableSelect (by Seq, self+sentinels excluded) + Reason* + [Add dependency] (`POST /dependencies`; Reason required). Bottom read-only "**Depended on by**" (`GET .../dependencies` dependedOnBy), amber-tinted — the warning before rewriting a scene others lean on. (Not yet implemented.)

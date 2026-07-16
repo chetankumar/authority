@@ -9,15 +9,16 @@ import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 
 import { getBookUi, patchBookUi } from "../../api/books";
-import { END_ID, START_ID } from "../../api/scenes";
+import { enrichSceneAuto, END_ID, START_ID, saveContent } from "../../api/scenes";
 import { createConversation, runAiJob } from "../../api/conversations";
 import { getAI, listModels } from "../../api/settings";
 import { Button } from "../../components/ui";
 import { useToast } from "../../components/Toast";
+import { useBook } from "../../queries/books";
 import { useScene, useUpdateScene } from "../../queries/scenes";
 import { useSceneConversations, useSceneJobs } from "../../queries/conversations";
 import { useJobs as useAiJobDefinitions } from "../../queries/settings";
-import { saveContent } from "../../api/scenes";
+import { usePatchBook } from "../../queries/structure";
 import { SceneModal } from "../sceneModal/SceneModal";
 import { ConversationModal } from "../conversation/ConversationModal";
 
@@ -31,6 +32,8 @@ export default function EditorPage() {
   const { bookId = "", sceneId = "" } = useParams();
   const navigate = useNavigate();
   const sceneQ = useScene(bookId, sceneId);
+  const bookQ = useBook(bookId);
+  const patchBook = usePatchBook(bookId);
   const updateScene = useUpdateScene(bookId);
   const toast = useToast();
   const aiJobs = useAiJobDefinitions();
@@ -46,6 +49,7 @@ export default function EditorPage() {
   const [sourceMode, setSourceMode] = useState(false);
   const [sourceText, setSourceText] = useState("");
   const [jobsMenuOpen, setJobsMenuOpen] = useState(false);
+  const [bookkeepingOpen, setBookkeepingOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [chatContext, setChatContext] = useState<{ sceneId: string; excerpt: string } | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
@@ -55,6 +59,9 @@ export default function EditorPage() {
   const dirty = useRef(false);
   const sourceModeRef = useRef(false);
   const sourceTextRef = useRef("");
+  const entryHash = useRef<string>("");
+  const contentChangedThisVisit = useRef(false);
+  const bookkeepingRef = useRef<HTMLDivElement>(null);
 
   const doSave = useCallback(
     async (markdown: string) => {
@@ -63,6 +70,9 @@ export default function EditorPage() {
       try {
         const res = await saveContent(bookId, sceneId, markdown);
         setWords(res.wordCount);
+        if (res.contentHash !== entryHash.current) {
+          contentChangedThisVisit.current = true;
+        }
         setSave({ kind: "saved", at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
       } catch {
         setSave({ kind: "error" });
@@ -96,6 +106,8 @@ export default function EditorPage() {
   useEffect(() => {
     if (editor && sceneQ.data && loadedScene.current !== sceneId) {
       loadedScene.current = sceneId;
+      entryHash.current = sceneQ.data.contentHash;
+      contentChangedThisVisit.current = false;
       editor.commands.setContent(sceneQ.data.content || "");
       setTitle(sceneQ.data.title);
       setWords(sceneQ.data.wordCount);
@@ -112,7 +124,18 @@ export default function EditorPage() {
     });
   }, [bookId]);
 
-  // Ctrl/Cmd+S = save now. Save on unmount (route-leave).
+  const leaveEnrich = useCallback(
+    (opts?: { keepalive?: boolean }) => {
+      if (!contentChangedThisVisit.current) return;
+      contentChangedThisVisit.current = false;
+      void enrichSceneAuto(bookId, sceneId, opts).catch(() => {
+        /* leave-path: don't block navigation on enrich failure */
+      });
+    },
+    [bookId, sceneId],
+  );
+
+  // Ctrl/Cmd+S = save now. Save + leave-enrich on unmount (route-leave).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
@@ -125,11 +148,25 @@ export default function EditorPage() {
     return () => {
       window.removeEventListener("keydown", onKey);
       if (dirty.current) {
+        contentChangedThisVisit.current = true;
         const md = sourceModeRef.current ? sourceTextRef.current : editor ? getMarkdown(editor) : null;
         if (md != null) void doSave(md);
       }
+      leaveEnrich({ keepalive: true });
     };
-  }, [editor, doSave]);
+  }, [editor, doSave, leaveEnrich]);
+
+  // Close bookkeeping popover on outside click.
+  useEffect(() => {
+    if (!bookkeepingOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (bookkeepingRef.current && !bookkeepingRef.current.contains(e.target as Node)) {
+        setBookkeepingOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [bookkeepingOpen]);
 
   sourceModeRef.current = sourceMode;
   sourceTextRef.current = sourceText;
@@ -177,9 +214,12 @@ export default function EditorPage() {
   const hasNext = !!scene?.nextSceneId && scene.nextSceneId !== END_ID;
 
   const flushBeforeNav = () => {
-    if (!dirty.current) return;
-    const md = sourceMode ? sourceText : editor ? getMarkdown(editor) : null;
-    if (md != null) void doSave(md);
+    if (dirty.current) {
+      contentChangedThisVisit.current = true;
+      const md = sourceMode ? sourceText : editor ? getMarkdown(editor) : null;
+      if (md != null) void doSave(md);
+    }
+    leaveEnrich();
   };
   const goPrev = () => {
     flushBeforeNav();
@@ -281,7 +321,51 @@ export default function EditorPage() {
             )}
           </div>
           <ToolButton label="Metadata" onClick={() => setModalOpen(true)} />
-          <ToolButton disabled label="Bookkeeping" soon />
+          <div className="relative" ref={bookkeepingRef}>
+            <ToolButton
+              label="Bookkeeping"
+              onClick={() => setBookkeepingOpen((o) => !o)}
+              title="Standing consent for AI summary and character updates"
+            />
+            {bookkeepingOpen && bookQ.data && (
+              <div className="absolute left-0 top-full z-20 mt-1 w-[280px] rounded-control border border-line bg-surface p-3 shadow-overlay">
+                <p className="mb-2 text-[0.75rem] font-medium text-ink">When leaving a scene</p>
+                <label className="mb-2 flex items-start gap-2 text-[0.8125rem] text-ink">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-accent"
+                    checked={bookQ.data.bookkeeping.summaryOnSave}
+                    onChange={(e) => {
+                      void patchBook.mutateAsync({
+                        bookkeeping: {
+                          summaryOnSave: e.target.checked,
+                          charactersOnSave: bookQ.data.bookkeeping.charactersOnSave,
+                        },
+                      });
+                    }}
+                  />
+                  <span>Update summary when leaving scene</span>
+                </label>
+                <label className="mb-3 flex items-start gap-2 text-[0.8125rem] text-ink">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-accent"
+                    checked={bookQ.data.bookkeeping.charactersOnSave}
+                    onChange={(e) => {
+                      void patchBook.mutateAsync({
+                        bookkeeping: {
+                          summaryOnSave: bookQ.data.bookkeeping.summaryOnSave,
+                          charactersOnSave: e.target.checked,
+                        },
+                      });
+                    }}
+                  />
+                  <span>Update character involvement when leaving scene</span>
+                </label>
+                <p className="text-[0.6875rem] text-ink-faint">Applies to this whole book</p>
+              </div>
+            )}
+          </div>
           <ToolButton label="Chat" onClick={() => void startChat()} />
           <div className="ml-auto">
             <ToolButton label="◫" onClick={togglePane} title="Toggle side pane" />

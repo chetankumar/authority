@@ -1,4 +1,4 @@
-import { apiGet, apiSend } from "./client";
+import { apiGet, apiSend, ApiError } from "./client";
 
 export type Placement = "trunk" | "unanchored" | "floating" | "orphan" | "archived";
 export type SceneStatus = "active" | "archived";
@@ -6,6 +6,11 @@ export type RelationshipType = "before" | "after" | "around";
 
 export const START_ID = "scn-START";
 export const END_ID = "scn-END";
+
+export interface SceneCharacterRef {
+  characterId: string;
+  involvement: string;
+}
 
 export interface Scene {
   id: string;
@@ -23,7 +28,7 @@ export interface Scene {
   mood: string;
   emotionalArc: string;
   summary: string;
-  characterIds: string[];
+  characters: SceneCharacterRef[];
   status: SceneStatus;
   contentHash: string;
   wordCount: number;
@@ -92,7 +97,7 @@ export interface SceneUpdate {
   mood?: string;
   emotionalArc?: string;
   summary?: string;
-  characterIds?: string[];
+  characters?: SceneCharacterRef[];
   chapterId?: string | null;
   partId?: string | null;
   primaryPlotlineId?: string | null;
@@ -118,3 +123,27 @@ export const deleteScene = (bookId: string, sceneId: string) =>
 
 export const saveContent = (bookId: string, sceneId: string, content: string) =>
   apiSend<ContentSaveResult>("PUT", `/books/${bookId}/scenes/${sceneId}/content`, { content });
+
+export type EnrichScope = "summary" | "characters" | "both";
+
+export const enrichScene = (bookId: string, sceneId: string, scope: EnrichScope) =>
+  apiSend<{ jobId: string }>("POST", `/books/${bookId}/scenes/${sceneId}/enrich`, { scope });
+
+/** Leave-scene auto-enrich. Respects bookkeeping toggles. */
+export async function enrichSceneAuto(
+  bookId: string,
+  sceneId: string,
+  opts?: { keepalive?: boolean },
+): Promise<{ queued: boolean; jobId?: string }> {
+  const res = await fetch(`/api/books/${bookId}/scenes/${sceneId}/enrich/auto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    keepalive: opts?.keepalive,
+  });
+  const text = await res.text();
+  const body = text ? JSON.parse(text) : {};
+  if (!res.ok) {
+    throw new ApiError(res.status, body);
+  }
+  return body as { queued: boolean; jobId?: string };
+}

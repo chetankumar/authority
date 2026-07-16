@@ -133,12 +133,12 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "chapterId": null, "partId": null,
   "primaryPlotlineId": null, "secondaryPlotlineIds": [],
   "mood": "", "emotionalArc": "", "summary": "",
-  "characterIds": ["chr-x"], "status": "active",
+  "characters": [{ "characterId": "chr-x", "involvement": "Finds the key." }], "status": "active",
   "contentHash": "sha256:...", "wordCount": 1240,
   "seq": 1, "placement": "trunk",
   "createdAt": "...", "updatedAt": "..." }
 ```
-`seq`/`placement` are **computed** by ChainService on read, never stored. `chapterId` XOR `partId` (both nullable, never both set). `dateTime`/`location` are free-text *story* values. `summary`/`characterIds` are system-maintained when the corresponding bookkeeping toggle is on, manually editable regardless.
+`seq`/`placement` are **computed** by ChainService on read, never stored. `chapterId` XOR `partId` (both nullable, never both set). `dateTime`/`location` are free-text *story* values. `summary`/`characters` (each `{ characterId, involvement }`) are system-maintained when the corresponding bookkeeping toggle is on, manually editable regardless.
 `primaryPlotlineId` is the scene's main plotline (nullable). `secondaryPlotlineIds` lists additional plotlines. A primary must not also appear in secondaries.
 
 **SoftRelationship** `{ "id", "fromSceneId", "toSceneId", "type", "createdAt" }`
@@ -165,7 +165,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "payload": { "sceneId": "scn-..", "find": "exact current text",
                "replace": "replacement text", "rationale": "why" } }
 ```
-Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, "age"?, "gender"?, "nationality"?, "ethnicity"?, "occupation"?, "want"?, "need"?, "flaw"?, "arc"?, "personality"?, "history"?, "notes"?, "rationale"?, "sceneId"? }` — Accept dedupes case-insensitively against existing name/aliases (reuses the existing character instead of erroring) and, if `sceneId` is set, tags the character onto that scene's `characterIds`. `character-relationship-create`: `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"?, "rationale"? }`.
+Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, …, "sceneId"? }` — Accept dedupes case-insensitively against existing name/aliases (reuses the existing character instead of erroring) and, if `sceneId` is set, tags the character onto that scene's `characters` with empty involvement. `character-relationship-create`: `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"?, "rationale"? }`.
 
 **Job**
 ```json
@@ -309,16 +309,19 @@ GET returns `db/ui.json` verbatim (client-defined shape: AG Grid column state, r
 **Response** `{ ...Scene, "content": "full markdown prose" }` — the only scene read that includes prose (editor load). Reads the .md file directly.
 
 ### PATCH /api/books/{b}/scenes/{id}
-**Request (all optional):** `title` (slug-renames the .md file; `file` field updated) · `description` · `location` · `dateTime` · `mood` · `emotionalArc` · `summary` (manual edit) · `characterIds` (full replacement array; unknown ids 422) · `chapterId` / `partId` (XOR enforced on the merged result; setting one clears the other implicitly? **No** — client sends the clear explicitly as `null`; server 422s if both end up set) · `previousSceneId` / `nextSceneId` (ChainService: detach-heal old links, splice new) · `status` (`archived`: splice-heal chain, soft relations kept dormant; `active`: return floating — old slot not reclaimed).
+**Request (all optional):** `title` (slug-renames the .md file; `file` field updated) · `description` · `location` · `dateTime` · `mood` · `emotionalArc` · `summary` (manual edit) · `characters` (full replacement array of `{ characterId, involvement }`; unknown ids 422) · `chapterId` / `partId` (XOR enforced on the merged result; setting one clears the other implicitly? **No** — client sends the clear explicitly as `null`; server 422s if both end up set) · `previousSceneId` / `nextSceneId` (ChainService: detach-heal old links, splice new) · `status` (`archived`: splice-heal chain, soft relations kept dormant; `active`: return floating — old slot not reclaimed).
 **Logic:** under lock; sentinel/FK validation as in create; persist; emit `scene-updated` with the changed-field list. **Response** `{ "scene": Scene, "affectedScenes": [Scene] }`. Metadata PATCH never touches prose or contentHash.
 
 ### PUT /api/books/{b}/scenes/{id}/content
 **Request** `{ "content": "full markdown" }` — full-document replacement (autosave semantics; no patching).
-**Logic (SceneService, under lock):** 1) Atomic write of the .md (tmp + fsync + replace). 2) Recompute wordCount (whitespace tokenization) + sha256 contentHash. 3) **If hash changed:** (a) dependency fanout — for every Dependency where `dependsOnSceneId == this`, create a Todo on the dependent scene: action `"'{this.title}' changed — verify dependency: {reason}"`, origin `dependency`, `sourceDependencyId` set; **dedup:** skip if an *open* todo for the same dependency already exists (typing sessions must not stack duplicates); emit `todos-created` if any. (b) EnrichmentService: (re)set this scene's settle timer (doc 05). 4) Persist — `scenes/{id}/bookkeeping.json` **only** (doc 03); the master `db/scenes.json` is never touched by a content save, so autosave can't contend with or block a chain splice/heal on an unrelated scene. **Response** `{ "wordCount": 1240, "contentHash": "sha256:..", "todosCreated": [Todo] }`.
+**Logic (SceneService, under lock):** 1) Atomic write of the .md (tmp + fsync + replace). 2) Recompute wordCount (whitespace tokenization) + sha256 contentHash. 3) **If hash changed:** dependency fanout — for every Dependency where `dependsOnSceneId == this`, create a Todo on the dependent scene: action `"'{this.title}' changed — verify dependency: {reason}"`, origin `dependency`, `sourceDependencyId` set; **dedup:** skip if an *open* todo for the same dependency already exists (typing sessions must not stack duplicates); emit `todos-created` if any. Enrichment is **not** scheduled from content save (leave-scene / on-demand only). 4) Persist — `scenes/{id}/bookkeeping.json` **only** (doc 03); the master `db/scenes.json` is never touched by a content save. **Response** `{ "wordCount": 1240, "contentHash": "sha256:..", "todosCreated": [Todo] }`.
 
 ### POST /api/books/{b}/scenes/{id}/enrich
 **Request** `{ "scope": "summary" | "characters" | "both" }` — the on-demand AI-redo; **ignores** bookkeeping toggles (an explicit request is its own consent).
 **Logic:** 422 `no-utility-model` if *neither* task-specific model needed for the requested scope resolves (own slot or its utility-model fallback). JobService enqueues a system Job (scope as given, `modelId` left unset — the model for each sub-task is resolved at run time, not enqueue time); replaces any queued (not running) enrichment for this scene. **Response 202** `{ "jobId": "job-.." }`; results arrive as `job` + `scene-updated` SSE events.
+
+### POST /api/books/{b}/scenes/{id}/enrich/auto
+Leave-scene path. **No body.** Reads the book's `bookkeeping` toggles and enqueues a system job only for enabled halves with a resolvable model. **Response 202** `{ "queued": true, "jobId" }` when a job was queued; **200** `{ "queued": false }` when toggles/models skip.
 
 ### GET /api/books/{b}/scenes/{id}/conversations
 **Response** `[ConversationSummary]` for `parentType=scene, parentId=id`, from the derived index (no conversation files opened). Newest first.
@@ -386,7 +389,7 @@ Removes it; existing dependency-generated todos remain (they're the author's to 
 ### GET /api/books/{b}/characters → `[Character]` with computed `sceneCount`.
 ### POST — `{ "name": required, "aliases"?: [], "age"?, "gender"?, "nationality"?, "ethnicity"?, "occupation"?, "want"?, "need"?, "flaw"?, "arc"?, "personality"?, "history"?, "notes"? }`. **Uniqueness:** the new name and every alias must not collide (case-insensitive) with any existing character's name or aliases → 422 `{ "conflict": { "value": "Marlow", "existingCharacter": {id,name} } }`. The enrichment matcher must never face ambiguity.
 ### PATCH /{id} — same fields (partial); same uniqueness on the merged result.
-### DELETE /{id} — **409** `{ "blockedBy": { "scenes"?: [...], "relationships"?: [...] } }` listing scenes whose `characterIds` reference it and/or `character_relationships` rows involving it; unassign/remove first.
+### DELETE /{id} — **409** `{ "blockedBy": { "scenes"?: [...], "relationships"?: [...] } }` listing scenes whose `characters` reference it and/or `character_relationships` rows involving it; unassign/remove first.
 
 ### GET /api/books/{b}/character-relationships → `[CharacterRelationship]`.
 ### POST — `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"? }` → 201. Validates both ids exist, `characterAId != characterBId`, and no existing record already covers this unordered pair → 422 on any violation.
@@ -480,7 +483,7 @@ One connection per open book. Event types and payloads:
 | event | data | emitted when |
 |---|---|---|
 | `job` | `{ id, type, sceneId, status, result? }` | any job status transition |
-| `scene-updated` | `{ id, changed: ["summary","characterIds"] }` | any scene metadata write (author, enrichment, accepted proposal) |
+| `scene-updated` | `{ id, changed: ["summary","characters"] }` | any scene metadata write (author, enrichment, accepted proposal) |
 | `todos-created` | `{ todos: [Todo] }` | dependency fanout or accepted todo-create |
 | `git-status` | `GitStatus` (§2.2, includes `summary`) | **(a)** the git-status worker's 5s debounce fired after a `book-changed`; **(b)** immediately, in-request, after an explicit stage/unstage/commit/push/pull |
 | `compile-done` | `{ report: CompileReport }` | successful compile |

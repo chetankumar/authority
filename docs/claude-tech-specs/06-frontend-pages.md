@@ -239,14 +239,14 @@ Two-column form: left — Title*, Description* (textarea), Location, Date/Time, 
 | Archive scene | `PATCH {status:"archived"}` + inline note "The chain will close around it; find it under the table's Archived filter" | Reversible, so no confirm; the note answers "where did it go" pre-emptively |
 
 ### Characters
-Chip row of referenced characters (✕ removes) + SearchableSelect "Add character…" → both via `PATCH {characterIds}`. Top-right: **↻ AI-redo** ghost button.
+Rows of tagged cast members — each **name** + editable **involvement** textarea (what they do in this scene) + ✕ — plus SearchableSelect "Add character…" → `PATCH {characters}`. Top-right: **↻ AI-redo** ghost button.
 
 | Control | Behavior | Why |
 |---|---|---|
-| ↻ AI-redo | `POST /scenes/{id}/enrich {scope:"characters"}` → button enters spinner state; `scene-updated` SSE patches chips live; `result.unrecognizedNames` renders as an amber inline note: "Unrecognized: Marlow — [Add to characters]" | On-demand truth-refresh regardless of the toggle; the unrecognized-note closes the loop between prose and the directory without auto-creating anyone |
+| ↻ AI-redo | `POST /scenes/{id}/enrich {scope:"characters"}` → button enters spinner state; `scene-updated` SSE patches rows live; `result.unrecognizedNames` renders as an amber inline note: "Unrecognized: Marlow — [Add to characters]" | On-demand truth-refresh regardless of the toggle; involvement is the point of the tab |
 
 ### Summary
-Textarea + [Save summary] (`PATCH {summary}`) · ↻ AI-redo (`enrich {scope:"summary"}`) · persistent hint line reflecting the book toggle: "Auto-update on save is **on** — manual edits may be overwritten" / "…**off** — this summary is yours." **Why the hint:** the toggle-owns-the-field rule (doc 05) must be visible at the exact moment an author is about to hand-write a summary.
+Textarea + [Save summary] (`PATCH {summary}`) · ↻ AI-redo (`enrich {scope:"summary"}`) · persistent hint line reflecting the book toggle: "Auto-update when leaving the scene is **on** — manual edits may be overwritten" / "…**off** — this summary is yours." **Why the hint:** the toggle-owns-the-field rule (doc 05) must be visible at the exact moment an author is about to hand-write a summary.
 
 ### Dependencies
 Top list — "This scene depends on": rows *{scene title} — {reason}* with ✎ (inline reason edit → `PATCH /dependencies/{id}`) and ✕ (`DELETE`). Add row: SearchableSelect ordered by Seq (self + sentinels excluded) + Reason* input + [Add dependency] (`POST /dependencies`; Reason required — "a dependency without a why is noise" is enforced by the disabled button + hint). Bottom list — read-only "**Depended on by**" (from `GET dependencies.dependedOnBy`), each row `--attn`-tinted. **Why the second list:** it's the warning the author reads *before* rewriting a scene others lean on — the dependency system's whole purpose, surfaced at the point of danger.
@@ -278,7 +278,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 |---|---|---|---|
 | **AI-Jobs ▾** | Tool panel | Menu of saved jobs (`GET /settings/ai-jobs`). Pick → `POST /ai-jobs/run` with sceneId + scope: `selection` if the editor has an active selection (selectionText sent), else `full` → Conversation Modal opens on the new conversation, streaming | The author's own toolbox, one gesture from the prose; selection-awareness makes "fix this paragraph" and "review the scene" the same menu |
 | **Metadata** | Tool panel | Opens the Scene Modal | Facts about the scene without leaving the room |
-| **Bookkeeping** | Tool panel | Popover of iOS-style toggles: "Update summary on save" / "Update character references on save" → `PATCH /books/{id} {bookkeeping}`; footer note "Applies to this whole book". List component — future tasks append | Standing consent must be inspectable and revocable exactly where its effects are felt; book-level scope is stated because the button sits on a scene page |
+| **Bookkeeping** | Tool panel | Popover of toggles: "Update summary when leaving scene" / "Update character involvement when leaving scene" → `PATCH /books/{id} {bookkeeping}`; footer note "Applies to this whole book". Manual ↻ AI-redo lives on the Scene Modal Characters/Summary tabs | Standing consent must be inspectable and revocable exactly where its effects are felt; book-level scope is stated because the button sits on a scene page |
 | **Chat** | Tool panel | `POST /conversations {kind:"chat", parent: scene, aiParticipant: {enabled:true, modelId: chatDefaultModel}}` → Conversation Modal with AI on and the chat default model preselected (falls back to the utility model, then the first configured model). If a selection is active, it rides the first message as `context` and renders as a quoted block | The "I'm stuck" button; selection-as-context is the v1 answer to inline markers |
 | ◫ pane toggle | Tool panel, right edge | Show/hide right pane; persisted in ui.json | Zen switch: full-width prose on demand, memory per book |
 | TipTap toolbar | Above sheet | Standard marks/blocks; Ctrl/Cmd+B/I etc. | Familiar; deliberately small — novels are mostly paragraphs |

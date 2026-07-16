@@ -120,7 +120,7 @@ export default function ScenesTablePage() {
         colId: "characters",
         headerName: "Characters",
         width: 120,
-        valueGetter: (p) => (p.data?.characterIds.length ? `${p.data.characterIds.length}` : ""),
+        valueGetter: (p) => (p.data?.characters?.length ? `${p.data.characters.length}` : ""),
       },
       { colId: "chapter", headerName: "Chapter", width: 140, valueGetter: (p) => (p.data?.chapterId ? chapterName.get(p.data.chapterId) ?? "" : "") },
       { colId: "part", headerName: "Part", width: 140, valueGetter: (p) => (p.data?.partId ? partName.get(p.data.partId) ?? "" : "") },

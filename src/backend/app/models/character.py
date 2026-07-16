@@ -3,7 +3,7 @@ db/character_relationships.json; doc 04 §2.2, §7).
 
 ``CharacterRecord`` is the persisted shape in ``db/characters.json``.
 ``Character`` is the API response — the record plus computed ``sceneCount``
-(scanned from scenes' ``characterIds``, never stored).
+(scanned from scenes' ``characters[].characterId``, never stored).
 
 ``CharacterRelationship`` is a full row in ``db/character_relationships.json``
 — there is no separate "record" type because nothing about it is computed.

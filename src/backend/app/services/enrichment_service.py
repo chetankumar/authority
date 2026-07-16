@@ -1,12 +1,12 @@
-"""EnrichmentService — settle-then-run bookkeeping (doc 05).
+"""EnrichmentService — leave-scene + on-demand bookkeeping (doc 05).
 
-Clear cases write summary/characterIds under standing consent.
-Unclear cases escalate to a chat via EscalationService.
+Clear cases write summary / characters[{characterId, involvement}] under
+standing consent (auto) or explicit redo. Unclear cases escalate via
+EscalationService. Never schedules from content autosave.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -16,6 +16,7 @@ from app.core.errors import ApiError, validation
 from app.core.event_hub import EventHub
 from app.models.enums import JobScope, JobStatus, ParentType
 from app.models.job import Job
+from app.models.scene import SceneCharacterRef
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.book_registry import BookRegistry
 from app.services.context_assembler import ContextAssembler
@@ -24,8 +25,6 @@ from app.services.output_parsers import parse_enrichment_result
 from app.services.settings_service import SettingsService
 
 log = logging.getLogger("authority.enrichment")
-
-_SETTLE_SECONDS = 60.0
 
 
 def _now() -> str:
@@ -48,41 +47,23 @@ class EnrichmentService:
         self._orch = orchestrator
         self._escalation = escalation
         self._jobs = job_service
-        self._timers: dict[tuple[str, str], asyncio.Task[None]] = {}
         self._assembler = ContextAssembler()
 
     def set_job_service(self, job_service: Any) -> None:
         self._jobs = job_service
 
-    def reset_settle_timer(self, book_id: str, scene_id: str) -> None:
-        key = (book_id, scene_id)
-        existing = self._timers.get(key)
-        if existing is not None:
-            existing.cancel()
-        self._timers[key] = asyncio.create_task(self._settle_after(book_id, scene_id))
-
-    def settle_now(self, book_id: str, scene_id: str) -> None:
-        key = (book_id, scene_id)
-        existing = self._timers.get(key)
-        if existing is not None:
-            existing.cancel()
-            del self._timers[key]
-        asyncio.create_task(self._enqueue_if_needed(book_id, scene_id))
-
-    async def _settle_after(self, book_id: str, scene_id: str) -> None:
-        try:
-            await asyncio.sleep(_SETTLE_SECONDS)
-            await self._enqueue_if_needed(book_id, scene_id)
-        except asyncio.CancelledError:
-            raise
-        finally:
-            key = (book_id, scene_id)
-            if self._timers.get(key) is asyncio.current_task():
-                del self._timers[key]
-
-    async def _enqueue_if_needed(self, book_id: str, scene_id: str) -> None:
+    async def enrich_auto(self, book_id: str, scene_id: str) -> Job | None:
+        """Leave-scene path: enqueue only for enabled toggles with resolvable models."""
         if self._jobs is None:
-            return
+            raise ApiError(500, "Job service not ready.", {})
+        mgr = self._registry.get(book_id)
+        if not any(s.id == scene_id for s in mgr.get_scenes()):
+            raise ApiError(404, "Scene not found", {"kind": "scene", "id": scene_id})
+        return self._enqueue_if_needed(book_id, scene_id)
+
+    def _enqueue_if_needed(self, book_id: str, scene_id: str) -> Job | None:
+        if self._jobs is None:
+            return None
         mgr = self._registry.get(book_id)
         bk = mgr.config.bookkeeping
         scopes: list[str] = []
@@ -91,17 +72,21 @@ class EnrichmentService:
         if bk.charactersOnSave and self._settings.get_character_parsing_model() is not None:
             scopes.append("characters")
         if not scopes:
-            log.info("enrichment skipped for %s/%s — no model configured for the enabled toggle(s)", book_id, scene_id)
-            return
+            log.info(
+                "enrichment skipped for %s/%s — no model configured for the enabled toggle(s)",
+                book_id,
+                scene_id,
+            )
+            return None
         if len(scopes) == 2:
             scope = JobScope.both
         elif scopes[0] == "summary":
             scope = JobScope.summary
         else:
             scope = JobScope.characters
-        # No fixed model_id here — run() resolves the model per sub-task (scene
-        # summary vs character parsing may be different models) at execution time.
-        self._jobs.enqueue_system(book_id, scene_id=scene_id, scope=scope, model_id=None, replace_queued=True)
+        return self._jobs.enqueue_system(
+            book_id, scene_id=scene_id, scope=scope, model_id=None, replace_queued=True
+        )
 
     async def enrich_on_demand(self, book_id: str, scene_id: str, scope: JobScope) -> Job:
         if scope not in (JobScope.summary, JobScope.characters, JobScope.both):
@@ -127,7 +112,6 @@ class EnrichmentService:
         prose = mgr.read_scene_content(scene.file)
         book = mgr.get_book()
 
-        # Character directory for matching (may be empty / unavailable).
         chars: list[Any] = []
         getter = getattr(mgr, "get_characters", None)
         if getter is not None:
@@ -142,12 +126,6 @@ class EnrichmentService:
         want_summary = job.scope in (JobScope.summary, JobScope.both)
         want_chars = job.scope in (JobScope.characters, JobScope.both)
 
-        # Summarization and character-parsing are independent calls, each on
-        # its own configured model — a scene may want its summary from one
-        # model and its cast list matched by another. Doing this as two calls
-        # (rather than one combined prompt) is the whole point of separating
-        # the settings slots; if scope is `both` and both slots resolve to the
-        # same model, that's still two calls, kept simple and uniform.
         parsed: dict[str, Any] = {}
         models_used: dict[str, str] = {}
 
@@ -189,18 +167,10 @@ class EnrichmentService:
                 changed.append("summary")
 
             if want_chars and chars_model is not None:
-                matched = parsed.get("matchedCharacterIds") or []
-                if isinstance(matched, list):
-                    valid_ids = {c.id for c in chars}
-                    # Also allow exact name/alias match without model ids.
-                    exact = self._exact_match_ids(prose, chars)
-                    ids = [i for i in matched if i in valid_ids]
-                    for i in exact:
-                        if i not in ids:
-                            ids.append(i)
-                    if ids:
-                        bookkeeping.characterIds = ids
-                        changed.append("characterIds")
+                refs = self._build_character_refs(parsed, prose, chars)
+                if refs:
+                    bookkeeping.characters = refs
+                    changed.append("characters")
 
                 for name in parsed.get("unrecognizedNames") or []:
                     if isinstance(name, str) and name.strip():
@@ -249,10 +219,6 @@ class EnrichmentService:
                     conversation_ids.append(cid)
 
             if changed:
-                # Enrichment writes now touch only bookkeeping.json — never the
-                # master table (db/scenes.json) — so a one-scene summary/
-                # character update can never contend with or block a chain
-                # splice/heal on an unrelated scene (doc 03).
                 bookkeeping.updatedAt = _now()
                 mgr.save_scene_bookkeeping(scene.id, bookkeeping)
 
@@ -269,12 +235,43 @@ class EnrichmentService:
         if self._jobs is not None:
             self._jobs.update_job(book_id, job)
 
+    @classmethod
+    def _build_character_refs(
+        cls, parsed: dict[str, Any], prose: str, chars: list[Any]
+    ) -> list[SceneCharacterRef]:
+        valid_ids = {c.id for c in chars}
+        by_id: dict[str, SceneCharacterRef] = {}
+
+        matched = parsed.get("matched") or []
+        if isinstance(matched, list):
+            for item in matched:
+                if not isinstance(item, dict):
+                    continue
+                cid = str(item.get("characterId") or "").strip()
+                if cid not in valid_ids:
+                    continue
+                involvement = str(item.get("involvement") or "").strip()
+                by_id[cid] = SceneCharacterRef(characterId=cid, involvement=involvement)
+
+        # Legacy: bare id list → empty involvement
+        legacy_ids = parsed.get("matchedCharacterIds") or []
+        if isinstance(legacy_ids, list):
+            for cid in legacy_ids:
+                if isinstance(cid, str) and cid in valid_ids and cid not in by_id:
+                    by_id[cid] = SceneCharacterRef(characterId=cid, involvement="")
+
+        for cid in cls._exact_match_ids(prose, chars):
+            if cid not in by_id:
+                by_id[cid] = SceneCharacterRef(characterId=cid, involvement="")
+
+        return list(by_id.values())
+
     @staticmethod
     def _summary_prompt(scene: Any, prose: str) -> str:
         return "\n".join(
             [
                 "You maintain scene bookkeeping for a novel.",
-                "Return a single fenced JSON object: { \"summary\": string }.",
+                'Return a single fenced JSON object: { "summary": string }.',
                 "",
                 f"Scene title: {scene.title}",
                 f"Scene prose:\n{prose[:20000]}",
@@ -285,12 +282,13 @@ class EnrichmentService:
     def _characters_prompt(scene: Any, prose: str, directory: str) -> str:
         return "\n".join(
             [
-                "You maintain the character directory for a novel.",
+                "You maintain per-scene character involvement for a novel.",
                 "Return a single fenced JSON object with keys:",
-                '  "matchedCharacterIds": [ids from the directory that clearly appear],',
+                '  "matched": [{"characterId": "id from the directory", "involvement": "one-line what they do/undergo in THIS scene"}],',
                 '  "unrecognizedNames": [proper names in prose not in the directory],',
                 '  "ambiguous": [{"name": "...", "candidates": ["id:...", ...], "question": "..."}]',
-                "Only exact/clear matches go in matchedCharacterIds. When unsure, use ambiguous.",
+                "Only exact/clear matches go in matched. When unsure, use ambiguous.",
+                "involvement must be specific to this scene's prose — not a general character bio.",
                 "Never invent character ids.",
                 "",
                 f"Character directory:\n{directory}",

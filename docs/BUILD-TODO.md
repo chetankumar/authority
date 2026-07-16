@@ -191,7 +191,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | SCN-SVC-01 | ✅ | ChainService (splice, heal, seq/placement) | Deterministic story order. Floating/orphan scenes get `seq: null` — only hard-chain scenes are numbered. | `src/backend/app/services/chain_service.py` |
 | SCN-SVC-02 | ✅ | SceneService CRUD + content save | Only prose write paths guarded. | `src/backend/app/services/scene_service.py` |
 | SCN-SVC-03 | 🔄 | Content save — dependency todo fanout (stub) | Todos when depended-on scene changes. | **Modify:** `src/backend/app/services/scene_service.py` (line ~209, phase 6 hook) |
-| SCN-SVC-04 | ✅ | Content save — enrichment settle timer (stub) | Summary/character updates after typing stops. | **Modify:** `src/backend/app/services/scene_service.py` (line ~212, phase 7 hook) |
+| SCN-SVC-04 | ✅ | Content save — no enrichment timer | Enrichment is leave-scene / on-demand only. | `scene_service.py`, `enrichment_service.py` |
 
 ### Frontend — Scene graph
 
@@ -252,10 +252,10 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | MOD-FE-08 | ✅ | Delete scene (archived only) | As an author, I want to permanently delete an archived scene from the modal with a confirm dialog; if it has references, a blocked-deletion error tells me what to clean up first. The prose file moves to `.trash/`. | Same + `src/frontend/src/components/ConfirmDialog.tsx` |
 | MOD-FE-09 | ✅ | Autofill nodes toggle | As an author, I want a toggle to disable the automatic Previous↔Next coupling in the Sequence section, so I can manually set both endpoints independently when needed. | `src/frontend/src/features/sceneModal/SceneModal.tsx` |
 | MOD-FE-10 | ✅ | Create mode — Basics only | Focused first save. | Same as above |
-| MOD-FE-11 | ⬜ | **Characters** tab — chips + add/remove | Tag characters in scene. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Create:** `src/frontend/src/api/characters.ts`; **Modify:** `src/frontend/src/queries/keys.ts` (add characters key); **Create:** `src/frontend/src/queries/characters.ts`; **Depends on:** STR-API-13 (characters API) |
-| MOD-FE-12 | ⬜ | **Characters** — ↻ AI-redo + unrecognized | Refresh from prose. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Modify:** `src/frontend/src/api/scenes.ts` (add `enrichScene`); **Depends on:** SCN-API-06, Phase 7 |
-| MOD-FE-13 | ⬜ | **Summary** tab — textarea + Save | Hand-write/edit summary. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; uses existing `src/frontend/src/api/scenes.ts` (`updateScene`) |
-| MOD-FE-14 | ⬜ | **Summary** — ↻ AI-redo + hint | Bookkeeping toggle visibility. | Same + `src/frontend/src/api/books.ts` (read bookkeeping); **Depends on:** Phase 7 |
+| MOD-FE-11 | ✅ | **Characters** tab — rows + involvement + add/remove | Tag characters and what they do in the scene. | `src/frontend/src/features/sceneModal/SceneModal.tsx`; `src/frontend/src/api/characters.ts`; `src/frontend/src/queries/characters.ts` |
+| MOD-FE-12 | ✅ | **Characters** — ↻ AI-redo + unrecognized | Refresh from prose. | Same + `enrichScene` in `api/scenes.ts` |
+| MOD-FE-13 | ✅ | **Summary** tab — textarea + Save | Hand-write/edit summary. | `SceneModal.tsx` |
+| MOD-FE-14 | ✅ | **Summary** — ↻ AI-redo + hint | Leave-scene toggle visibility. | Same + `useBook` bookkeeping |
 | MOD-FE-15 | ⬜ | **Dependencies** tab — list + add/edit/delete | Record scene prerequisites. | **Modify:** `src/frontend/src/features/sceneModal/SceneModal.tsx`; **Create:** `src/frontend/src/api/dependencies.ts`; **Create:** `src/frontend/src/queries/dependencies.ts`; **Depends on:** SCN-API-09, SCN-API-12 |
 | MOD-FE-16 | ⬜ | **Dependencies** — depended-on-by (amber) | Warning before rewriting load-bearing scene. | Same as above |
 
@@ -287,8 +287,8 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | EDT-FE-16 | ✅ | Right pane shell (accordion, "soon") | Notes/Todos/AI Jobs beside prose. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx` |
 | EDT-FE-17 | ✅ | **AI-Jobs ▾** menu → run job | Job library one click from prose. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/api/jobs.ts`; **Modify:** `src/frontend/src/queries/keys.ts`; **Depends on:** AI-API-05 |
 | EDT-FE-18 | ✅ | AI-Jobs — selection scope | "Fix this paragraph" vs "review whole scene". | Same as above |
-| EDT-FE-19 | ⬜ | **Bookkeeping** popover | Standing consent visible at point of effect. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Modify:** `src/frontend/src/api/books.ts` (add `patchBook`); **Depends on:** BOOK-API-04 |
-| EDT-FE-20 | ⬜ | Bookkeeping → PATCH bookkeeping | Toggles persist at book level. | Same as above |
+| EDT-FE-19 | ✅ | **Bookkeeping** popover | Standing consent for leave-scene enrichment. | `EditorPage.tsx` + `usePatchBook` |
+| EDT-FE-20 | ✅ | Bookkeeping → PATCH bookkeeping | Toggles persist at book level. | Same |
 | EDT-FE-21 | ✅ | **Chat** → Conversation Modal | Help when stuck, selection as context; AI on with the chat default model preselected (falls back to utility, then first model). | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/features/conversation/ConversationModal.tsx`; **Create:** `src/frontend/src/api/conversations.ts`; **Depends on:** AI-API-01 |
 | EDT-FE-22 | ✅ | **Notes** accordion | Past threads for scene. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SCN-API-07, Phase 7 |
 | EDT-FE-23 | ⬜ | **To-dos** accordion | Open obligations while writing. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/api/todos.ts`, `src/frontend/src/queries/todos.ts`; **Depends on:** SCN-API-08, Phase 6 |

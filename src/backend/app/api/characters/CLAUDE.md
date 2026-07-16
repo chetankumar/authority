@@ -9,7 +9,7 @@ Characters — the who's-who master list and the enrichment matcher's vocabulary
 | GET | `/api/books/{b}/characters` | `[Character]` with computed `sceneCount` |
 | POST | `/api/books/{b}/characters` | `{ name (req), aliases?, age?, gender?, nationality?, ethnicity?, occupation?, want?, need?, flaw?, arc?, personality?, history?, notes? }`. **Uniqueness:** name + every alias must not collide case-insensitively with any existing name/alias → 422 `{conflict:{value, existingCharacter}}` |
 | PATCH | `/api/books/{b}/characters/{id}` | Same fields (partial); same uniqueness on merged result |
-| DELETE | `/api/books/{b}/characters/{id}` | 409 `{blockedBy:{scenes?, relationships?}}` — scenes whose `characterIds` reference it and/or `character_relationships` rows involving it; unassign/remove first |
+| DELETE | `/api/books/{b}/characters/{id}` | 409 `{blockedBy:{scenes?, relationships?}}` — scenes whose `characters` reference it and/or `character_relationships` rows involving it; unassign/remove first |
 | GET | `/api/books/{b}/character-relationships` | `[CharacterRelationship]` |
 | POST | `/api/books/{b}/character-relationships` | `{ characterAId, characterBId, category, aToB, bToA, description? }`. Validates both ids exist, non-self, and no existing record covers this unordered pair |
 | PATCH | `/api/books/{b}/character-relationships/{id}` | `{ category?, aToB?, bToA?, description? }` |
