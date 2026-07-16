@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 
 :: Authority — Windows launcher
 :: Starts the backend server. Run setup.bat first if dependencies changed.
@@ -32,15 +32,16 @@ if %errorlevel%==0 (
 )
 
 :: -------------------------------------------------------------------
-:: 3. Start the backend
+:: 3. Start the backend in its own console window
+:: Uvicorn is the window's main process, so Ctrl+C or closing that
+:: window stops the server — no "Terminate batch job (Y/N)?" prompt.
 :: -------------------------------------------------------------------
 echo [Authority] Starting on port %PORT%...
 
-if %USE_CONDA%==1 (
-    start /b "" conda run -n %ENV_NAME% --no-capture-output python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
+if "%USE_CONDA%"=="1" (
+    start "Authority" conda run -n %ENV_NAME% --no-capture-output python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
 ) else (
-    call "%ROOT%.venv\Scripts\activate.bat"
-    start /b "" python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
+    start "Authority" "%ROOT%.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
 )
 
 :: -------------------------------------------------------------------
@@ -51,6 +52,7 @@ set "TRIES=0"
 if %TRIES% geq 30 (
     echo [Authority] ERROR: Backend did not start within 60 seconds.
     echo              Check logs\api.log for details.
+    echo              Close the Authority window if it is still open.
     pause
     exit /b 1
 )
@@ -62,12 +64,9 @@ if %errorlevel% neq 0 (
 )
 
 :: -------------------------------------------------------------------
-:: 5. Open browser
+:: 5. Open browser and exit the launcher
 :: -------------------------------------------------------------------
 echo [Authority] Ready at http://localhost:%PORT%
+echo [Authority] Stop with Ctrl+C in the Authority window, or run kill.bat.
 start "" "http://localhost:%PORT%"
-
-echo Press Ctrl+C to stop Authority.
-:wait
-timeout /t 86400 /nobreak >NUL
-goto :wait
+exit /b 0

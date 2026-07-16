@@ -14,9 +14,60 @@ One factory: `model_config → BaseChatModel`.
 
 Key resolution at call time: a literal key is used verbatim; `${ENV_VAR}` reads that environment variable; an **empty** key falls back to the provider's default environment variable (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`), so authors who already export the standard variable need not enter anything. A missing/unset variable surfaces as a clear error (at model-test or first use). Everything downstream (chat, jobs, streaming, tool-calling) is provider-agnostic.
 
-**Utility model** (`app.json → ai.utilityModelId`): used for system tasks — enrichment, commit-message suggestion. If unset, those features skip gracefully with a visible notice.
+**Utility model** (`app.json → ai.utilityModelId`): used for system tasks — enrichment, commit-message suggestion, and **conversation title** (3-word semantic name when a chat is still `"Untitled"`). If unset, those features skip or fall back gracefully (titles fall back to the first three words of the user message).
 
 **Book system prompt** (`book.json → systemPrompt`): prepended to every AI call for that book (chats, jobs, enrichment).
+
+## Context assembly & placeholders (who calls what)
+
+There is no separate “context service.” Two pieces do the work:
+
+| Piece | Role |
+|---|---|
+| **ContextAssembler** | Translator only. Takes a saved conversation (or a one-shot prompt) and builds the LangChain message list the model sees: system framing + book `systemPrompt` + optional **CURRENT SCENE** block + each stored message as user/assistant/system. It does **not** talk to the network, open the editor URL, or invent which scene is “current.” Callers pass that in. |
+| **PlaceholderRegistry** | Dictionary of known `@tokens` plus `resolve(prompt, mgr, scene_id, selection_text)`. Replaces tokens with prose/metadata from disk for that **explicit** `scene_id`. It never infers “most recently updated” or “which tab is open.” |
+
+**Scene identity rule:** the target scene always comes from the editor URL → conversation `parentId` / job `sceneId`. If that id is not passed into `resolve` or into the assembler’s `CURRENT SCENE` block, the model only has tools and may guess wrong.
+
+### Who calls ContextAssembler
+
+| Caller | When |
+|---|---|
+| **ConversationService** | Author sends a chat message |
+| **JobService** | An AI-Job runs |
+| **GitService** / **EnrichmentService** | One-shot prompts (no conversation thread) |
+
+Those callers hand the message list to **AIOrchestrator**, which invokes the model (with tools when bound).
+
+### Who calls PlaceholderRegistry.resolve
+
+| Caller | When |
+|---|---|
+| **JobService** | Expands the AI-Job definition prompt against `job.sceneId` before the run; expanded text is stored as a **system** message on the job’s conversation |
+| **ContextAssembler** | When building chat/job model payloads: expands `@tokens` inside *user* messages for the model only (stored transcript still shows the literal `@current_scene`) |
+| **SettingsService** | Does **not** resolve — lists vocabulary for `@` autocomplete and rejects unknown tokens when saving an AI-Job definition |
+
+### Chat call chain
+
+1. Editor opens chat with `parentType: scene`, `parentId: sceneId` from the URL. That binding is stored on the conversation.
+2. Author types e.g. `editorial review for @current_scene`.
+3. **ConversationService** saves that text as-is (token stays in the transcript).
+4. It asks **ContextAssembler** for model messages, passing the conversation’s parent scene (id + title) and the book data manager.
+5. Assembler injects `CURRENT SCENE (id, title)` into the system block and resolves `@tokens` in user messages against that scene id.
+6. **AIOrchestrator** runs the model (tools available).
+
+Without step 5, `@current_scene` stays literal, the model may call `list_scenes` / `get_scene`, and pick the wrong scene by freshness or sequence.
+
+### AI-Job call chain
+
+1. Editor runs a job with `sceneId` from the URL.
+2. **JobService** calls `PlaceholderRegistry.resolve(job_prompt, scene_id=that id)` (and optional selection text).
+3. Expanded text is appended as a system message on the job’s conversation.
+4. **ContextAssembler** builds the thread (same `CURRENT SCENE` framing) → **AIOrchestrator** runs.
+
+### One-line summary
+
+Scene identity comes from the editor URL → conversation/job parent id. Placeholders only expand when someone passes that id into `resolve`. ContextAssembler packages messages; it does not discover “current” by itself.
 
 ## Placeholder registry
 
@@ -35,13 +86,13 @@ Server-defined; exposed via `GET /api/settings/placeholders`; drives the `@` aut
 | `@story_summary` | book.json storySummary |
 | `@plotlines` | Plotline titles + descriptions, this scene's links flagged |
 
-Resolution is server-side at run time. Unknown tokens are left literal but flagged at definition save.
+Unknown tokens are left literal at resolve time but flagged at AI-Job definition save.
 
 ## AI-Jobs: end-to-end run
 
 1. Author picks a job from the editor dropdown (optionally with a selection active) → `POST /ai-jobs/run`.
 2. Server creates a conversation (kind `ai-job`, parent scene, title = job name + time, model = job default) and a queued job record; client opens the conversation modal, which subscribes to the stream.
-3. Worker: resolve placeholders against the scene → prepend book systemPrompt → invoke model **with tools** → stream tokens into the conversation.
+3. Worker: resolve placeholders against the job’s `sceneId` → append resolved prompt as a system message → ContextAssembler (book systemPrompt + CURRENT SCENE) → invoke model **with tools** → stream tokens into the conversation.
 4. Output parsing by `outputType`:
    - `chat` — reply is plain conversation.
    - `edit-proposals` — model instructed (via injected format instructions) to emit edits as structured find/replace items; parsed into `edit` proposals on the message.

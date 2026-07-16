@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.api.deps import get_conversation_service
 from app.models.conversation import (
@@ -45,6 +45,14 @@ async def patch_conversation(
     return svc.patch(book_id, conversation_id, body)
 
 
+@router.delete("/conversations/{conversation_id}", status_code=204, response_class=Response)
+async def delete_conversation(
+    book_id: str, conversation_id: str, svc: ConversationService = Service
+) -> Response:
+    svc.delete(book_id, conversation_id)
+    return Response(status_code=204)
+
+
 @router.post("/conversations/{conversation_id}/messages")
 async def send_message(
     book_id: str,
@@ -63,7 +71,6 @@ async def send_message(
 async def run_ai_job(
     book_id: str, body: AiJobRunRequest, svc: ConversationService = Service
 ) -> AiJobRunResponse:
-    # Delegated via job service — wired when JobService is available.
     from app.api.deps import get_job_service
 
     return await get_job_service().run_ai_job(book_id, body)

@@ -65,6 +65,7 @@ class ConversationCreate(BaseModel):
     parentType: ParentType
     parentId: str
     aiParticipant: AiParticipant | None = None
+    title: str | None = None
 
 
 class ConversationPatch(BaseModel):

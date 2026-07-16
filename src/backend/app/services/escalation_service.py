@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.event_hub import EventHub
-from app.models.conversation import AiParticipant, ConversationCreate, ConversationPatch
+from app.models.conversation import AiParticipant, ConversationCreate
 from app.models.enums import ConversationKind, ParentType
 from app.services.conversation_service import ConversationService
 from app.services.settings_service import SettingsService
@@ -46,6 +46,8 @@ class EscalationService:
         utility = self._settings.get_utility_model()
         mid = model_id or (utility.id if utility else None)
         ai = AiParticipant(enabled=bool(mid), modelId=mid)
+        title_bits = issue.message.strip().split()
+        short = " ".join(title_bits[:8]) if title_bits else "Needs your input"
         conv = self._conversations.create(
             book_id,
             ConversationCreate(
@@ -53,11 +55,9 @@ class EscalationService:
                 parentType=parent_type,
                 parentId=parent_id,
                 aiParticipant=ai,
+                title=short,
             ),
         )
-        title_bits = issue.message.strip().split()
-        short = " ".join(title_bits[:8]) if title_bits else "Needs your input"
-        self._conversations.patch(book_id, conv.id, ConversationPatch(title=short))
 
         opening = issue.message
         extras: list[str] = []

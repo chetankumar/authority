@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+from typing import Any
 
 from app.core.errors import ApiError, not_found, validation
 from app.core.event_hub import EventHub
@@ -24,21 +26,38 @@ from app.models.enums import ConversationKind, ConversationStatus, MessageAuthor
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_tools import ToolRegistry
 from app.services.book_registry import BookRegistry
-from app.services.context_assembler import ContextAssembler
+from app.services.context_assembler import ContextAssembler, CurrentSceneRef
 from app.services.settings_service import SettingsService
 
 log = logging.getLogger("authority.conversations")
+
+_TITLE_TIMEOUT_SECONDS = 12.0
+_TITLE_PROMPT = (
+    "Reply with exactly three words that title this writing-studio chat request. "
+    "No quotes, punctuation, or explanation — only the three words.\n\n"
+    "Message:\n"
+)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _first_words(text: str, n: int = 6) -> str:
+def _first_words(text: str, n: int = 3) -> str:
     words = text.strip().split()
     if not words:
         return "Untitled"
     return " ".join(words[:n])
+
+
+def _sanitize_three_word_title(raw: str) -> str | None:
+    cleaned = raw.strip().strip("\"'`").replace("\n", " ")
+    cleaned = re.sub(r"[^\w\s\-']", "", cleaned, flags=re.UNICODE)
+    words = [w for w in cleaned.split() if w]
+    if not words:
+        return None
+    title = " ".join(words[:3])
+    return title[:80] if title else None
 
 
 class ConversationService:
@@ -65,10 +84,11 @@ class ConversationService:
         existing = {s.id for s in mgr.get_conversation_index()}
         now = _now()
         ai = body.aiParticipant or AiParticipant()
+        title = (body.title or "").strip() or "Untitled"
         conv = Conversation(
             id=new_id("cnv", existing),
             kind=body.kind,
-            title="Untitled",
+            title=title,
             parentType=body.parentType,
             parentId=body.parentId,
             aiParticipant=ai,
@@ -116,6 +136,21 @@ class ConversationService:
         mgr.save_conversation(conv)
         return conv
 
+    def delete(self, book_id: str, conversation_id: str) -> None:
+        mgr = self._registry.get(book_id)
+        self.get(book_id, conversation_id)  # 404 if missing
+        if conversation_id in self._generating:
+            raise ApiError(409, "Generation already in progress.", {"code": "generation-in-progress"})
+        mgr.delete_conversation(conversation_id)
+        jobs = list(mgr.get_jobs())
+        changed = False
+        for job in jobs:
+            if job.conversationId == conversation_id:
+                job.conversationId = None
+                changed = True
+        if changed:
+            mgr.save_jobs(jobs)
+
     async def send_message(
         self, book_id: str, conversation_id: str, body: MessageCreate
     ) -> AsyncIterator[dict]:
@@ -138,15 +173,23 @@ class ConversationService:
             context=list(body.context or []),
             createdAt=now,
         )
-        if conv.title == "Untitled":
-            conv.title = _first_words(user_msg.content)
+        needs_title = conv.title == "Untitled"
         conv.messages.append(user_msg)
         conv.updatedAt = now
         mgr.save_conversation(conv)
 
+        if needs_title:
+            title = await self._semantic_title(user_msg.content)
+            conv = self.get(book_id, conversation_id)
+            conv.title = title
+            conv.updatedAt = _now()
+            mgr.save_conversation(conv)
+            yield {"event": "title", "data": {"title": title}}
+
+        yield {"event": "message", "data": {"message": user_msg.model_dump(mode="json"), "ai": False}}
+
         if not conv.aiParticipant.enabled:
-            yield {"event": "message", "data": {"message": user_msg.model_dump(mode="json"), "ai": False}}
-            yield {"event": "done", "data": {}}
+            yield {"event": "done", "data": {"title": conv.title}}
             return
 
         model_id = conv.aiParticipant.modelId
@@ -163,9 +206,11 @@ class ConversationService:
         try:
             book = mgr.get_book()
             tools, acc = self._tools.bind(book_id)
-            # Refresh conversation for assembler (includes user message).
             conv = self.get(book_id, conversation_id)
-            messages = self._assembler.from_conversation(conv, book.systemPrompt)
+            current = self._current_scene_ref(mgr, conv)
+            messages = self._assembler.from_conversation(
+                conv, book.systemPrompt, current_scene=current, mgr=mgr
+            )
 
             queue: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -220,9 +265,33 @@ class ConversationService:
             yield {"event": "message", "data": {"message": assistant.model_dump(mode="json")}}
             if turn.error:
                 yield {"event": "error", "data": {"error": turn.error}}
-            yield {"event": "done", "data": {}}
+            yield {"event": "done", "data": {"title": conv.title}}
         finally:
             self._generating.discard(conversation_id)
+
+    async def _semantic_title(self, user_content: str) -> str:
+        """Utility-model 3-word title; fallback to first three words of the message."""
+        fallback = _first_words(user_content, n=3)
+        cfg = self._settings.get_utility_model()
+        if cfg is None:
+            return fallback
+        try:
+            messages = self._assembler.for_once(_TITLE_PROMPT + user_content[:4000])
+            raw = await self._orch.invoke_once(cfg, messages, timeout=_TITLE_TIMEOUT_SECONDS)
+            title = _sanitize_three_word_title(raw)
+            if title:
+                return title
+        except Exception as exc:  # noqa: BLE001 — author still gets a title
+            log.warning("semantic title fell back: %s", exc)
+        return fallback
+
+    @staticmethod
+    def _current_scene_ref(mgr: Any, conv: Conversation) -> CurrentSceneRef | None:
+        if conv.parentType != ParentType.scene:
+            return None
+        scene = next((s for s in mgr.get_scenes() if s.id == conv.parentId), None)
+        title = scene.title if scene else "(unknown title)"
+        return CurrentSceneRef(id=conv.parentId, title=title)
 
     def append_system_message(self, book_id: str, conversation_id: str, content: str) -> Message:
         mgr = self._registry.get(book_id)

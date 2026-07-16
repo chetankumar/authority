@@ -311,6 +311,18 @@ class BookDataManager:
         self._conversation_index = index
         self._changed()
 
+    def delete_conversation(self, conversation_id: str) -> bool:
+        """Remove conversation file + index entry. Returns False if missing."""
+        path = self._conversation_path(conversation_id)
+        if not path.exists():
+            return False
+        path.unlink(missing_ok=True)
+        index = [s for s in self.get_conversation_index() if s.id != conversation_id]
+        atomic_write_json(self._index_path(), [s.model_dump(mode="json") for s in index])
+        self._conversation_index = index
+        self._changed()
+        return True
+
     def list_conversations_for_parent(
         self, parent_type: str, parent_id: str
     ) -> list[ConversationSummary]:

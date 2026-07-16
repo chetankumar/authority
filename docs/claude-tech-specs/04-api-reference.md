@@ -38,18 +38,19 @@ Routers hold no logic. Every router validates via Pydantic, then delegates:
 | Service | Responsibility |
 |---|---|
 | **SettingsService** | `app.json` read/write; model-config and AI-Job validation (uses PlaceholderRegistry, ModelFactory for reference checks) |
-| **PlaceholderRegistry** | Defines placeholders; validates prompts; resolves `@tokens` at run time (reads via BookDataManager) |
+| **PlaceholderRegistry** | Defines placeholders; validates prompts; resolves `@tokens` at run time against an explicit `scene_id` (reads via BookDataManager). Never infers “current” scene. See doc 05. |
+| **ContextAssembler** | Builds LangChain message lists from conversations / one-shot prompts; injects CURRENT SCENE when callers pass parent scene id. See doc 05. |
 | **BookScanner** | Scans booksHome; caches shelf; reads each book's `config/book.json` |
 | **BookService** | Book creation (scaffold, git init, initial commit), rename/cover updates, folder rename |
 | **BookDataManager** (one per open book) | Loads `db/*.json` + `config/book.json` into memory; owns the book's **asyncio mutation lock**; atomic write-through persistence; conversation files + derived index; ui.json |
 | **ChainService** | Hard-chain algebra: splice, heal, walk, seq/placement computation, contiguity + completeness checks |
 | **SceneService** | Scene CRUD orchestration; content saves (hash, word count); dependency-todo fanout; enrichment settle timers; file naming/renames |
 | **StructureService** | Parts/chapters linked lists; move-before/after rewiring; blocked deletions; plotlines; characters (uniqueness) |
-| **ConversationService** | Conversation lifecycle; message append; assembling model context; streaming orchestration; proposal parsing from model output |
+| **ConversationService** | Conversation lifecycle; message append; passes parent scene into ContextAssembler; streams via AIOrchestrator |
 | **ProposalService** | Locates a proposal by id (via conversation index); applies/rejects; the only code path that mutates on behalf of AI output |
-| **JobService + Worker** | `jobs.json` queue; single asyncio worker (per-book FIFO, concurrency 1/book, ≤2 global); status transitions |
+| **JobService + Worker** | `jobs.json` queue; resolves AI-Job placeholders then ContextAssembler → AIOrchestrator; per-book FIFO, ≤2 global |
 | **EnrichmentService** | The system bookkeeping job (summary, character mapping) |
-| **AIService / ModelFactory** | `ModelConfig → LangChain BaseChatModel`; tool binding; `${ENV}` key resolution; streaming |
+| **AIOrchestrator / ModelFactory** | `ModelConfig → LangChain BaseChatModel`; invoke_once / structured / stream + tool loop; `${ENV}` key resolution |
 | **GitService** | GitPython wrapper: status/stage/unstage/diff/commit/push/pull/log; post-write status checks |
 | **CompileService** | Completeness check (errors/warnings); build to `compiled-book/` |
 | **EventHub** | Per-book SSE pub/sub; all services emit through it |
@@ -404,15 +405,19 @@ Removes it; existing dependency-generated todos remain (they're the author's to 
 **Request**
 ```json
 { "kind": conversationKind, "parentType": parentType, "parentId": "..",
-  "aiParticipant"?: { "enabled": bool, "modelId": "mdl-..|null" } }
+  "aiParticipant"?: { "enabled": bool, "modelId": "mdl-..|null" },
+  "title"?: "optional initial title" }
 ```
-Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:** ConversationService creates `cnv-{hex}.json` with empty messages, title `"Untitled"` (replaced by first-words on first user message); index updated. **201** Conversation. *(AI-Job runs don't call this — see §9.4.)*
+Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:** ConversationService creates `cnv-{hex}.json` with empty messages; title is the optional `title` or `"Untitled"`. Index updated. **201** Conversation. *(AI-Job runs don't call this — see §9.4. Escalations pass a title derived from the issue text.)*
 
 ### GET /api/books/{b}/conversations/{id}
 **Response** full Conversation with messages + proposals (per-file load on demand).
 
 ### PATCH /api/books/{b}/conversations/{id}
 **Request** `{ "title"?, "status"?: "open"|"archived", "aiParticipant"?: { "enabled"?, "modelId"? } }` — the mid-thread AI toggle and model switch live here. Enabling with no modelId and none previously set → 422 `model-required`.
+
+### DELETE /api/books/{b}/conversations/{id}
+Hard delete for mistakes. Removes `cnv-*.json` and the index entry; any jobs pointing at this conversation get `conversationId` cleared. **204**. Rejected **409** `generation-in-progress` if a stream is active.
 
 ### 9.3 POST /api/books/{b}/conversations/{id}/messages — **SSE response**
 **Request**
@@ -421,11 +426,12 @@ Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:
   "context"?: [ { "sceneId": "scn-..", "excerpt": "selected text snapshot" } ] }
 ```
 **Logic (ConversationService):**
-1. Append the user Message (id, timestamp; excerpts stored verbatim). If it's the first user message and the title is default → title = first ~6 words. Persist + index update.
-2. **aiParticipant.enabled == false:** respond 200 JSON `{ "message": Message }`. Done (pure note).
-3. **enabled == true:** resolve ModelConfig (422 `model-missing`/`model-deleted` if unresolvable). Build the LangChain call: system = book systemPrompt + Authority's assistant framing + tool schemas; history = conversation messages mapped to roles (context excerpts injected as quoted blocks inside user turns); bind read + propose tools (doc 05).
-4. Respond as **SSE**: `token` events (`{ "text": ".." }`) as the model streams; tool calls execute server-side mid-stream (read tools answer from BookDataManager; propose tools accumulate Proposal objects); on completion, persist the assistant Message (content, modelId, proposals) and send a final `message` event carrying it, then `done`.
-5. Model/tool failure mid-stream → `error` event `{ "error": ".." }`; user message stays persisted; no assistant message written.
+1. Append the user Message (id, timestamp; excerpts stored verbatim). Persist + index update.
+2. If title is still `"Untitled"`: call the **utility model** for a 3-word semantic title (short timeout); on missing utility model / failure → first three words of the user message. Persist title; emit SSE `title` `{ "title": ".." }`.
+3. Emit SSE `message` for the user turn. **aiParticipant.enabled == false:** then `done`. Done (pure note).
+4. **enabled == true:** resolve ModelConfig (422 `model-missing`/`model-deleted` if unresolvable). Build the LangChain call: system = book systemPrompt + Authority's assistant framing + CURRENT SCENE + tool schemas; history = conversation messages mapped to roles (context excerpts injected as quoted blocks inside user turns; `@placeholders` in user text resolved for the model); bind read + propose tools (doc 05).
+5. Respond as **SSE**: `token` events (`{ "text": ".." }`) as the model streams; tool calls execute server-side mid-stream (read tools answer from BookDataManager; propose tools accumulate Proposal objects); on completion, persist the assistant Message (content, modelId, proposals) and send a final `message` event carrying it, then `done`.
+6. Model/tool failure mid-stream → `error` event `{ "error": ".." }`; user message stays persisted; no assistant message written.
 Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 
 ### 9.4 POST /api/books/{b}/ai-jobs/run

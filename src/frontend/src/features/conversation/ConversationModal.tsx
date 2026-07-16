@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
+  deleteConversation,
   getConversation,
   patchConversation,
   sendMessageStream,
@@ -11,6 +12,7 @@ import {
 } from "../../api/conversations";
 import { acceptProposal, rejectProposal } from "../../api/proposals";
 import { listModels, type ModelConfig } from "../../api/settings";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Modal } from "../../components/Modal";
 import { Button } from "../../components/ui";
 import { useToast } from "../../components/Toast";
@@ -32,18 +34,25 @@ export function ConversationModal({
   const toast = useToast();
   const qc = useQueryClient();
   const [conv, setConv] = useState<Conversation | null>(null);
+  const [titleDraft, setTitleDraft] = useState("");
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const pendingContext = useRef(initialContext ?? null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
+  const titleFocused = useRef(false);
 
   useEffect(() => {
-    void getConversation(bookId, conversationId).then(setConv);
+    void getConversation(bookId, conversationId).then((c) => {
+      setConv(c);
+      setTitleDraft(c.title);
+    });
     void listModels().then(setModels);
     return () => abortRef.current?.();
   }, [bookId, conversationId]);
@@ -52,16 +61,29 @@ export function ConversationModal({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conv?.messages, streaming]);
 
+  function applyTitle(title: string) {
+    if (titleFocused.current) return;
+    setTitleDraft(title);
+    setConv((c) => (c ? { ...c, title } : c));
+  }
+
   async function refresh() {
     const c = await getConversation(bookId, conversationId);
     setConv(c);
+    if (!titleFocused.current) setTitleDraft(c.title);
     if (sceneId) void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId) });
+    void qc.invalidateQueries({ queryKey: keys.jobs(bookId, sceneId ?? "") });
   }
 
-  async function onTitleBlur(title: string) {
-    if (!conv || title === conv.title) return;
+  async function onTitleBlur() {
+    titleFocused.current = false;
+    if (!conv) return;
+    const title = titleDraft.trim() || conv.title;
+    setTitleDraft(title);
+    if (title === conv.title) return;
     const updated = await patchConversation(bookId, conversationId, { title });
     setConv(updated);
+    setTitleDraft(updated.title);
   }
 
   async function toggleAi(enabled: boolean) {
@@ -106,6 +128,7 @@ export function ConversationModal({
       { content, context },
       {
         onToken: (t) => setStreaming((s) => s + t),
+        onTitle: (title) => applyTitle(title),
         onMessage: (msg) => {
           if (msg.author === "user") {
             setConv((c) => (c ? { ...c, messages: [...c.messages, msg] } : c));
@@ -125,6 +148,20 @@ export function ConversationModal({
         },
       },
     );
+  }
+
+  async function onDelete() {
+    setDeleting(true);
+    try {
+      await deleteConversation(bookId, conversationId);
+      if (sceneId) void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId) });
+      void qc.invalidateQueries({ queryKey: keys.jobs(bookId, sceneId ?? "") });
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't delete conversation.");
+      setConfirmDelete(false);
+      setDeleting(false);
+    }
   }
 
   async function onAccept(p: Proposal) {
@@ -169,86 +206,105 @@ export function ConversationModal({
   }
 
   return (
-    <Modal
-      title=""
-      width={800}
-      onClose={onClose}
-      footer={
-        <div className="flex w-full flex-col gap-2">
-          {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
-          <div className="flex gap-2">
-            <textarea
-              value={draft}
-              rows={2}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
+    <>
+      <Modal
+        title=""
+        width={800}
+        onClose={onClose}
+        footer={
+          <div className="flex w-full flex-col gap-2">
+            {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
+            <div className="flex gap-2">
+              <textarea
+                value={draft}
+                rows={2}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder="Write a note or ask the AI…"
+                className="min-h-[2.5rem] flex-1 rounded-control border border-line bg-surface px-3 py-2 text-[0.875rem] text-ink outline-none focus:border-accent"
+                disabled={busy}
+              />
+              <Button variant="primary" onClick={send} disabled={busy || !draft.trim()}>
+                {busy ? "…" : "Send"}
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div className="flex max-h-[60vh] flex-col">
+          <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
+            <input
+              value={titleDraft}
+              onFocus={() => {
+                titleFocused.current = true;
               }}
-              placeholder="Write a note or ask the AI…"
-              className="min-h-[2.5rem] flex-1 rounded-control border border-line bg-surface px-3 py-2 text-[0.875rem] text-ink outline-none focus:border-accent"
-              disabled={busy}
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={() => void onTitleBlur()}
+              className="min-w-0 flex-1 bg-transparent text-[1rem] font-semibold text-ink outline-none"
             />
-            <Button variant="primary" onClick={send} disabled={busy || !draft.trim()}>
-              {busy ? "…" : "Send"}
+            <label className="flex items-center gap-2 text-[0.8125rem] text-ink-soft">
+              <input
+                type="checkbox"
+                checked={conv.aiParticipant.enabled}
+                onChange={(e) => void toggleAi(e.target.checked)}
+              />
+              AI
+            </label>
+            <select
+              value={conv.aiParticipant.modelId ?? ""}
+              onChange={(e) => void setModel(e.target.value)}
+              className="rounded-control border border-line bg-surface px-2 py-1 text-[0.8125rem]"
+            >
+              <option value="">Model…</option>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={busy || deleting}>
+              Delete
             </Button>
           </div>
-        </div>
-      }
-    >
-      <div className="flex max-h-[60vh] flex-col">
-        <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
-          <input
-            defaultValue={conv.title}
-            onBlur={(e) => void onTitleBlur(e.target.value.trim() || conv.title)}
-            className="min-w-0 flex-1 bg-transparent text-[1rem] font-semibold text-ink outline-none"
-          />
-          <label className="flex items-center gap-2 text-[0.8125rem] text-ink-soft">
-            <input
-              type="checkbox"
-              checked={conv.aiParticipant.enabled}
-              onChange={(e) => void toggleAi(e.target.checked)}
-            />
-            AI
-          </label>
-          <select
-            value={conv.aiParticipant.modelId ?? ""}
-            onChange={(e) => void setModel(e.target.value)}
-            className="rounded-control border border-line bg-surface px-2 py-1 text-[0.8125rem]"
-          >
-            <option value="">Model…</option>
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
-          {conv.messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              showPrompt={showPrompt}
-              onTogglePrompt={() => setShowPrompt((s) => !s)}
-              onAccept={onAccept}
-              onReject={onReject}
-              onAcceptAll={acceptAll}
-            />
-          ))}
-          {streaming && (
-            <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
-              {streaming}
-              <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
-            </div>
-          )}
-          <div ref={bottomRef} />
+          <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
+            {conv.messages.map((m) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                showPrompt={showPrompt}
+                onTogglePrompt={() => setShowPrompt((s) => !s)}
+                onAccept={onAccept}
+                onReject={onReject}
+                onAcceptAll={acceptAll}
+              />
+            ))}
+            {streaming && (
+              <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
+                {streaming}
+                <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete this conversation?"
+          message="This can't be undone. The thread and any pending proposals will be removed."
+          confirmLabel={deleting ? "Deleting…" : "Delete"}
+          onConfirm={() => void onDelete()}
+          onCancel={() => !deleting && setConfirmDelete(false)}
+        />
+      )}
+    </>
   );
 }
 

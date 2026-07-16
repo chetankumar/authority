@@ -77,6 +77,10 @@ export function patchConversation(
   return apiSend<Conversation>("PATCH", `/books/${bookId}/conversations/${conversationId}`, body);
 }
 
+export function deleteConversation(bookId: string, conversationId: string) {
+  return apiSend<void>("DELETE", `/books/${bookId}/conversations/${conversationId}`);
+}
+
 export function listSceneConversations(bookId: string, sceneId: string) {
   return apiGet<ConversationSummary[]>(`/books/${bookId}/scenes/${sceneId}/conversations`);
 }
@@ -84,6 +88,7 @@ export function listSceneConversations(bookId: string, sceneId: string) {
 export interface StreamHandlers {
   onToken?: (text: string) => void;
   onMessage?: (message: Message, ai?: boolean) => void;
+  onTitle?: (title: string) => void;
   onError?: (error: string) => void;
   onDone?: () => void;
 }
@@ -129,6 +134,7 @@ export function sendMessageStream(
           try {
             const parsed = JSON.parse(data) as Record<string, unknown>;
             if (event === "token") handlers.onToken?.(String(parsed.text ?? ""));
+            else if (event === "title") handlers.onTitle?.(String(parsed.title ?? ""));
             else if (event === "message") {
               const msg = parsed.message as Message;
               handlers.onMessage?.(msg, parsed.ai === false ? false : true);

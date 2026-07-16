@@ -297,7 +297,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 
 **Purpose:** the universal thread — note-stacking, chat, and AI-job runs are all this one surface. 800px × 80vh.
 
-**Header:** editable title (blur → `PATCH /conversations/{id}`) · relative timestamp · right cluster: **model select** + **"AI participant" switch** · ×.
+**Header:** editable title (controlled; blur → `PATCH /conversations/{id}`; auto-filled from utility-model 3-word semantic title when still Untitled after first send — SSE `title`) · relative timestamp · right cluster: **model select** + **"AI participant" switch** · **Delete** · ×.
 **Body:** message list. User messages right-aligned wash; context excerpts render as bordered quote blocks above the text, labeled "From {scene title}". Assistant messages left, model label in `--ink-faint` above, streaming text with a blinking cursor. System messages (job prompts) collapsed to one line — "Job prompt · show" — expandable.
 **Proposal cards** inside assistant messages: bordered `--attn-wash` cards. Edit: side-by-side find (strikethrough) / replace + rationale line. Metadata: "Mood: ~~tense~~ → **elegiac**" + rationale. Todo: "☐ {action}". Buttons per card [Reject] [Accept]; message footer [Accept all ({n})] when >1 pending. Applied → `--ok-wash` + ✓; rejected → faded; not-found → amber "This text is no longer in the scene."
 **Composer:** textarea (Enter sends, Shift+Enter newline) · [Send].
@@ -306,7 +306,8 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 |---|---|---|
 | **AI participant switch** | `PATCH {aiParticipant.enabled}`; on-with-no-model → the model select pulses its focus ring and the send stays enabled but returns the 422 inline: "Pick a model to bring the AI in" | The stack-notes-to-myself feature: one thread can be private scratchpad, then a consultation, then private again — the switch is that boundary, visible and instant |
 | Model select | `PATCH {aiParticipant.modelId}`; defaults: job's default model on job runs, else last-used | Different questions deserve different (or local) models; per-message attribution in the transcript keeps the history honest |
-| Send | `POST /messages` — switch off: plain append (the note path). Switch on: SSE stream renders tokens live; final `message` event replaces the streaming buffer with the persisted message + proposal cards; `error` event → inline danger row + composer re-enabled | |
+| Send | `POST /messages` — switch off: plain append (the note path). Switch on: SSE stream renders tokens live; final `message` event replaces the streaming buffer with the persisted message + proposal cards; `error` event → inline danger row + composer re-enabled. First send while Untitled → utility model names the thread (3 words); header updates via `title` event | |
+| **Delete** | Confirm → `DELETE /conversations/{id}` → close modal; Notes/AI Jobs lists refresh | Hard delete for mistakes; confirm because irreversible |
 | Accept / Reject / Accept all | `POST /proposals/{id}/accept|reject`; Accept-all loops sequentially, halting to surface any not-found | The approval gate made tactile: every AI-initiated change is a card the author physically dismisses or applies; not-found is shown, never silently skipped |
 | Close / click-out | Just closes — every message persisted on send; pending proposals survive and badge the accordion | No "save conversation?" anxiety; the thread is already real |
 

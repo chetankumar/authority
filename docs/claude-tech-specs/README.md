@@ -13,7 +13,7 @@ Authority is a local, browser-based, AI-assisted novel-writing studio. This docu
 | `02-architecture-and-launcher.md` | Process model, launcher scripts, ports, logging, repo layout |
 | `03-data-storage.md` | Every JSON file and schema, ID scheme, atomic-write semantics, scene files |
 | `04-api-reference.md` | Every endpoint: purpose, request, response, behavior, errors |
-| `05-ai-system.md` | LangChain integration, models, placeholders, AI-Jobs, enrichment, proposals, job worker, SSE |
+| `05-ai-system.md` | LangChain, ContextAssembler vs PlaceholderRegistry (who calls what), models, AI-Jobs, enrichment, proposals, worker, SSE |
 | `06-frontend-pages.md` | Every page and modal: layout, contents, button behavior, which APIs each control calls |
 | `07-decisions-and-deferred.md` | Closed decisions (with defaults the author may veto), deferred features, glossary |
 

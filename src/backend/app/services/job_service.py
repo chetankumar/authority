@@ -206,7 +206,7 @@ class JobService:
     async def _execute_user_job(self, book_id: str, job: Job) -> None:
         from app.services.ai_orchestrator import AIOrchestrator
         from app.services.ai_tools import ToolRegistry
-        from app.services.context_assembler import ContextAssembler
+        from app.services.context_assembler import ContextAssembler, CurrentSceneRef
         from app.api.deps import get_ai_orchestrator, get_tool_registry
 
         definition = self._settings.get_ai_job(job.aiJobId or "")
@@ -238,7 +238,16 @@ class JobService:
         book = mgr.get_book()
         conv = self._conversations.get(book_id, job.conversationId)
         assembler = ContextAssembler()
-        messages = assembler.from_conversation(conv, book.systemPrompt)
+        scene_ref = None
+        if job.sceneId:
+            scene = next((s for s in mgr.get_scenes() if s.id == job.sceneId), None)
+            scene_ref = CurrentSceneRef(
+                id=job.sceneId,
+                title=scene.title if scene else "(unknown title)",
+            )
+        messages = assembler.from_conversation(
+            conv, book.systemPrompt, current_scene=scene_ref, mgr=mgr
+        )
 
         turn = await orch.invoke_stream(cfg, messages, tools=tools, accumulator=acc)
         if turn.error and not turn.content:
