@@ -7,7 +7,11 @@
       "theme": "system"
     },
     "ai": {
-      "utilityModelId": "mdl-92c71d"
+      "utilityModelId": "mdl-92c71d",
+      "commitMessageModelId": null,
+      "characterParsingModelId": null,
+      "sceneSummaryModelId": null,
+      "chatDefaultModelId": null
     },
     "models": [
       {
