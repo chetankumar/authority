@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { getHealth } from "./api/health";
 import { useUser } from "./queries/settings";
 import { useBook } from "./queries/books";
+import { useGitStatus } from "./queries/git";
+import { useBookEvents } from "./events/useBookEvents";
 import { useTheme } from "./theme";
 import type { ThemePref } from "./api/settings";
 
@@ -17,6 +19,9 @@ export default function App() {
   // the author can kill by accident, so we name the fix rather than mystify.
   const health = useQuery({ queryKey: ["health"], queryFn: getHealth, refetchInterval: 5000 });
   const disconnected = health.isError;
+
+  // One event channel per open book; feeds the git badge (doc 06 §2).
+  useBookEvents(bookId);
 
   return (
     <div className="flex h-full flex-col bg-paper text-ink">
@@ -62,10 +67,32 @@ function TopBar({ bookId }: { bookId: string | null }) {
         )}
       </div>
       <div className="flex items-center gap-3">
+        {bookId && <GitBadge bookId={bookId} />}
         <ThemeToggle />
         <span className="text-[0.8125rem] text-ink-soft">{greeting}</span>
       </div>
     </header>
+  );
+}
+
+// The nudge that makes deliberate commits happen without auto-commit (doc 06 §3).
+// Amber means a decision awaits. Clean → renders nothing, so the chrome stays
+// quiet until there's genuinely something to save.
+//
+// Kept current by two paths on purpose (doc 07 §25–28): `git-status` over SSE
+// (instant after an explicit commit, ~5s after the author stops typing), and a
+// 10s poll inside useGitStatus underneath it. A badge that lies is worse than
+// no badge, so the poll stays even though the event is the fast path.
+function GitBadge({ bookId }: { bookId: string }) {
+  const status = useGitStatus(bookId);
+  if (!status.data?.dirty) return null;
+  return (
+    <Link
+      to={`/book/${bookId}/git`}
+      className="rounded-control bg-attn-wash px-2 py-1 text-[0.75rem] text-attn hover:opacity-90"
+    >
+      {status.data.summary} · Commit now?
+    </Link>
   );
 }
 
@@ -110,7 +137,7 @@ function LeftNav({ bookId, collapsed }: { bookId: string | null; collapsed: bool
         { to: `/book/${bookId}/characters`, label: "Character Sheet", icon: "☺", soon: true },
         { to: `/book/${bookId}/metadata`, label: "Metadata", icon: "❏" },
         { to: `/book/${bookId}/tasks`, label: "Tasks", icon: "✓", soon: true },
-        { to: `/book/${bookId}/git`, label: "Version control", icon: "⎇", soon: true },
+        { to: `/book/${bookId}/git`, label: "Version control", icon: "⎇" },
       ]
     : [];
 

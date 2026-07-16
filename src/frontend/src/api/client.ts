@@ -77,3 +77,84 @@ export async function apiSend<T>(method: string, path: string, body?: unknown): 
 export async function apiUpload<T>(method: string, path: string, form: FormData): Promise<T> {
   return parse<T>(await fetch(`/api${path}`, { method, body: form }));
 }
+
+// ---- SSE (doc 04 §12) -------------------------------------------------------
+
+/** Event types the book channel pushes. Server-internal types are ignored. */
+export type BookEventType = "job" | "scene-updated" | "todos-created" | "git-status" | "compile-done";
+
+export interface BookEvent<T = unknown> {
+  type: BookEventType;
+  data: T;
+}
+
+const SSE_EVENT_TYPES: BookEventType[] = [
+  "job",
+  "scene-updated",
+  "todos-created",
+  "git-status",
+  "compile-done",
+];
+
+const SSE_RETRY_BASE_MS = 1000;
+const SSE_RETRY_MAX_MS = 30000;
+
+export interface BookEventsHandlers {
+  onEvent: (event: BookEvent) => void;
+  /** Fired after a dropped connection is re-established, so callers can resync. */
+  onReconnect?: () => void;
+}
+
+/**
+ * Subscribe to a book's event channel. Returns an unsubscribe function.
+ *
+ * The channel is stateless — nothing is replayed on reconnect, so anything
+ * rendered from these events must also be recoverable by refetching (see
+ * `onReconnect`, and the 10s poll in `queries/git.ts`).
+ */
+export function subscribeToBookEvents(bookId: string, handlers: BookEventsHandlers): () => void {
+  let source: EventSource | null = null;
+  let retryMs = SSE_RETRY_BASE_MS;
+  let reconnectTimer: number | undefined;
+  let closed = false;
+  let everConnected = false;
+
+  const connect = () => {
+    if (closed) return;
+    source = new EventSource(`/api/books/${bookId}/events`);
+
+    source.onopen = () => {
+      retryMs = SSE_RETRY_BASE_MS;
+      if (everConnected) handlers.onReconnect?.();
+      everConnected = true;
+    };
+
+    for (const type of SSE_EVENT_TYPES) {
+      source.addEventListener(type, (e) => {
+        try {
+          handlers.onEvent({ type, data: JSON.parse((e as MessageEvent).data) });
+        } catch {
+          // A malformed frame is not worth tearing the stream down for; the
+          // poll will carry whatever this event would have delivered.
+        }
+      });
+    }
+
+    source.onerror = () => {
+      source?.close();
+      source = null;
+      if (closed) return;
+      // Back off; the browser's own retry is not enough once the server is down.
+      reconnectTimer = window.setTimeout(connect, retryMs);
+      retryMs = Math.min(retryMs * 2, SSE_RETRY_MAX_MS);
+    };
+  };
+
+  connect();
+
+  return () => {
+    closed = true;
+    window.clearTimeout(reconnectTimer);
+    source?.close();
+  };
+}

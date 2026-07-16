@@ -8,13 +8,15 @@ holds it so subsequent requests reuse the in-memory state. A missing id → 404.
 from __future__ import annotations
 
 from app.core.errors import not_found
+from app.core.event_hub import EventHub
 from app.services.book_data_manager import BookDataManager
 from app.services.book_scanner import BookScanner
 
 
 class BookRegistry:
-    def __init__(self, scanner: BookScanner) -> None:
+    def __init__(self, scanner: BookScanner, hub: EventHub | None = None) -> None:
         self._scanner = scanner
+        self._hub = hub
         self._managers: dict[str, BookDataManager] = {}
 
     def get(self, book_id: str) -> BookDataManager:
@@ -26,7 +28,9 @@ class BookRegistry:
         if book_dir is None:
             raise not_found("book", book_id)
 
-        manager = BookDataManager(book_dir)
+        # The manager needs its own id and the hub so its writes can announce
+        # themselves (``book-changed``); the registry is where both are known.
+        manager = BookDataManager(book_dir, book_id=book_id, hub=self._hub)
         self._managers[book_id] = manager
         return manager
 

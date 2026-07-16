@@ -20,4 +20,6 @@ Parent: [backend](../CLAUDE.md). Specs: [04 API §1.3](../../../docs/claude-tech
 
 ## Mutation lifecycle (every write endpoint, doc 04 §1.3)
 
-router → Pydantic validation → service acquires the book's asyncio lock → read in-memory state → validate business rules → mutate copies → BookDataManager persists changed files atomically (`.tmp` + fsync + `os.replace`) → release lock → GitService dirty-check → EventHub emit → response. **Reads take no lock.**
+router → Pydantic validation → service acquires the book's asyncio lock → read in-memory state → validate business rules → mutate copies → BookDataManager persists changed files atomically (`.tmp` + fsync + `os.replace`) → BookDataManager emits `book-changed` → release lock → response. **Reads take no lock.**
+
+Git is **not** in that path. `book-changed` is a payload-free signal; the [git-status worker](worker/CLAUDE.md) picks it up and re-checks git after a 5s debounce, off the request (doc 07 §25). Only explicit git actions emit `git-status` in-request.

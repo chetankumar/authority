@@ -26,6 +26,8 @@ Parent: [frontend](../CLAUDE.md). Spec: [06 Frontend §2](../../../docs/claude-t
 
 `useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `job` patches `['jobs']` + streaming modal state; `todos-created` invalidates `['todos']`; `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`. On reconnect: refetch active queries.
 
+**SSE is the fast path, not the only one.** `useGitStatus` also polls `GET /git/status` every 10s (`refetchInterval`), so a dropped event can't leave the amber badge silently lying (doc 07 §28). Poll and event write identical server truth into the same key — redundant by design.
+
 ## Editor autosave
 
 Local dirty buffer → debounce 2s → `PUT content`; never blocks typing; failures show a persistent "Not saved — retrying" state, retry with backoff.

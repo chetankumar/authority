@@ -22,6 +22,7 @@ from typing import Any
 
 from app.core.atomic import atomic_write_json
 from app.core.errors import ApiError
+from app.core.event_hub import EventHub
 from app.models.book import Book, BookConfig, Chapter, Part
 from app.models.plotline import PlotlineRecord
 from app.models.scene import SceneRecord, SoftRelationship
@@ -31,8 +32,10 @@ log = logging.getLogger("authority.books")
 
 
 class BookDataManager:
-    def __init__(self, book_dir: Path) -> None:
+    def __init__(self, book_dir: Path, book_id: str | None = None, hub: EventHub | None = None) -> None:
         self._dir = book_dir
+        self._book_id = book_id
+        self._hub = hub
         self._lock = asyncio.Lock()
         self._config: BookConfig | None = None
         self._scenes: list[SceneRecord] | None = None
@@ -48,6 +51,18 @@ class BookDataManager:
     @property
     def book_dir(self) -> Path:
         return self._dir
+
+    def _changed(self) -> None:
+        """Signal that something in this book's folder was written.
+
+        Payload-free and fire-and-forget: every mutating service already funnels
+        its writes through this class, so this one call is the whole integration
+        point for post-write reactions — no service needs its own hook. Today the
+        only consumer is the git-status worker, which re-checks git after a
+        debounce (doc 07 §25); git deliberately never runs on the write path.
+        """
+        if self._hub is not None and self._book_id is not None:
+            self._hub.emit(self._book_id, "book-changed", {})
 
     def _config_path(self) -> Path:
         return self._dir / "config" / "book.json"
@@ -126,12 +141,14 @@ class BookDataManager:
     def save_scenes(self, scenes: list[SceneRecord]) -> None:
         atomic_write_json(self._dir / "db" / "scenes.json", [s.model_dump(mode="json") for s in scenes])
         self._scenes = scenes
+        self._changed()
 
     def save_relationships(self, relationships: list[SoftRelationship]) -> None:
         atomic_write_json(
             self._dir / "db" / "relationships.json", [r.model_dump(mode="json") for r in relationships]
         )
         self._relationships = relationships
+        self._changed()
 
     # ---- parts / chapters / plotlines (doc 03) --------------------------------
 
@@ -143,6 +160,7 @@ class BookDataManager:
     def save_parts(self, parts: list[Part]) -> None:
         atomic_write_json(self._dir / "db" / "parts.json", [p.model_dump(mode="json") for p in parts])
         self._parts = parts
+        self._changed()
 
     def get_chapters(self) -> list[Chapter]:
         if self._chapters is None:
@@ -152,6 +170,7 @@ class BookDataManager:
     def save_chapters(self, chapters: list[Chapter]) -> None:
         atomic_write_json(self._dir / "db" / "chapters.json", [c.model_dump(mode="json") for c in chapters])
         self._chapters = chapters
+        self._changed()
 
     def get_plotlines(self) -> list[PlotlineRecord]:
         if self._plotlines is None:
@@ -161,11 +180,13 @@ class BookDataManager:
     def save_plotlines(self, plotlines: list[PlotlineRecord]) -> None:
         atomic_write_json(self._dir / "db" / "plotlines.json", [p.model_dump(mode="json") for p in plotlines])
         self._plotlines = plotlines
+        self._changed()
 
     def save_config(self) -> None:
         """Persist the in-memory config back to disk."""
         if self._config is not None:
             atomic_write_json(self._config_path(), self._config.model_dump(mode="json"))
+            self._changed()
 
     # ---- ui.json (client-owned shape, doc 04 §4) ----------------------------
 
@@ -179,6 +200,10 @@ class BookDataManager:
     def merge_ui(self, patch: dict[str, Any]) -> dict[str, Any]:
         merged = {**self.get_ui(), **patch}
         atomic_write_json(self._dir / "db" / "ui.json", merged)
+        # ui.json is tracked like everything else in the book folder, so this
+        # really does dirty the repo — say so rather than letting the badge and
+        # the 10s poll disagree.
+        self._changed()
         return merged
 
     # ---- scene file helpers -------------------------------------------------

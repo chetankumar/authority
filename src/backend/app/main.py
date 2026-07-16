@@ -7,6 +7,7 @@ production, so no CORS configuration.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.books.router import router as books_router
+from app.api.deps import get_git_status_worker
+from app.api.events.router import router as events_router
+from app.api.git.router import router as git_router
 from app.api.health.router import router as health_router
 from app.api.plotlines.router import router as plotlines_router
 from app.api.relationships.router import router as relationships_router
@@ -40,8 +44,20 @@ async def lifespan(app: FastAPI):
         log.info("Serving SPA from %s", dist)
     else:
         log.warning("Frontend build not found at %s — run the frontend build.", dist)
-    yield
-    log.info("Authority shutting down")
+
+    # Standing background task: keeps the git badge current without ever putting
+    # git on a write path (doc 02 §backend-internal-architecture, doc 07 §25).
+    git_worker = asyncio.create_task(get_git_status_worker().run())
+
+    try:
+        yield
+    finally:
+        git_worker.cancel()
+        try:
+            await git_worker
+        except asyncio.CancelledError:
+            pass
+        log.info("Authority shutting down")
 
 
 app = FastAPI(title="Authority", version=__version__, lifespan=lifespan)
@@ -69,6 +85,8 @@ app.include_router(scenes_router, prefix="/api")
 app.include_router(relationships_router, prefix="/api")
 app.include_router(structure_router, prefix="/api")
 app.include_router(plotlines_router, prefix="/api")
+app.include_router(git_router, prefix="/api")
+app.include_router(events_router, prefix="/api")
 
 _DIST = config.frontend_dist
 

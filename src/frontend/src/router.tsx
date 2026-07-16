@@ -7,6 +7,7 @@ import GraphPage from "./features/graph/GraphPage";
 import ScenesTablePage from "./features/table/ScenesTablePage";
 import EditorPage from "./features/editor/EditorPage";
 import MetadataPage from "./features/metadata/MetadataPage";
+import GitPage from "./features/git/GitPage";
 import NotFound from "./features/NotFound";
 import SettingsLayout from "./features/settings/SettingsLayout";
 import UserSettingsPage from "./features/settings/UserSettingsPage";
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { path: "book/:bookId/graph", element: <GraphPage /> },
       { path: "book/:bookId/table", element: <ScenesTablePage /> },
       { path: "book/:bookId/metadata", element: <MetadataPage /> },
+      { path: "book/:bookId/git", element: <GitPage /> },
       { path: "book/:bookId/scene/:sceneId", element: <EditorPage /> },
       {
         path: "settings",

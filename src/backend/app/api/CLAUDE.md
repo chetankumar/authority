@@ -16,7 +16,9 @@ Parent: [app](../CLAUDE.md).
 
 ## Mutation lifecycle
 
-router → Pydantic validation → service acquires book lock → read memory → validate rules → mutate copies → atomic persist → release lock → git dirty-check → EventHub emit → response. Reads take no lock.
+router → Pydantic validation → service acquires book lock → read memory → validate rules → mutate copies → atomic persist → BookDataManager emits `book-changed` → release lock → response. Reads take no lock.
+
+Git never runs in this path — the [git-status worker](../worker/CLAUDE.md) consumes `book-changed` and re-checks after a 5s debounce. Only [git](git/CLAUDE.md)'s own mutating endpoints emit `git-status` in-request.
 
 ## SSE
 

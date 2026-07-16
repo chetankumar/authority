@@ -11,7 +11,14 @@ Parent: [app](../CLAUDE.md). Specs: [02 Architecture](../../../../docs/claude-te
 - **Single-instance lock** — `filelock` exclusive lock on `{appDataRoot}/.lock` at startup; second instance exits "Authority is already running".
 - **Atomic write** — the hardened helper (~15 lines, stdlib): serialize → `tempfile` in same dir → `flush()` + `os.fsync()` → `os.replace()`; on POSIX also fsync the directory handle. `.tmp` gitignored. **Do not** use the deprecated `atomicwrites` package.
 - **Locks** — a registry of per-book `asyncio.Lock`s (plus one for `app.json`). Every mutation acquires its book's lock; reads take none.
-- **EventHub** — per-book SSE pub/sub. Any service emits; `GET /api/books/{id}/events` subscribes a client. Event types: `job`, `scene-updated`, `todos-created`, `git-status`, `compile-done` (doc 04 §12). Channel is stateless (clients refetch on reconnect).
+- **EventHub** (`event_hub.py`) — per-book SSE pub/sub. Generic infrastructure: **no dependency on the AI layer** (doc 07 §24 — the build-phase list groups it under "AI layer" only because streaming was the first consumer). Any service emits; whichever phase first needs to push builds it.
+  - `subscribe(book_id) -> asyncio.Queue` — one per connected browser tab, via `GET /api/books/{id}/events`.
+  - `subscribe_all() -> asyncio.Queue` — global; every event regardless of book. For internal server-side consumers (today: the [git-status worker](../worker/CLAUDE.md)).
+  - `emit(book_id, event_type, data)` — fans out to matching per-book subscribers **and** all global subscribers.
+  - `unsubscribe(...)` — drop the queue on disconnect/shutdown.
+  - Client event types: `job`, `scene-updated`, `todos-created`, `git-status`, `compile-done` (doc 04 §12).
+  - Internal event types: **`book-changed`** `{}` — payload-free signal fired by BookDataManager after any `db/*.json` / `config/book.json` write. Consumed only by the git-status worker. Clients ignore unrecognized types, so it needs no server-side filtering.
+  - Channel is stateless (clients refetch on reconnect); that statelessness is what makes the client's redundant 10s `git/status` poll safe — poll and event write identical truth.
 
 ## Data-safety layers (doc 03)
 

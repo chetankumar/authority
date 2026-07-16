@@ -335,24 +335,94 @@ Weeks later the author rewrites The Arrival (Marlow no longer finds the key). Au
           Repeated saves during the session do NOT stack duplicates (open-todo dedup).
 ```
 
+## J16.5 — The badge keeps itself honest (the system working alone)
+
+Nobody clicks anything. The author is writing; the git badge updates itself. Three
+**independent** mechanisms produce that: the write (A), the debounced worker (B),
+and the poll (C). They never call each other.
+
+**(A) The write — git does not run here.**
+
+```
+       Author writes; pauses 2s (editor autosave, as J11)
+→ HTTP  PUT /scenes/scn-1f2e9b/content { content:"…" }
+→ SERVER SceneService (lock): 1. atomic write [scenes/1f2e9b-the-arrival.md]
+          2. wordCount + sha256 recompute
+          3. BookDataManager.save_scenes(...) → atomic write [db/scenes.json]
+          4. lock released
+          5. BookDataManager emits book-changed {} — payload-free, fire-and-forget
+             · EventHub places it on (a) the global queue the git-status worker
+               reads and (b) each open tab's per-book queue (tabs ignore it —
+               nothing in the UI renders from book-changed)
+→ REPLY   { wordCount:412, contentHash:"sha256:…" }
+→ UI      "412 words · Saved 2:41pm". No git status has run. Badge unchanged.
+```
+
+**(B) The worker — reacting, ~5s later.**
+
+```
+→ WORKER  GitStatusWorker (one standing asyncio task, subscribed to the hub's
+          global channel) receives book-changed:
+          1. cancels any pending debounce timer for this bookId
+          2. starts a fresh 5s timer
+             (another book-changed inside those 5s → back to step 1; a long
+              autosave streak keeps deferring the check until typing stops)
+          3. 5s of quiet → timer fires → GitService.status(bok-a3f9c2)
+          4. GitPython runs the real `git status` on the working tree
+          5. summary built from the file counts → "3-updated"
+          6. emit git-status { dirty:true, files:[…], summary:"3-updated", … }
+→ SSE     each open tab's /events connection receives it
+→ UI      useBookEvents → queryClient.setQueryData(['git', bookId], status) →
+          top bar fades in, amber: "3-updated · Commit now?"
+```
+
+**(C) The poll — the net, running regardless.**
+
+```
+→ HTTP    every 10s while a book is open, useGitStatus refetches GET /git/status
+→ SERVER  the same GitService.status(), synchronously in-request
+→ UI      written into the same ['git', bookId] cache entry
+```
+
+C knows nothing about A or B — it is pure redundancy until it isn't. If the
+`book-changed` signal, the `git-status` emit, or the SSE delivery is ever lost
+(a flaky reconnect, a bug in the debounce), the badge still tells the truth within
+10s. The event path is the fast path; the poll is the honest one. While the tab is
+hidden the interval pauses — nobody is reading the badge — and refetch-on-focus
+brings it current before the author can see it.
+
 ## J17 — Git: the deliberate save
 
-Badge reads "9 pending changes · Commit now?" **CLICK** it.
+Badge reads "3-updated · Commit now?" **CLICK** it. Everything here is an
+*explicit* action, so — unlike J16.5 — each one recomputes and emits `git-status`
+**immediately, in-request**. The worker's 5s debounce is never involved: the
+author is watching this screen.
 
 ```
 → HTTP    GET /git/status
 → REPLY   { dirty:true, files:[{path:"scenes/1f2e9b-….md", status:"modified", staged:false}, …],
-            ahead:0, behind:0, hasRemote:false }
-CLICK     [Stage all] → POST /git/stage {all:true} → refreshed status, boxes checked
+            ahead:0, behind:0, hasRemote:false, summary:"3-updated" }
+CLICK     [Stage all]
+→ HTTP    POST /git/stage {all:true}
+→ SERVER  GitService (lock): repo.git.add(A=True) → recompute status →
+          emit git-status immediately
+→ UI      refreshed status, boxes checked
 CLICK     a filename → GET /git/diff?path=… → unified diff in the right panel
 CLICK     [✨ Suggest message]
-→ SERVER  GitService staged diff → truncate to cap → utility model:
-          "Summarize these changes to a novel manuscript as a single-line commit message."
+→ SERVER  GitService staged diff (422 nothing-staged if empty) → truncate to cap →
+          SettingsService.get_utility_model() →
+            present → "Summarize these changes to a novel manuscript as a
+                       single-line commit message."
+            absent  → deterministic stats fallback ("3 scenes updated")
 → REPLY   { message:"Rework Marlow's arrival; seed the missing-key thread" }
-→ UI      Textarea filled; author trims a word.
+→ UI      Textarea filled (a fallback message arrives with the faint note
+          "Written from file stats"); author trims a word.
 CLICK     [Commit staged files]
-→ SERVER  POST /git/commit → GitPython commit → SSE git-status {dirtyCount:0}
-→ UI      Toast "Committed 4b7e19a"; badge disappears; history strip gains the line.
+→ SERVER  POST /git/commit → GitPython commit → recompute status
+          (dirty:false, summary:"all-changes-synced") → emit git-status immediately
+→ REPLY   { hash:"4b7e19a" }
+→ UI      Toast "Committed 4b7e19a"; badge disappears at once — no 5s wait;
+          history strip gains the line.
 ```
 
 ## J18 — Compilation: the gate, then the book
@@ -384,3 +454,5 @@ CLICK     [Compile book]
 ## The loop
 
 J11 → J12 → J13/J14 → J15 → J16 → J17 is the author's daily cycle: write, let the system keep the books, consult when stuck, apply what's accepted, honor the dependencies, commit the day. J18 is the horizon it all points at.
+
+J12 and J16.5 are the two traces with no author in them — the system keeping its own books while the prose gets written. Both follow the same discipline: the expensive work (a model call, a `git status`) is deferred behind a settle timer and never blocks the save, and the author is told only when there's something to decide.

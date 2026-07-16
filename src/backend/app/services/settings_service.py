@@ -171,6 +171,18 @@ class SettingsService:
                 return m
         raise not_found("model", model_id)
 
+    def get_utility_model(self) -> ModelConfig | None:
+        """The model for system tasks (enrichment, git suggest-message).
+
+        ``None`` when unset or dangling — callers degrade to a non-AI fallback
+        rather than failing, since no utility model is a valid configuration.
+        """
+        data = self._load()
+        model_id = data.ai.utilityModelId
+        if model_id is None:
+            return None
+        return next((m for m in data.models if m.id == model_id), None)
+
     @staticmethod
     def _validate_provider(provider: Provider, api_key: str | None, base_url: str | None) -> None:
         # API keys are optional at save: an empty key means "use the provider's

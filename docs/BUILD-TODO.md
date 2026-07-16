@@ -23,7 +23,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | doc 07 | `docs/claude-tech-specs/07-decisions-and-deferred.md` |
 | doc 08 | `docs/claude-tech-specs/08-user-journey.md` |
 
-**Last audited:** 2026-07-15
+**Last audited:** 2026-07-16
 
 ---
 
@@ -59,9 +59,9 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | SK-15 | ✅ | Logging (console + file) | As a developer, I want startup and errors logged. | `src/backend/app/core/logging.py` |
 | SK-16 | ⬜ | Single-instance filelock (`.lock`) | As an author, I want only one Authority process. | **Modify:** `src/backend/app/main.py`, `src/backend/app/core/config.py`; **Read:** `src/backend/requirements.txt` (filelock dep) |
 | SK-17 | ⬜ | `app.json` load at startup into SettingsService | As the server, I want settings in memory before serving. | **Modify:** `src/backend/app/main.py`, `src/backend/app/services/settings_service.py` |
-| SK-18 | ⬜ | Job worker asyncio task at startup | As an author, I want AI jobs to run in the background. | **Create:** `src/backend/app/worker/worker.py`; **Modify:** `src/backend/app/main.py` |
-| SK-19 | ⬜ | EventHub (per-book SSE pub/sub) | As the UI, I want live updates without polling. | **Create:** `src/backend/app/core/event_hub.py`; **Create:** `src/backend/app/api/events/router.py`, `src/backend/app/api/events/__init__.py`; **Modify:** `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
-| SK-20 | ⬜ | Git dirty-check after every book write | As an author, I want the git badge accurate after any save. | **Create:** `src/backend/app/services/git_service.py`; **Modify:** `src/backend/app/services/scene_service.py`, `src/backend/app/services/book_data_manager.py` |
+| SK-18 | ⬜ | Job worker asyncio task at startup | As an author, I want AI jobs to run in the background. | **Create:** `src/backend/app/worker/worker.py`; **Modify:** `src/backend/app/main.py`; **Pattern to copy:** `src/backend/app/worker/git_status_worker.py` (standing task started/cancelled in `lifespan`) |
+| SK-19 | ✅ | EventHub (per-book SSE pub/sub) | As the UI, I want live updates without polling. *(Built in Phase 8 — generic core infra, no AI dependency; see doc 07 §24.)* | `src/backend/app/core/event_hub.py`, `src/backend/app/api/events/router.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
+| SK-20 | ✅ | ~~Git dirty-check after every book write~~ → **debounced worker** | As an author, I want the git badge accurate after any save — **without** `git status` running on my autosave. **Superseded (doc 07 §25):** writes fire `book-changed` from `BookDataManager`; `GitStatusWorker` re-checks after a 5s debounce. No per-service dirty-check hooks. | `src/backend/app/services/book_data_manager.py`, `src/backend/app/worker/git_status_worker.py`, `src/backend/app/services/git_service.py` |
 
 ---
 
@@ -443,22 +443,26 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 ### Frontend — SSE client
 
 > **Read:** doc 06 §2, doc 04 §12
+>
+> **The event channel is not AI infrastructure** (doc 07 §24). `SSE-API-01`, `SSE-FE-01`, `SSE-FE-05`, `SSE-FE-07`, `INF-FE-09`, and `INF-FE-10` were built in **Phase 8** (Git), which was the first feature to need a push channel. They were only ever listed here because AI streaming was *assumed* to be the first consumer. The rows below that remain ⬜ are blocked on their own data layers (scenes enrichment, jobs, todos, compile), not on the channel.
 
 | ID | Status | Item | User story | Files |
 |---|---|---|---|---|
-| SSE-FE-01 | ⬜ | `useBookEvents(bookId)` hook | One EventSource per book. | **Create:** `src/frontend/src/events/useBookEvents.ts`; **Modify:** `src/frontend/src/api/client.ts` (add SSE helpers) |
-| SSE-FE-02 | ⬜ | `scene-updated` → patch scenes | Summary/character chips live. | **Modify:** `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/queries/scenes.ts` |
-| SSE-FE-03 | ⬜ | `job` → patch jobs | Job status live in accordion. | Same + `src/frontend/src/queries/jobs.ts` (create) |
-| SSE-FE-04 | ⬜ | `todos-created` → invalidate todos | New dependency todos immediately. | Same + `src/frontend/src/queries/todos.ts` |
-| SSE-FE-05 | ⬜ | `git-status` → patch git + badge | Commit nudge stays accurate. | Same; **Modify:** `src/frontend/src/App.tsx` (top-bar badge) |
-| SSE-FE-06 | ⬜ | `compile-done` → invalidate | Readiness refreshes after compile. | Same |
-| SSE-FE-07 | ⬜ | Reconnect + refetch | Recovery after dropped SSE. | `src/frontend/src/events/useBookEvents.ts` |
+| SSE-FE-01 | ✅ | `useBookEvents(bookId)` hook | One EventSource per book; unknown event types ignored. *(Built in Phase 8.)* | `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/api/client.ts` |
+| SSE-FE-02 | ⬜ | `scene-updated` → patch scenes | Summary/character chips live. | **Modify:** `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/queries/scenes.ts`; **Depends on:** Phase 7 (enrichment) |
+| SSE-FE-03 | ⬜ | `job` → patch jobs | Job status live in accordion. | Same + `src/frontend/src/queries/jobs.ts` (create); **Depends on:** Phase 7 |
+| SSE-FE-04 | ⬜ | `todos-created` → invalidate todos | New dependency todos immediately. | Same + `src/frontend/src/queries/todos.ts`; **Depends on:** Phase 6 |
+| SSE-FE-05 | ✅ | `git-status` → patch git + badge | Commit nudge stays accurate, live. *(Built in Phase 8.)* | `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/App.tsx` (GitBadge) |
+| SSE-FE-06 | ⬜ | `compile-done` → invalidate | Readiness refreshes after compile. | Same; **Depends on:** Phase 9 |
+| SSE-FE-07 | ✅ | Reconnect + refetch | Recovery after dropped SSE: exponential backoff (1s→30s), invalidate `['git']` on reconnect since the channel replays nothing. | `src/frontend/src/api/client.ts`, `src/frontend/src/events/useBookEvents.ts` |
+| SSE-FE-08 | ✅ | 10s `git/status` poll as a net | As an author, I want the badge to be right even if an event is dropped — a stale amber nudge is worse than none. Redundant with SSE by design; pauses while the tab is hidden (refetch-on-focus covers the return). | `src/frontend/src/queries/git.ts` |
 
 ### API — Events (backend)
 
 | ID | Status | Endpoint | User story | Files |
 |---|---|---|---|---|
-| SSE-API-01 | ⬜ | `GET /books/{b}/events` (SSE) | Push channel for book changes. | **Create:** `src/backend/app/api/events/router.py`, `__init__.py`; **Create:** `src/backend/app/core/event_hub.py`; **Modify:** `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
+| SSE-API-01 | ✅ | `GET /books/{b}/events` (SSE) | Push channel for book changes. Generic per-book pub/sub in `core/` — **no AI dependency**; built in Phase 8. Keepalive frames; bounded queues drop rather than stall a writer. | `src/backend/app/api/events/router.py`, `src/backend/app/core/event_hub.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
+| SSE-API-02 | ✅ | `book-changed` internal event | As the system, I want a payload-free "something was written" signal that server-side consumers can react to, without clients needing to care. Consumed by `GIT-SVC-02` via the hub's global `subscribe_all` channel. | `src/backend/app/core/event_hub.py`, `src/backend/app/services/book_data_manager.py` |
 
 ---
 
@@ -468,18 +472,23 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 ### API — GitService
 
+> **Emission rule (doc 07 §27):** mutating endpoints (stage/unstage/commit/push/pull) recompute status and emit `git-status` **immediately, in-request** — the author is watching the Git page. *Incidental* dirtying from unrelated writes is handled by `GIT-SVC-02` instead. Git never runs on a write path.
+
 | ID | Status | Endpoint | User story | Files |
 |---|---|---|---|---|
-| GIT-API-01 | ⬜ | `GET /books/{b}/git/status` | Dirty file list + ahead/behind. | **Create:** `src/backend/app/api/git/router.py`, `__init__.py`; **Create:** `src/backend/app/services/git_service.py`; **Modify:** `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
-| GIT-API-02 | ⬜ | `POST /books/{b}/git/stage` | Stage chosen files. | Same files |
-| GIT-API-03 | ⬜ | `POST /books/{b}/git/unstage` | Unstage mistakes. | Same files |
-| GIT-API-04 | ⬜ | `GET /books/{b}/git/diff` | Unified diffs. | Same files |
-| GIT-API-05 | ⬜ | `POST /books/{b}/git/suggest-message` | AI commit message help. | Same + `src/backend/app/services/model_factory.py` |
-| GIT-API-06 | ⬜ | `POST /books/{b}/git/commit` | Deliberate commit. | Same files |
-| GIT-API-07 | ⬜ | `POST /books/{b}/git/push` | Remote backup. | Same files |
-| GIT-API-08 | ⬜ | `POST /books/{b}/git/pull` | Pull remote changes. | Same files |
-| GIT-API-09 | ⬜ | `GET /books/{b}/git/log` | Recent commit history. | Same files |
-| GIT-SVC-01 | ⬜ | GitService | Git ops + SSE updates. | **Create:** `src/backend/app/services/git_service.py` |
+| GIT-API-01 | ✅ | `GET /books/{b}/git/status` | Dirty file list + ahead/behind + `summary`. Also serves the client's 10s poll. | `src/backend/app/api/git/router.py`, `src/backend/app/services/git_service.py` |
+| GIT-API-02 | ✅ | `POST /books/{b}/git/stage` | Stage chosen files; emits `git-status`. | Same files |
+| GIT-API-03 | ✅ | `POST /books/{b}/git/unstage` | Unstage mistakes; emits `git-status`. | Same files |
+| GIT-API-04 | ✅ | `GET /books/{b}/git/diff` | Unified diffs; untracked files render as all-additions; binary → `{binary:true}`. | Same files |
+| GIT-API-05 | ✅ | `POST /books/{b}/git/suggest-message` | AI commit message help; no utility model (or a failed call) → deterministic stats fallback. | Same + `src/backend/app/services/model_factory.py`, `settings_service.py` (`get_utility_model`) |
+| GIT-API-06 | ✅ | `POST /books/{b}/git/commit` | Deliberate commit; 422 `nothing-staged`; emits `git-status`. | Same files |
+| GIT-API-07 | ✅ | `POST /books/{b}/git/push` | Remote backup; 422 `no-remote`; git's own error verbatim. | Same files |
+| GIT-API-08 | ✅ | `POST /books/{b}/git/pull` | Pull remote changes; conflicts hand off to the author's git tooling. | Same files |
+| GIT-API-09 | ✅ | `GET /books/{b}/git/log` | Recent commit history. | Same files |
+| GIT-API-10 | ✅ | `summary` on GitStatus | As an author, I want the badge to say what actually changed ("7-new, 1-updated, 3-deleted" / "all-changes-synced") rather than a bare count. | `src/backend/app/models/git.py`, `src/backend/app/services/git_service.py` (`_summarize`) |
+| GIT-SVC-01 | ✅ | GitService | Git ops; `status()` is pure computation and emits nothing, so the request path and the worker each decide when to broadcast. Lazy `git` import + `repo.close()` in `finally` (Windows handle discipline). | `src/backend/app/services/git_service.py` |
+| GIT-SVC-02 | ✅ | **GitStatusWorker** (dedicated debounced worker) | As an author, I want the badge to keep itself current while I write, without `git status` ever running on my autosave. One standing asyncio task consumes `book-changed` off the hub's global channel and re-checks git after a **pure 5s debounce** per book (a burst of saves keeps resetting it). | `src/backend/app/worker/git_status_worker.py`, `src/backend/app/main.py` (lifespan start/cancel), `src/backend/app/api/deps.py` |
+| GIT-SVC-03 | ✅ | `book-changed` hook in BookDataManager | As the system, I want one integration point for post-write reactions: every mutating service already funnels through `BookDataManager.save_*`, so a single payload-free emit there covers scenes, structure, plotlines, config, and ui.json — no service needs its own hook. | `src/backend/app/services/book_data_manager.py`, `src/backend/app/services/book_registry.py` |
 
 ### Frontend — Git page + badge
 
@@ -487,19 +496,20 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 | ID | Status | Control | User story | Files |
 |---|---|---|---|---|
-| GIT-FE-01 | ⬜ | Git route + nav live | Deliberate commit workspace. | **Create:** `src/frontend/src/features/git/GitPage.tsx`; **Modify:** `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx` (nav live); **Create:** `src/frontend/src/api/git.ts`, `src/frontend/src/queries/git.ts`; **Modify:** `src/frontend/src/queries/keys.ts` |
-| GIT-FE-02 | ⬜ | **Top-bar git badge** (amber) | Persistent nudge to commit. | **Modify:** `src/frontend/src/App.tsx` (TopBar); **Depends on:** SSE-FE-05, GIT-API-01 |
-| GIT-FE-03 | ⬜ | Badge click → git page | One click from nudge to ritual. | Same as above |
-| GIT-FE-04 | ⬜ | Changes list | Per-file staging control. | `src/frontend/src/features/git/GitPage.tsx` |
-| GIT-FE-05 | ⬜ | Row click → diff panel | Review before committing. | Same as above |
-| GIT-FE-06 | ⬜ | [Stage all] | Common single-author case. | Same as above |
-| GIT-FE-07 | ⬜ | Diff panel | Readable diffs without terminal. | Same as above |
-| GIT-FE-08 | ⬜ | Commit message textarea | Own the commit message. | Same as above |
-| GIT-FE-09 | ⬜ | [✨ Suggest message] | AI draft help. | Same as above |
-| GIT-FE-10 | ⬜ | [Commit staged files] | Commit when staged + named. | Same as above |
-| GIT-FE-11 | ⬜ | Commit toast with shorthash | Confirmation day is saved. | Same as above |
-| GIT-FE-12 | ⬜ | History strip | Recent commits visible. | Same as above |
-| GIT-FE-13 | ⬜ | [Push] / [Pull] when hasRemote | Basic remote sync. | Same as above |
+| GIT-FE-01 | ✅ | Git route + nav live | Deliberate commit workspace; 60/40 two-column layout. | `src/frontend/src/features/git/GitPage.tsx`, `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx` (nav live), `src/frontend/src/api/git.ts`, `src/frontend/src/queries/git.ts` |
+| GIT-FE-02 | ✅ | **Top-bar git badge** (amber) | Persistent nudge to commit, showing the `summary` ("4-new, 3-updated · Commit now?"). Renders nothing when clean. | `src/frontend/src/App.tsx` (`GitBadge`) |
+| GIT-FE-03 | ✅ | Badge click → git page | One click from nudge to ritual. | Same as above |
+| GIT-FE-04 | ✅ | Changes list | Per-file staging control; checkbox + status letter + mono path. `staged` means *fully* staged, so a ticked box honestly means "all of this goes in the commit". | `src/frontend/src/features/git/GitPage.tsx` |
+| GIT-FE-05 | ✅ | Row click → diff panel | Review before committing (row click ≠ checkbox click). | Same as above |
+| GIT-FE-06 | ✅ | [Stage all] | Common single-author case. | Same as above |
+| GIT-FE-07 | ✅ | Diff panel | Readable diffs without terminal; additions `--ok`, deletions `--danger`, hunks `--accent`; "Binary file" case. | Same as above |
+| GIT-FE-08 | ✅ | Commit message textarea | Own the commit message. | Same as above |
+| GIT-FE-09 | ✅ | [✨ Suggest message] | AI draft help; stats fallback arrives with the faint note "Written from file stats". | Same as above |
+| GIT-FE-10 | ✅ | [Commit staged files] | Enabled iff ≥1 staged ∧ message non-empty. | Same as above |
+| GIT-FE-11 | ✅ | Commit toast with shorthash | Confirmation day is saved; badge clears at once (no debounce on explicit actions). | Same as above |
+| GIT-FE-12 | ✅ | History strip | Recent commits: shorthash · message · relative time. | Same as above |
+| GIT-FE-13 | ✅ | [Push] / [Pull] when hasRemote | Basic remote sync; git's error verbatim in a danger panel + "Resolve with your git tooling". | Same as above |
+| GIT-FE-14 | ✅ | Empty / no-repo states | "Nothing has changed since your last commit"; a book folder without `.git` says so plainly instead of erroring. | Same as above |
 
 ---
 
@@ -564,8 +574,8 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | INF-FE-07 | ✅ | UI primitives (Button, Field, Input) | Consistent form controls. | `src/frontend/src/components/ui.tsx` |
 | INF-FE-08 | ✅ | ConfirmDialog | Reusable confirm dialog for destructive/irreversible acts (doc 06 §1.5). Danger-styled confirm button. | `src/frontend/src/components/ConfirmDialog.tsx` |
 | INF-FE-08a | ✅ | `ApiError.blockedByMessage` | As an author, when a delete is blocked by references (409), I want the error to tell me exactly what's blocking it (e.g. "Blocked by: 2 soft relationships, 1 conversation") instead of a generic message. | `src/frontend/src/api/client.ts` |
-| INF-FE-09 | ⬜ | SSE helpers in `api/` | Typed EventSource wrappers. | **Modify:** `src/frontend/src/api/client.ts` |
-| INF-FE-10 | ⬜ | `events/useBookEvents` | SSE wired on book entry. | **Create:** `src/frontend/src/events/useBookEvents.ts` |
+| INF-FE-09 | ✅ | SSE helpers in `api/` | Typed EventSource wrapper (`subscribeToBookEvents`) with exponential-backoff reconnect. *(Built in Phase 8.)* | `src/frontend/src/api/client.ts` |
+| INF-FE-10 | ✅ | `events/useBookEvents` | SSE wired on book entry, from `App.tsx`. *(Built in Phase 8.)* | `src/frontend/src/events/useBookEvents.ts` |
 
 ---
 
@@ -589,25 +599,27 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | J14 | Editorial Review job | ⬜ | Phase 7 |
 | J15 | Accepting an edit | ⬜ | Phase 7 |
 | J16 | Dependency + todo | ⬜ | Phase 6 |
-| J17 | Git deliberate save | ⬜ | Phase 8 |
+| J16.5 | Ambient — the badge keeps itself honest | ✅ | — |
+| J17 | Git deliberate save | ✅ | — |
 | J18 | Compilation | ⬜ | Phase 9 |
 
 ---
 
 ## Recommended build order (next sessions)
 
-1. **Phase 6a** — StructureService + parts/chapters API + Metadata page (Parts/Chapters/Book tabs)
-2. **Phase 6b** — Characters API + Character Sheet page + Scene Modal Characters tab
-3. **Phase 6c** — Dependencies API + Scene Modal Dependencies tab + todo fanout + Tasks page + Scene Modal Summary tab
-4. **Phase 3 gap** — `PATCH /api/books/{id}` + Edit Book modal + Bookkeeping popover
-5. **Phase 7a** — EventHub + SSE endpoint + `useBookEvents` hook
-6. **Phase 7b** — Conversations + messages + Conversation Modal (note/chat paths)
-7. **Phase 7c** — Worker + JobService + EnrichmentService + AI-Jobs run + editor tool panel
-8. **Phase 7d** — Proposals (accept/reject) + proposal cards in Conversation Modal
-9. **Phase 8** — GitService + Git page + top-bar badge
-10. **Phase 9** — CompileService + readiness strip + compile flow
-11. **Phase 1 finish** — Launchers + filelock
-12. **Phase 10** — Polish (nav collapse, Popover, Badge, confirm dialogs, reduced motion)
+**Done:** ~~Phase 6a~~ (StructureService + parts/chapters/plotlines + Metadata page) · ~~Phase 8~~ (EventHub + SSE + GitService + GitStatusWorker + Git page + badge).
+
+1. **Phase 6b** — Characters API + Character Sheet page + Scene Modal Characters tab
+2. **Phase 6c** — Dependencies API + Scene Modal Dependencies tab + todo fanout + Tasks page + Scene Modal Summary tab
+3. **Phase 3 gap** — `PATCH /api/books/{id}` + Edit Book modal + Bookkeeping popover
+4. **Phase 7a** — Conversations + messages + Conversation Modal (note/chat paths) — *the SSE channel already exists; wire `scene-updated`/`job` mappings into the existing `useBookEvents`*
+5. **Phase 7b** — Worker + JobService + EnrichmentService + AI-Jobs run + editor tool panel — *follow `GitStatusWorker`'s shape: a standing asyncio task started in `main.py`'s lifespan*
+6. **Phase 7c** — Proposals (accept/reject) + proposal cards in Conversation Modal
+7. **Phase 9** — CompileService + readiness strip + compile flow
+8. **Phase 1 finish** — Launchers + filelock
+9. **Phase 10** — Polish (nav collapse, Popover, Badge, confirm dialogs, reduced motion)
+
+> **Note on the old ordering:** this list previously put "EventHub + SSE endpoint + `useBookEvents`" inside Phase 7 (AI layer), which made the git badge look blocked on AI work. It never was — the hub is generic `core/` infrastructure (doc 07 §24). Phase 8 built it. Phase 7 now inherits it and only adds its own event mappings.
 
 ---
 

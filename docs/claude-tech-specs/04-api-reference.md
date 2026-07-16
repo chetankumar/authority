@@ -175,8 +175,10 @@ Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "f
 ```
 
 **GitFile** `{ "path", "status": gitFileStatus, "staged": bool }`
-**GitStatus** `{ "dirty": bool, "files": [GitFile], "ahead": 0, "behind": 0, "hasRemote": bool }`
+**GitStatus** `{ "dirty": bool, "files": [GitFile], "ahead": 0, "behind": 0, "hasRemote": bool, "summary": "7-new, 1-updated, 3-deleted" }`
 **CommitInfo** `{ "hash", "message", "timestamp" }`
+
+`summary` is the human-readable roll-up the top-bar badge renders: `"all-changes-synced"` when clean, otherwise the non-zero segments of `"{n}-new, {m}-updated, {k}-deleted"` (untracked + added → *new*, modified + renamed → *updated*, deleted → *deleted*).
 
 **CheckItem** (compile) `{ "type": "scene-no-chapter", "message": "human text", "subjects": [ { "kind": "scene", "id": "scn-..", "title": "..." } ] }` — `type` is a stable machine key (full list §13); `subjects` enable deep-linking.
 
@@ -466,10 +468,14 @@ One connection per open book. Event types and payloads:
 | `job` | `{ id, type, sceneId, status, result? }` | any job status transition |
 | `scene-updated` | `{ id, changed: ["summary","characterIds"] }` | any scene metadata write (author, enrichment, accepted proposal) |
 | `todos-created` | `{ todos: [Todo] }` | dependency fanout or accepted todo-create |
-| `git-status` | `{ dirtyCount, ahead, behind }` | dirty-file count changed after any write, or commit/push/pull |
+| `git-status` | `GitStatus` (§2.2, includes `summary`) | **(a)** the git-status worker's 5s debounce fired after a `book-changed`; **(b)** immediately, in-request, after an explicit stage/unstage/commit/push/pull |
 | `compile-done` | `{ report: CompileReport }` | successful compile |
 
 Clients patch TanStack Query caches from these; on reconnect, refetch active queries (channel is stateless).
+
+**Internal events.** `book-changed` `{}` is emitted by BookDataManager after *any* `db/*.json` or `config/book.json` write. It is a payload-free signal for server-side consumers (today: the git-status worker, via the hub's global `subscribe_all` channel) and carries no information a client can act on — clients ignore unrecognized event types, so no server-side filtering is needed on the per-book channel.
+
+**Defense in depth.** SSE is the fast path, not the only path. Clients that render git state also poll `GET /git/status` every 10s, so a dropped `book-changed`, a lost `git-status`, or a silently broken SSE reconnect still self-corrects within ~10s. The channel being stateless is what makes this safe: the poll and the event write identical server truth into the same cache entry.
 
 ---
 
@@ -477,8 +483,10 @@ Clients patch TanStack Query caches from these; on reconnect, refetch active que
 
 All endpoints: GitService (GitPython over the system git; the user's credentials/SSH config apply). 404 if the book folder lost its `.git`.
 
-### GET /api/books/{b}/git/status → GitStatus (§2.2). Page load + badge initial state.
-### POST /api/books/{b}/git/stage · /unstage — **Request** `{ "paths"?: ["scenes/x.md"], "all"?: true }` (one required). Real `git add` / `git reset` on those paths. **Response** refreshed GitStatus.
+**Emission rule:** every *mutating* endpoint here (stage, unstage, commit, push, pull) recomputes status and emits `git-status` **immediately, in-request** — the author is on the Git page waiting, so these never go through the git-status worker's 5s debounce. The worker exists only for *incidental* dirtying from unrelated writes (scene autosave, structure edits), where nobody is watching. Reads (`status`, `diff`, `log`) emit nothing.
+
+### GET /api/books/{b}/git/status → GitStatus (§2.2). Page load + badge initial state; also the 10s client poll (§12).
+### POST /api/books/{b}/git/stage · /unstage — **Request** `{ "paths"?: ["scenes/x.md"], "all"?: true }` (one required). Real `git add` / `git reset` on those paths. **Response** refreshed GitStatus; emits `git-status`.
 ### GET /api/books/{b}/git/diff?path= — **Response** `{ "path", "diff": "unified diff text (staged+unstaged vs HEAD)" }`; binary files → `{ "binary": true }`.
 ### POST /api/books/{b}/git/suggest-message
 **Logic:** staged diff (422 `nothing-staged` if empty) → truncate to a size cap (~20k chars, largest hunks first) → utility model: *"Summarize these changes to a novel manuscript as a single-line git commit message."* No utility model → deterministic fallback from stats (`"3 scenes updated, 1 added"`). **Response** `{ "message": "..." }` — fills the textarea, author edits freely.
