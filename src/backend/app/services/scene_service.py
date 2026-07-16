@@ -5,8 +5,19 @@ copies, delegates chain algebra to ChainService, persists atomically via
 BookDataManager. ``seq``/``placement`` are computed on read. The content path is
 one of only two routes that write scene ``.md`` files (the prose hard rule).
 
-Hooks left for later phases and marked inline: dependency-todo fanout (phase 6 —
-no dependencies can exist yet) and the enrichment settle timer (phase 7 — AI).
+Persistence is split three ways (doc 03): the master ``SceneRecord``
+(identity/hard-chain/structure, in ``db/scenes.json``), ``SceneMeta``
+(location/dateTime/mood/emotionalArc, in ``scenes/{id}/meta.json``), and
+``SceneBookkeeping`` (summary/characterIds/contentHash/wordCount, in
+``scenes/{id}/bookkeeping.json``). This service is the one place that routes a
+flat ``SceneUpdate`` request across the three, and assembles the flat ``Scene``
+response back out of them — nothing outside this file needs to know the split
+exists. Only a bucket that actually changed gets written (git-diff granularity;
+content saves and enrichment now touch bookkeeping.json only, never master).
+
+Hooks left for later phases and marked inline: dependency-todo fanout (phase 6
+— no dependency CRUD exists yet, only the delete-blocked check) and the
+enrichment settle timer (wired to EnrichmentService).
 """
 
 from __future__ import annotations
@@ -23,7 +34,9 @@ from app.models.scene import (
     ContentSaveResult,
     RelationshipCreate,
     Scene,
+    SceneBookkeeping,
     SceneCreate,
+    SceneMeta,
     SceneMutationResult,
     SceneRecord,
     SceneUpdate,
@@ -65,7 +78,7 @@ class SceneService:
         mgr = self._registry.get(book_id)
         records = mgr.get_scenes()
         relationships = mgr.get_relationships()
-        scenes = self._decorate(records, relationships)
+        scenes = self._decorate(mgr, records, relationships)
         return ScenesResponse(scenes=scenes, relationships=relationships)
 
     def get_scene(self, book_id: str, scene_id: str) -> SceneWithContent:
@@ -74,7 +87,8 @@ class SceneService:
         record = self._find(records, scene_id)
         seq, placement = self._compute(records, mgr.get_relationships()).get(scene_id, (None, Placement.orphan))
         content = mgr.read_scene_content(record.file)
-        return SceneWithContent(**record.model_dump(), seq=seq, placement=placement, content=content)
+        scene = self._assemble(record, mgr.get_scene_meta(scene_id), mgr.get_scene_bookkeeping(scene_id), seq, placement)
+        return SceneWithContent(**scene.model_dump(), content=content)
 
     # ---- mutations (under the book lock) ------------------------------------
 
@@ -108,32 +122,41 @@ class SceneService:
                 title=body.title.strip(),
                 file=rel_path,
                 description=body.description.strip(),
-                location=body.location,
-                dateTime=body.dateTime,
                 chapterId=body.chapterId,
                 partId=body.partId,
-                mood=body.mood,
-                emotionalArc=body.emotionalArc,
-                contentHash=content_hash,
-                wordCount=word_count,
                 createdAt=now,
                 updatedAt=now,
             )
+            meta = SceneMeta(
+                location=body.location, dateTime=body.dateTime,
+                mood=body.mood, emotionalArc=body.emotionalArc,
+                updatedAt=now,
+            )
+            bookkeeping = SceneBookkeeping(contentHash=content_hash, wordCount=word_count, updatedAt=now)
+
+            # Leaf files first, master commit last (doc 03) — an orphaned
+            # per-scene folder with no master row is harmless; a crash between
+            # these two lines just leaves an unreferenced folder.
+            mgr.create_scene_folder(scene_id, meta, bookkeeping)
+
             working[scene_id] = record
-
             affected = chain.place_between(working, scene_id, previous=body.previousSceneId, next_=body.nextSceneId)
-
             new_records = list(working.values())
             mgr.save_scenes(new_records)
 
-            relationships = list(mgr.get_relationships())
-            for soft in body.softRelations:
-                rel = self._make_relationship(relationships, from_id=scene_id, to_id=soft.sceneId, rtype=soft.type, working=working)
-                if rel is not None:
-                    relationships.append(rel)
-            mgr.save_relationships(relationships)
+            if body.softRelations:
+                existing = mgr.get_relationships()
+                new_rels: list[SoftRelationship] = []
+                for soft in body.softRelations:
+                    rel = self._make_relationship(
+                        existing + new_rels, from_id=scene_id, to_id=soft.sceneId, rtype=soft.type, working=working
+                    )
+                    if rel is not None:
+                        new_rels.append(rel)
+                if new_rels:
+                    mgr.save_scene_relationships(scene_id, new_rels)
 
-            return self._mutation_result(new_records, relationships, scene_id, affected)
+            return self._mutation_result(mgr, new_records, mgr.get_relationships(), scene_id, affected)
 
     async def update_scene(self, book_id: str, scene_id: str, body: SceneUpdate) -> SceneMutationResult:
         mgr = self._registry.get(book_id)
@@ -145,20 +168,36 @@ class SceneService:
 
             fields = body.model_fields_set
             affected: set[str] = set()
+            master_touched = False
+            meta = mgr.get_scene_meta(scene_id).model_copy()
+            meta_touched = False
+            bookkeeping = mgr.get_scene_bookkeeping(scene_id).model_copy()
+            bookkeeping_touched = False
 
             if "title" in fields and body.title is not None:
                 if not body.title.strip():
                     raise validation({"title": "Give the scene a title."})
                 self._rename_file(mgr, record, body.title.strip())
                 record.title = body.title.strip()
-            for name in ("description", "location", "dateTime", "mood", "emotionalArc", "summary"):
+                master_touched = True
+
+            if "description" in fields:
+                if body.description is None or not body.description.strip():
+                    raise validation({"description": "A one-line description is required."})
+                record.description = body.description
+                master_touched = True
+
+            for name in ("location", "dateTime", "mood", "emotionalArc"):
                 if name in fields:
-                    value = getattr(body, name)
-                    if name == "description" and (value is None or not value.strip()):
-                        raise validation({"description": "A one-line description is required."})
-                    setattr(record, name, value or "")
+                    setattr(meta, name, getattr(body, name) or "")
+                    meta_touched = True
+
+            if "summary" in fields:
+                bookkeeping.summary = body.summary or ""
+                bookkeeping_touched = True
             if "characterIds" in fields and body.characterIds is not None:
-                record.characterIds = body.characterIds
+                bookkeeping.characterIds = body.characterIds
+                bookkeeping_touched = True
 
             if "chapterId" in fields or "partId" in fields:
                 chapter_id = body.chapterId if "chapterId" in fields else record.chapterId
@@ -166,6 +205,7 @@ class SceneService:
                 self._validate_structure(mgr, chapter_id, part_id)
                 record.chapterId = chapter_id
                 record.partId = part_id
+                master_touched = True
 
             if "primaryPlotlineId" in fields or "secondaryPlotlineIds" in fields:
                 p_id = body.primaryPlotlineId if "primaryPlotlineId" in fields else record.primaryPlotlineId
@@ -175,13 +215,16 @@ class SceneService:
                     record.primaryPlotlineId = body.primaryPlotlineId
                 if "secondaryPlotlineIds" in fields:
                     record.secondaryPlotlineIds = body.secondaryPlotlineIds
+                master_touched = True
 
             if "status" in fields and body.status is not None:
                 if body.status == SceneStatus.archived and record.status != SceneStatus.archived:
                     affected |= chain.detach(working, scene_id)
                     record.status = SceneStatus.archived
+                    master_touched = True
                 elif body.status == SceneStatus.active:
                     record.status = SceneStatus.active  # returns floating (old slot not reclaimed)
+                    master_touched = True
 
             reposition = ("previousSceneId" in fields or "nextSceneId" in fields) and record.status == SceneStatus.active
             if reposition:
@@ -196,33 +239,43 @@ class SceneService:
                     chain.validate_endpoint(working, new_next, as_previous=False, self_id=scene_id)
                 _reject_same_neighbors(new_prev, new_next)
                 affected |= chain.place_between(working, scene_id, previous=new_prev, next_=new_next)
+                master_touched = True
 
-            record.updatedAt = _now()
+            now = _now()
             new_records = list(working.values())
-            mgr.save_scenes(new_records)
+            if master_touched or affected:
+                record.updatedAt = now
+                mgr.save_scenes(new_records)
+            if meta_touched:
+                meta.updatedAt = now
+                mgr.save_scene_meta(scene_id, meta)
+            if bookkeeping_touched:
+                bookkeeping.updatedAt = now
+                mgr.save_scene_bookkeeping(scene_id, bookkeeping)
+
             affected.discard(scene_id)
-            return self._mutation_result(new_records, mgr.get_relationships(), scene_id, affected)
+            return self._mutation_result(mgr, new_records, mgr.get_relationships(), scene_id, affected)
 
     async def save_content(self, book_id: str, scene_id: str, content: str) -> ContentSaveResult:
         mgr = self._registry.get(book_id)
         async with mgr.lock:
-            working = {r.id: r.model_copy(deep=True) for r in mgr.get_scenes()}
-            record = working.get(scene_id)
-            if record is None:
-                raise ApiError(404, "Scene not found", {"kind": "scene", "id": scene_id})
+            record = self._find(mgr.get_scenes(), scene_id)
 
             atomic_write_text(mgr.scene_file_path(record.file), content)
             word_count, content_hash = _content_metrics(content)
-            hash_changed = content_hash != record.contentHash
-            record.wordCount = word_count
-            record.contentHash = content_hash
-            record.updatedAt = _now()
-            mgr.save_scenes(list(working.values()))
+            bookkeeping = mgr.get_scene_bookkeeping(scene_id).model_copy()
+            hash_changed = content_hash != bookkeeping.contentHash
+            bookkeeping.wordCount = word_count
+            bookkeeping.contentHash = content_hash
+            bookkeeping.updatedAt = _now()
+            # Content saves now touch only bookkeeping.json — the master table
+            # (db/scenes.json) is never rewritten by autosave, so it can never
+            # contend with or block a chain splice/heal on an unrelated scene.
+            mgr.save_scene_bookkeeping(scene_id, bookkeeping)
 
             todos_created: list[dict] = []
             if hash_changed:
-                # Phase 6 hook — dependency-todo fanout (when dependencies exist).
-                # Phase 7 — EnrichmentService settle timer.
+                # Phase 6 hook — dependency-todo fanout (no dependency CRUD yet).
                 if self._enrichment is not None:
                     self._enrichment.reset_settle_timer(book_id, scene_id)
 
@@ -234,13 +287,17 @@ class SceneService:
         mgr = self._registry.get(book_id)
         async with mgr.lock:
             working = {r.id: r for r in mgr.get_scenes()}
-            relationships = list(mgr.get_relationships())
+            relationships = mgr.get_relationships()
             existing = self._find_duplicate(relationships, body.fromSceneId, body.toSceneId, body.type)
             if existing is not None:
                 return existing  # idempotent (doc 04 §6)
-            rel = self._make_relationship(relationships, from_id=body.fromSceneId, to_id=body.toSceneId, rtype=body.type, working=working, strict=True)
-            relationships.append(rel)
-            mgr.save_relationships(relationships)
+            rel = self._make_relationship(
+                relationships, from_id=body.fromSceneId, to_id=body.toSceneId, rtype=body.type, working=working, strict=True
+            )
+            assert rel is not None  # strict=True raises instead of returning None
+            from_rels = list(mgr.get_scene_relationships(body.fromSceneId))
+            from_rels.append(rel)
+            mgr.save_scene_relationships(body.fromSceneId, from_rels)
             return rel
 
     async def delete_scene(self, book_id: str, scene_id: str) -> None:
@@ -263,10 +320,9 @@ class SceneService:
                 })
 
             blocked: dict = {}
-            deps = self._load_json(mgr, "dependencies.json")
-            dep_hits = [d for d in deps if d.get("sceneId") == scene_id or d.get("dependsOnSceneId") == scene_id]
+            dep_hits = mgr.get_scene_dependencies(scene_id) + mgr.get_dependents(scene_id)
             if dep_hits:
-                blocked["dependencies"] = [{"id": d["id"], "reason": d.get("reason", "")} for d in dep_hits]
+                blocked["dependencies"] = [{"id": d.id, "reason": d.reason} for d in dep_hits]
 
             todos = self._load_json(mgr, "todos.json")
             todo_hits = [t for t in todos if t.get("parentType") == "scene" and t.get("parentId") == scene_id]
@@ -288,6 +344,9 @@ class SceneService:
 
             chain.detach(working, scene_id)
             del working[scene_id]
+            # Master first, leaf cleanup last (doc 03) — mirrors create's
+            # ordering in reverse; a crash between the two leaves an orphaned
+            # folder with no master row, same harmless-orphan reasoning.
             mgr.save_scenes(list(working.values()))
 
             scene_path = mgr.scene_file_path(record.file)
@@ -296,30 +355,52 @@ class SceneService:
                 trash_dir.mkdir(exist_ok=True)
                 scene_path.replace(trash_dir / scene_path.name)
 
+            mgr.move_scene_folder_to_trash(scene_id)
+
     async def delete_relationship(self, book_id: str, rel_id: str) -> None:
         mgr = self._registry.get(book_id)
         async with mgr.lock:
-            relationships = mgr.get_relationships()
-            if not any(r.id == rel_id for r in relationships):
+            if not mgr.delete_scene_relationship(rel_id):
                 raise ApiError(404, "Relationship not found", {"kind": "relationship", "id": rel_id})
-            mgr.save_relationships([r for r in relationships if r.id != rel_id])
 
     # ---- helpers ------------------------------------------------------------
 
-    def _decorate(self, records: list[SceneRecord], relationships: list[SoftRelationship]) -> list[Scene]:
+    def _assemble(
+        self, record: SceneRecord, meta: SceneMeta, bookkeeping: SceneBookkeeping,
+        seq: int | None, placement: Placement,
+    ) -> Scene:
+        updated_at = max(record.updatedAt, meta.updatedAt or "", bookkeeping.updatedAt or "")
+        return Scene(
+            id=record.id, title=record.title, file=record.file, description=record.description,
+            location=meta.location, dateTime=meta.dateTime,
+            previousSceneId=record.previousSceneId, nextSceneId=record.nextSceneId,
+            chapterId=record.chapterId, partId=record.partId,
+            primaryPlotlineId=record.primaryPlotlineId, secondaryPlotlineIds=record.secondaryPlotlineIds,
+            mood=meta.mood, emotionalArc=meta.emotionalArc,
+            summary=bookkeeping.summary, characterIds=bookkeeping.characterIds,
+            status=record.status, contentHash=bookkeeping.contentHash, wordCount=bookkeeping.wordCount,
+            seq=seq, placement=placement,
+            createdAt=record.createdAt, updatedAt=updated_at,
+        )
+
+    def _decorate(self, mgr, records: list[SceneRecord], relationships: list[SoftRelationship]) -> list[Scene]:
         computed = self._compute(records, relationships)
+        all_meta = mgr.get_all_meta()
+        all_bookkeeping = mgr.get_all_bookkeeping()
         out: list[Scene] = []
         for r in records:
             seq, placement = computed.get(r.id, (None, Placement.orphan))
-            out.append(Scene(**r.model_dump(), seq=seq, placement=placement))
+            out.append(self._assemble(
+                r, all_meta.get(r.id, SceneMeta()), all_bookkeeping.get(r.id, SceneBookkeeping()), seq, placement
+            ))
         return out
 
     def _compute(self, records: list[SceneRecord], relationships: list[SoftRelationship]) -> dict[str, tuple[int | None, Placement]]:
         rel_ids = {r.fromSceneId for r in relationships} | {r.toSceneId for r in relationships}
         return chain.compute_seq_placement(records, rel_ids)
 
-    def _mutation_result(self, records: list[SceneRecord], relationships: list[SoftRelationship], scene_id: str, affected: set[str]) -> SceneMutationResult:
-        decorated = {s.id: s for s in self._decorate(records, relationships)}
+    def _mutation_result(self, mgr, records: list[SceneRecord], relationships: list[SoftRelationship], scene_id: str, affected: set[str]) -> SceneMutationResult:
+        decorated = {s.id: s for s in self._decorate(mgr, records, relationships)}
         return SceneMutationResult(
             scene=decorated[scene_id],
             affectedScenes=[decorated[a] for a in affected if a in decorated],

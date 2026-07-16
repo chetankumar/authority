@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.models.scene import SceneBookkeeping
 from app.services.book_data_manager import BookDataManager
 from app.services.book_registry import BookRegistry
 from app.services import chain_service as chain
@@ -36,7 +37,12 @@ def build_read_tools(book_id: str, registry: BookRegistry) -> list[Any]:
         if rec is None:
             return json.dumps({"error": f"Scene {id} not found"})
         content = mgr.read_scene_content(rec.file)
+        # Merge master + per-scene meta/bookkeeping so the AI still sees the
+        # full scene shape (mood/summary/characterIds etc.), unaware they now
+        # live in separate files (doc 03).
         data = rec.model_dump(mode="json")
+        data.update(mgr.get_scene_meta(id).model_dump(mode="json"))
+        data.update(mgr.get_scene_bookkeeping(id).model_dump(mode="json"))
         data["content"] = content
         return json.dumps(data, ensure_ascii=False)
 
@@ -65,12 +71,14 @@ def build_read_tools(book_id: str, registry: BookRegistry) -> list[Any]:
     def get_scene_summaries() -> str:
         mgr = _mgr()
         computed = _placement_map(mgr)
+        all_bookkeeping = mgr.get_all_bookkeeping()
         rows = []
         for s in mgr.get_scenes():
             if s.status.value != "active" and str(s.status) != "active":
                 continue
             seq, _ = computed.get(s.id, (None, None))
-            rows.append({"id": s.id, "title": s.title, "seq": seq, "summary": s.summary or "(no summary)"})
+            summary = all_bookkeeping.get(s.id, SceneBookkeeping()).summary
+            rows.append({"id": s.id, "title": s.title, "seq": seq, "summary": summary or "(no summary)"})
         return json.dumps(rows, ensure_ascii=False)
 
     def get_character_sheet(id: str | None = None) -> str:

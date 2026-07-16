@@ -241,7 +241,7 @@ class StructureService:
     async def list_characters(self, book_id: str) -> list[Character]:
         mgr = self._registry.get(book_id)
         records = mgr.get_characters()
-        counts = self._character_scene_counts(mgr.get_scenes())
+        counts = self._character_scene_counts(mgr.get_all_bookkeeping())
         return [Character(**r.model_dump(), sceneCount=counts.get(r.id, 0)) for r in records]
 
     async def create_character(self, book_id: str, body) -> Character:
@@ -306,7 +306,7 @@ class StructureService:
                         setattr(record, field, value)
             record.updatedAt = _now()
             mgr.save_characters(characters)
-            counts = self._character_scene_counts(mgr.get_scenes())
+            counts = self._character_scene_counts(mgr.get_all_bookkeeping())
             return Character(**record.model_dump(), sceneCount=counts.get(chr_id, 0))
 
     async def delete_character(self, book_id: str, chr_id: str) -> None:
@@ -314,8 +314,12 @@ class StructureService:
         async with mgr.lock:
             characters = list(mgr.get_characters())
             _find(characters, chr_id, "character")
+            all_bookkeeping = mgr.get_all_bookkeeping()
+            titles_by_id = {s.id: s.title for s in mgr.get_scenes()}
             scenes_blocking = [
-                {"id": s.id, "title": s.title} for s in mgr.get_scenes() if chr_id in s.characterIds
+                {"id": sid, "title": titles_by_id.get(sid, sid)}
+                for sid, bk in all_bookkeeping.items()
+                if chr_id in bk.characterIds
             ]
             relationships_blocking = [
                 {"id": r.id, "title": f"{r.aToB} / {r.bToA}"}
@@ -333,10 +337,10 @@ class StructureService:
             mgr.save_characters(remaining)
 
     @staticmethod
-    def _character_scene_counts(scenes) -> dict[str, int]:
+    def _character_scene_counts(bookkeeping_by_scene) -> dict[str, int]:
         counts: dict[str, int] = {}
-        for s in scenes:
-            for cid in s.characterIds:
+        for bk in bookkeeping_by_scene.values():
+            for cid in bk.characterIds:
                 counts[cid] = counts.get(cid, 0) + 1
         return counts
 

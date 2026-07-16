@@ -156,7 +156,7 @@ CLICK     [Create this folder]
 → HTTP    POST /scenes { title, description, softRelations:[{type:"after", sceneId:"scn-1f2e9b"}] }
 → SERVER  SceneService: create scn-8c31d7 + file · no splice · creates
           rel-4e9a02 {from:scn-8c31d7, to:scn-1f2e9b, type:"after"}
-          [db/scenes.json, db/relationships.json]
+          [db/scenes.json, scenes/scn-8c31d7/relationships.json]
 → REPLY   { scene (placement:"floating", seq: after trunk numbering) }
 → UI      Satellite node appears right of "The Arrival", slightly below its level,
           thin dotted arrow The Arrival ⇢ The Cellar. Hover on the edge:
@@ -318,7 +318,7 @@ In "The Cellar"'s Scene Modal → Dependencies tab: depends on **The Arrival**, 
 ```
 → HTTP    POST /dependencies { sceneId:"scn-8c31d7", dependsOnSceneId:"scn-1f2e9b", reason }
 → SERVER  validate (non-self, both active, reason non-empty, no duplicate pair) ·
-          dep-5f0c33  [db/dependencies.json]   — no todo fires now
+          dep-5f0c33  [scenes/scn-8c31d7/dependencies.json]   — no todo fires now
 ```
 
 Weeks later the author rewrites The Arrival (Marlow no longer finds the key). Autosave:

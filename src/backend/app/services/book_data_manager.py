@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -29,7 +30,7 @@ from app.models.conversation import Conversation, ConversationSummary
 from app.models.enums import ProposalStatus
 from app.models.job import Job
 from app.models.plotline import PlotlineRecord
-from app.models.scene import SceneRecord, SoftRelationship
+from app.models.scene import Dependency, SceneBookkeeping, SceneMeta, SceneRecord, SoftRelationship
 from app.services.book_scanner import _find_cover
 
 log = logging.getLogger("authority.books")
@@ -43,7 +44,11 @@ class BookDataManager:
         self._lock = asyncio.Lock()
         self._config: BookConfig | None = None
         self._scenes: list[SceneRecord] | None = None
-        self._relationships: list[SoftRelationship] | None = None
+        self._scene_meta: dict[str, SceneMeta] | None = None
+        self._scene_bookkeeping: dict[str, SceneBookkeeping] | None = None
+        self._scene_relationships: dict[str, list[SoftRelationship]] | None = None
+        self._scene_dependencies: dict[str, list[Dependency]] | None = None
+        self._dependents_index: dict[str, list[Dependency]] | None = None
         self._parts: list[Part] | None = None
         self._chapters: list[Chapter] | None = None
         self._plotlines: list[PlotlineRecord] | None = None
@@ -138,25 +143,331 @@ class BookDataManager:
 
     def get_scenes(self) -> list[SceneRecord]:
         if self._scenes is None:
+            self._migrate_scenes_if_needed()
             self._scenes = self._load_collection("scenes.json", SceneRecord)
         return self._scenes
-
-    def get_relationships(self) -> list[SoftRelationship]:
-        if self._relationships is None:
-            self._relationships = self._load_collection("relationships.json", SoftRelationship)
-        return self._relationships
 
     def save_scenes(self, scenes: list[SceneRecord]) -> None:
         atomic_write_json(self._dir / "db" / "scenes.json", [s.model_dump(mode="json") for s in scenes])
         self._scenes = scenes
         self._changed()
 
-    def save_relationships(self, relationships: list[SoftRelationship]) -> None:
-        atomic_write_json(
-            self._dir / "db" / "relationships.json", [r.model_dump(mode="json") for r in relationships]
-        )
-        self._relationships = relationships
+    # ---- per-scene folder (scenes/{id}/) ------------------------------------
+    #
+    # meta.json / bookkeeping.json / dependencies.json / relationships.json hold
+    # everything that isn't identity/hard-chain/structure (which stays on the
+    # master SceneRecord above). A parse failure in any one of these degrades
+    # only that scene — quarantined + defaulted, never raised — unlike the
+    # whole-collection quarantine used for db/*.json (doc 03 §Data safety):
+    # smaller blast radius is the whole point of this split.
+
+    def _scenes_dir(self) -> Path:
+        return self._dir / "scenes"
+
+    def _scene_folder(self, scene_id: str) -> Path:
+        return self._scenes_dir() / scene_id
+
+    def _quarantine_scene_file(self, path: Path, exc: Exception) -> None:
+        target = path.with_name(f"{path.name}.corrupt-{int(time.time())}")
+        try:
+            path.replace(target)
+            log.error(
+                "%s failed to load (%s); quarantined to %s — this scene's data degrades to defaults",
+                path, exc, target,
+            )
+        except OSError:
+            log.error("%s failed to load (%s); quarantine failed", path, exc)
+
+    def _read_scene_object(self, path: Path, model: type) -> Any:
+        if not path.exists():
+            return model()
+        try:
+            return model.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:
+            self._quarantine_scene_file(path, exc)
+            return model()
+
+    def _read_scene_list(self, path: Path, model: type) -> list:
+        if not path.exists():
+            return []
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return [model.model_validate(row) for row in raw]
+        except Exception as exc:
+            self._quarantine_scene_file(path, exc)
+            return []
+
+    # -- meta ------------------------------------------------------------------
+
+    def _ensure_meta_loaded(self) -> dict[str, SceneMeta]:
+        if self._scene_meta is None:
+            self._scene_meta = {
+                rec.id: self._read_scene_object(self._scene_folder(rec.id) / "meta.json", SceneMeta)
+                for rec in self.get_scenes()
+            }
+        return self._scene_meta
+
+    def get_scene_meta(self, scene_id: str) -> SceneMeta:
+        return self._ensure_meta_loaded().get(scene_id, SceneMeta())
+
+    def get_all_meta(self) -> dict[str, SceneMeta]:
+        return dict(self._ensure_meta_loaded())
+
+    def save_scene_meta(self, scene_id: str, meta: SceneMeta) -> None:
+        atomic_write_json(self._scene_folder(scene_id) / "meta.json", meta.model_dump(mode="json"))
+        self._ensure_meta_loaded()[scene_id] = meta
         self._changed()
+
+    # -- bookkeeping -------------------------------------------------------------
+
+    def _ensure_bookkeeping_loaded(self) -> dict[str, SceneBookkeeping]:
+        if self._scene_bookkeeping is None:
+            self._scene_bookkeeping = {
+                rec.id: self._read_scene_object(self._scene_folder(rec.id) / "bookkeeping.json", SceneBookkeeping)
+                for rec in self.get_scenes()
+            }
+        return self._scene_bookkeeping
+
+    def get_scene_bookkeeping(self, scene_id: str) -> SceneBookkeeping:
+        return self._ensure_bookkeeping_loaded().get(scene_id, SceneBookkeeping())
+
+    def get_all_bookkeeping(self) -> dict[str, SceneBookkeeping]:
+        return dict(self._ensure_bookkeeping_loaded())
+
+    def save_scene_bookkeeping(self, scene_id: str, bookkeeping: SceneBookkeeping) -> None:
+        atomic_write_json(self._scene_folder(scene_id) / "bookkeeping.json", bookkeeping.model_dump(mode="json"))
+        self._ensure_bookkeeping_loaded()[scene_id] = bookkeeping
+        self._changed()
+
+    # -- relationships (soft placement edges) -----------------------------------
+
+    def _ensure_scene_relationships_loaded(self) -> dict[str, list[SoftRelationship]]:
+        if self._scene_relationships is None:
+            self._scene_relationships = {}
+            for rec in self.get_scenes():
+                rels = self._read_scene_list(self._scene_folder(rec.id) / "relationships.json", SoftRelationship)
+                if rels:
+                    self._scene_relationships[rec.id] = rels
+        return self._scene_relationships
+
+    def get_scene_relationships(self, scene_id: str) -> list[SoftRelationship]:
+        return list(self._ensure_scene_relationships_loaded().get(scene_id, []))
+
+    def save_scene_relationships(self, scene_id: str, relationships: list[SoftRelationship]) -> None:
+        atomic_write_json(
+            self._scene_folder(scene_id) / "relationships.json",
+            [r.model_dump(mode="json") for r in relationships],
+        )
+        cache = self._ensure_scene_relationships_loaded()
+        if relationships:
+            cache[scene_id] = relationships
+        else:
+            cache.pop(scene_id, None)
+        self._changed()
+
+    def get_relationships(self) -> list[SoftRelationship]:
+        """Flattened aggregate across every scene's relationships.json —
+        signature preserved so existing callers (ScenesResponse, ChainService's
+        rel_ids, PlaceholderRegistry) don't need to change."""
+        return [r for rels in self._ensure_scene_relationships_loaded().values() for r in rels]
+
+    def delete_scene_relationship(self, rel_id: str) -> bool:
+        for scene_id, rels in self._ensure_scene_relationships_loaded().items():
+            if any(r.id == rel_id for r in rels):
+                self.save_scene_relationships(scene_id, [r for r in rels if r.id != rel_id])
+                return True
+        return False
+
+    # -- dependencies (prerequisite edges) ---------------------------------------
+
+    def _ensure_dependencies_loaded(self) -> None:
+        if self._scene_dependencies is not None:
+            return
+        self._scene_dependencies = {}
+        self._dependents_index = {}
+        for rec in self.get_scenes():
+            deps = self._read_scene_list(self._scene_folder(rec.id) / "dependencies.json", Dependency)
+            if deps:
+                self._scene_dependencies[rec.id] = deps
+            for d in deps:
+                self._dependents_index.setdefault(d.dependsOnSceneId, []).append(d)
+
+    def get_scene_dependencies(self, scene_id: str) -> list[Dependency]:
+        self._ensure_dependencies_loaded()
+        return list((self._scene_dependencies or {}).get(scene_id, []))
+
+    def get_dependents(self, scene_id: str) -> list[Dependency]:
+        """Reverse index: dependencies owned by *other* scenes that point at
+        ``scene_id``. Built by one full scan on first access, then kept live by
+        the incremental update in ``save_scene_dependencies`` — never rescanned."""
+        self._ensure_dependencies_loaded()
+        return list((self._dependents_index or {}).get(scene_id, []))
+
+    def save_scene_dependencies(self, scene_id: str, dependencies: list[Dependency]) -> None:
+        self._ensure_dependencies_loaded()
+        assert self._scene_dependencies is not None and self._dependents_index is not None
+        atomic_write_json(
+            self._scene_folder(scene_id) / "dependencies.json",
+            [d.model_dump(mode="json") for d in dependencies],
+        )
+        # Incremental reverse-index update: drop this scene's old edges, add the new.
+        for old in self._scene_dependencies.get(scene_id, []):
+            bucket = self._dependents_index.get(old.dependsOnSceneId)
+            if bucket is not None:
+                self._dependents_index[old.dependsOnSceneId] = [d for d in bucket if d.id != old.id]
+        if dependencies:
+            self._scene_dependencies[scene_id] = dependencies
+        else:
+            self._scene_dependencies.pop(scene_id, None)
+        for d in dependencies:
+            self._dependents_index.setdefault(d.dependsOnSceneId, []).append(d)
+        self._changed()
+
+    # -- folder lifecycle ---------------------------------------------------------
+
+    def create_scene_folder(self, scene_id: str, meta: SceneMeta, bookkeeping: SceneBookkeeping) -> None:
+        """Seed a new scene's per-scene files. Called before the master row is
+        committed (leaf-first ordering) — an orphaned folder with no master row
+        pointing at it is harmless; nothing discovers it."""
+        folder = self._scene_folder(scene_id)
+        atomic_write_json(folder / "meta.json", meta.model_dump(mode="json"))
+        atomic_write_json(folder / "bookkeeping.json", bookkeeping.model_dump(mode="json"))
+        atomic_write_json(folder / "dependencies.json", [])
+        atomic_write_json(folder / "relationships.json", [])
+        if self._scene_meta is not None:
+            self._scene_meta[scene_id] = meta
+        if self._scene_bookkeeping is not None:
+            self._scene_bookkeeping[scene_id] = bookkeeping
+
+    def move_scene_folder_to_trash(self, scene_id: str) -> None:
+        """Mirrors the existing prose .md → .trash/ behavior (doc 03) — nothing
+        is silently destroyed, just moved aside with the same recoverability
+        window as the prose file gets."""
+        folder = self._scene_folder(scene_id)
+        if not folder.exists():
+            return
+        trash_dir = self._dir / ".trash"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        target = trash_dir / scene_id
+        if target.exists():
+            target = trash_dir / f"{scene_id}-{int(time.time())}"
+        shutil.move(str(folder), str(target))
+        if self._scene_meta is not None:
+            self._scene_meta.pop(scene_id, None)
+        if self._scene_bookkeeping is not None:
+            self._scene_bookkeeping.pop(scene_id, None)
+        if self._scene_relationships is not None:
+            self._scene_relationships.pop(scene_id, None)
+        if self._scene_dependencies is not None:
+            self._scene_dependencies.pop(scene_id, None)
+
+    # -- migration from the old flat (pre-split) scenes.json shape -------------
+
+    _OLD_SHAPE_KEYS = (
+        "location", "dateTime", "mood", "emotionalArc",
+        "summary", "characterIds", "contentHash", "wordCount",
+    )
+
+    def _migrate_scenes_if_needed(self) -> None:
+        path = self._dir / "db" / "scenes.json"
+        if not path.exists():
+            return
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return  # let the normal load path quarantine this properly
+        if not isinstance(raw, list) or not raw:
+            return
+        if not any(
+            isinstance(row, dict) and any(k in row for k in self._OLD_SHAPE_KEYS) for row in raw
+        ):
+            return  # already the trimmed shape
+
+        log.info("migrating %s scenes.json to master + per-scene layout", self._dir.name)
+
+        trimmed_rows: list[dict] = []
+        for row in raw:
+            scene_id = row["id"]
+            meta = SceneMeta(
+                location=row.get("location", ""),
+                dateTime=row.get("dateTime", ""),
+                mood=row.get("mood", ""),
+                emotionalArc=row.get("emotionalArc", ""),
+                updatedAt=row.get("updatedAt", ""),
+            )
+            bookkeeping = SceneBookkeeping(
+                summary=row.get("summary", ""),
+                characterIds=row.get("characterIds") or [],
+                contentHash=row.get("contentHash", ""),
+                wordCount=row.get("wordCount", 0),
+                updatedAt=row.get("updatedAt", ""),
+            )
+            folder = self._scene_folder(scene_id)
+            atomic_write_json(folder / "meta.json", meta.model_dump(mode="json"))
+            atomic_write_json(folder / "bookkeeping.json", bookkeeping.model_dump(mode="json"))
+            if not (folder / "dependencies.json").exists():
+                atomic_write_json(folder / "dependencies.json", [])
+            if not (folder / "relationships.json").exists():
+                atomic_write_json(folder / "relationships.json", [])
+            trimmed_rows.append({
+                "id": scene_id,
+                "title": row.get("title", ""),
+                "file": row.get("file", ""),
+                "description": row.get("description", ""),
+                "previousSceneId": row.get("previousSceneId"),
+                "nextSceneId": row.get("nextSceneId"),
+                "status": row.get("status", "active"),
+                "chapterId": row.get("chapterId"),
+                "partId": row.get("partId"),
+                "primaryPlotlineId": row.get("primaryPlotlineId"),
+                "secondaryPlotlineIds": row.get("secondaryPlotlineIds") or [],
+                "createdAt": row.get("createdAt") or row.get("updatedAt", ""),
+                "updatedAt": row.get("updatedAt", ""),
+            })
+
+        rel_path = self._dir / "db" / "relationships.json"
+        if rel_path.exists():
+            try:
+                rel_raw = json.loads(rel_path.read_text(encoding="utf-8"))
+            except Exception:
+                rel_raw = []
+            by_from: dict[str, list[dict]] = {}
+            for r in rel_raw:
+                by_from.setdefault(r.get("fromSceneId"), []).append(r)
+            for scene_id, rows in by_from.items():
+                folder = self._scene_folder(scene_id)
+                if folder.exists():
+                    atomic_write_json(folder / "relationships.json", rows)
+
+        dep_path = self._dir / "db" / "dependencies.json"
+        if dep_path.exists():
+            try:
+                dep_raw = json.loads(dep_path.read_text(encoding="utf-8"))
+            except Exception:
+                dep_raw = []
+            by_scene: dict[str, list[dict]] = {}
+            for d in dep_raw:
+                by_scene.setdefault(d.get("sceneId"), []).append(d)
+            for scene_id, rows in by_scene.items():
+                folder = self._scene_folder(scene_id)
+                if folder.exists():
+                    atomic_write_json(folder / "dependencies.json", rows)
+
+        # Commit point: trimmed master, written last. A crash before this line
+        # leaves db/scenes.json in the old shape, so the next load re-detects
+        # and re-runs migration from scratch (idempotent — leaf files just get
+        # overwritten with identical data).
+        atomic_write_json(path, trimmed_rows)
+
+        # Supersede (never delete) the old flat files, after the commit so a
+        # crash before it leaves the originals intact for a retry.
+        ts = int(time.time())
+        if rel_path.exists():
+            rel_path.replace(rel_path.with_name(f"relationships.json.pre-split-{ts}"))
+        if dep_path.exists():
+            dep_path.replace(dep_path.with_name(f"dependencies.json.pre-split-{ts}"))
+
+        log.info("migration complete for %s: %d scenes", self._dir.name, len(trimmed_rows))
 
     # ---- parts / chapters / plotlines (doc 03) --------------------------------
 

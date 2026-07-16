@@ -23,7 +23,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | doc 07 | `docs/claude-tech-specs/07-decisions-and-deferred.md` |
 | doc 08 | `docs/claude-tech-specs/08-user-journey.md` |
 
-**Last audited:** 2026-07-16 (AI task models split: `ai.utilityModelId` fallback + 4 independent slots — commit message, scene summarization, character parsing, chat default; enrichment's `both` scope now runs as two independent model calls instead of one combined call)
+**Last audited:** 2026-07-16 (`db/scenes.json` split into a lean master table — identity/hard-chain/structure — plus a per-scene `scenes/{id}/` folder — meta.json, bookkeeping.json, dependencies.json, relationships.json — so AI-bookkeeping churn and low-churn structure no longer share a file, a write, or a corruption blast radius; transparent migration for old-shape books; API `Scene` response shape and frontend unchanged. AI task models split: `ai.utilityModelId` fallback + 4 independent slots — commit message, scene summarization, character parsing, chat default; enrichment's `both` scope now runs as two independent model calls instead of one combined call)
 
 ---
 

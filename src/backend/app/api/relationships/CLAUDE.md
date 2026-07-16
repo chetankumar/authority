@@ -12,3 +12,7 @@ Soft relationships — the planning scaffolding (*definitely before / after / ar
 ## Semantics
 
 `SoftRelationship { id, fromSceneId, toSceneId, type: before\|after\|around, createdAt }` — read as *from is definitely-{type} to*. "around" renders with no arrowhead. Editing lives in the Scene Modal Basics tab (no separate popup).
+
+## Storage (doc 03)
+
+Persisted per-scene at `scenes/{fromSceneId}/relationships.json`, not a flat `db/relationships.json` — each edge lives with the scene that owns it. `BookDataManager.get_relationships()` still returns the flattened aggregate across every scene's file (lazy-loaded once, cached), so this router and `SceneService` are unaffected by where the edge physically lives.

@@ -61,26 +61,30 @@ class PlaceholderRegistry:
     ) -> str:
         """Replace ``@tokens`` with book/scene context at run time."""
         from app.models.enums import SceneStatus
-        from app.models.scene import START_ID
+        from app.models.scene import START_ID, SceneBookkeeping, SceneMeta
         from app.services import chain_service as chain
 
         records = {r.id: r for r in mgr.get_scenes()}
         scene = records.get(scene_id)
         prose = mgr.read_scene_content(scene.file) if scene else ""
         selection = selection_text or ""
+        all_meta = mgr.get_all_meta()
+        all_bookkeeping = mgr.get_all_bookkeeping()
 
         def scene_meta(s: Any) -> str:
             if s is None:
                 return ""
+            meta = all_meta.get(s.id, SceneMeta())
+            bookkeeping = all_bookkeeping.get(s.id, SceneBookkeeping())
             return "\n".join(
                 [
                     f"Title: {s.title}",
                     f"Description: {s.description}",
-                    f"Location: {s.location}",
-                    f"Date/Time: {s.dateTime}",
-                    f"Mood: {s.mood}",
-                    f"Emotional arc: {s.emotionalArc}",
-                    f"Summary: {s.summary or '(no summary)'}",
+                    f"Location: {meta.location}",
+                    f"Date/Time: {meta.dateTime}",
+                    f"Mood: {meta.mood}",
+                    f"Emotional arc: {meta.emotionalArc}",
+                    f"Summary: {bookkeeping.summary or '(no summary)'}",
                 ]
             )
 
@@ -98,7 +102,10 @@ class PlaceholderRegistry:
                     chain_back.append(rec)
                 cur = rec.previousSceneId
             chain_back.reverse()
-            lines = [f"{r.title} — {r.summary or '(no summary)'}" for r in chain_back]
+            lines = [
+                f"{r.title} — {all_bookkeeping.get(r.id, SceneBookkeeping()).summary or '(no summary)'}"
+                for r in chain_back
+            ]
             return "\n".join(lines) if lines else "(none)"
 
         def all_summaries() -> str:
@@ -107,7 +114,10 @@ class PlaceholderRegistry:
             computed = chain.compute_seq_placement(list(mgr.get_scenes()), rel_ids)
             active = [r for r in mgr.get_scenes() if r.status == SceneStatus.active]
             active.sort(key=lambda r: (computed.get(r.id, (10**9, None))[0] or 10**9, r.id))
-            return "\n".join(f"{r.title} — {r.summary or '(no summary)'}" for r in active)
+            return "\n".join(
+                f"{r.title} — {all_bookkeeping.get(r.id, SceneBookkeeping()).summary or '(no summary)'}"
+                for r in active
+            )
 
         def format_character(c: Any) -> str:
             aliases = ", ".join(getattr(c, "aliases", []) or [])
@@ -168,13 +178,16 @@ class PlaceholderRegistry:
             return "\n\n".join(parts)
 
         def scene_characters() -> str:
-            if scene is None or not scene.characterIds:
+            if scene is None:
+                return "(none tagged)"
+            character_ids = all_bookkeeping.get(scene.id, SceneBookkeeping()).characterIds
+            if not character_ids:
                 return "(none tagged)"
             getter = getattr(mgr, "get_characters", None)
             if getter is None:
                 return "(character sheet not loaded)"
             by_id = {c.id: c for c in getter()}
-            entries = [format_character(by_id[i]) for i in scene.characterIds if i in by_id]
+            entries = [format_character(by_id[i]) for i in character_ids if i in by_id]
             return "\n\n".join(entries) if entries else "(none tagged)"
 
         def plotlines() -> str:

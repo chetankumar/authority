@@ -24,10 +24,13 @@ from app.services.settings_service import SettingsService
 log = logging.getLogger("authority.books")
 
 # db/*.json collections seeded empty on creation (doc 03).
+# relationships.json / dependencies.json are NOT seeded here — those are
+# superseded by per-scene scenes/{id}/relationships.json + dependencies.json
+# (doc 03); a fresh book has no scenes yet, so there's nothing to seed, and
+# BookDataManager's migration path only runs for books that already have the
+# old flat files.
 _EMPTY_ARRAY_FILES = (
     "scenes.json",
-    "relationships.json",
-    "dependencies.json",
     "characters.json",
     "character_relationships.json",
     "plotlines.json",

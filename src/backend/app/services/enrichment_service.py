@@ -180,13 +180,12 @@ class EnrichmentService:
         conversation_ids: list[str] = []
 
         async with mgr.lock:
-            records = {r.id: r.model_copy(deep=True) for r in mgr.get_scenes()}
-            rec = records.get(job.sceneId or "")
-            if rec is None:
+            if not any(s.id == scene.id for s in mgr.get_scenes()):
                 raise RuntimeError("Scene vanished")
+            bookkeeping = mgr.get_scene_bookkeeping(scene.id).model_copy()
 
             if want_summary and isinstance(parsed.get("summary"), str) and parsed["summary"].strip():
-                rec.summary = parsed["summary"].strip()
+                bookkeeping.summary = parsed["summary"].strip()
                 changed.append("summary")
 
             if want_chars and chars_model is not None:
@@ -200,7 +199,7 @@ class EnrichmentService:
                         if i not in ids:
                             ids.append(i)
                     if ids:
-                        rec.characterIds = ids
+                        bookkeeping.characterIds = ids
                         changed.append("characterIds")
 
                 for name in parsed.get("unrecognizedNames") or []:
@@ -215,7 +214,7 @@ class EnrichmentService:
                     cid = self._escalation.escalate(
                         book_id,
                         parent_type=ParentType.scene,
-                        parent_id=rec.id,
+                        parent_id=scene.id,
                         issue=EscalationIssue(
                             kind="ambiguity",
                             title=f"who is {amb_name}?",
@@ -234,7 +233,7 @@ class EnrichmentService:
                     cid = self._escalation.escalate(
                         book_id,
                         parent_type=ParentType.scene,
-                        parent_id=rec.id,
+                        parent_id=scene.id,
                         issue=EscalationIssue(
                             kind="unmatched_name",
                             title=f"who is {name}?",
@@ -249,8 +248,13 @@ class EnrichmentService:
                     )
                     conversation_ids.append(cid)
 
-            rec.updatedAt = _now()
-            mgr.save_scenes(list(records.values()))
+            if changed:
+                # Enrichment writes now touch only bookkeeping.json — never the
+                # master table (db/scenes.json) — so a one-scene summary/
+                # character update can never contend with or block a chain
+                # splice/heal on an unrelated scene (doc 03).
+                bookkeeping.updatedAt = _now()
+                mgr.save_scene_bookkeeping(scene.id, bookkeeping)
 
         if changed:
             self._hub.emit(book_id, "scene-updated", {"id": job.sceneId, "changed": changed})

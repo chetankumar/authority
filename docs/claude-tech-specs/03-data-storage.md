@@ -60,8 +60,13 @@ a3f9c2-my-great-novel/
     book.json
   scenes/
     1f2e9b-the-arrival.md        # prose only; source of truth for content
+    scn-1f2e9b/                  # per-scene folder — everything but identity/hard-chain/structure
+      meta.json                  # location, dateTime, mood, emotionalArc
+      bookkeeping.json           # summary, characterIds, contentHash, wordCount
+      dependencies.json          # this scene's outgoing depends-on edges
+      relationships.json         # this scene's outgoing soft edges
   db/
-    scenes.json  relationships.json  dependencies.json  parts.json  chapters.json
+    scenes.json  parts.json  chapters.json
     characters.json  character_relationships.json  plotlines.json  todos.json  jobs.json  ui.json
     conversations/
       index.json
@@ -74,7 +79,7 @@ a3f9c2-my-great-novel/
   .git/
 ```
 
-Scene filenames: `{sceneHash}-{slug}.md`. Slug follows title renames; hash never changes. Empty scaffold folders carry `.gitkeep`.
+Scene filenames: `{sceneHash}-{slug}.md`. Slug follows title renames; hash never changes. The per-scene folder is named by the **full scene id** (`scn-1f2e9b`, not the bare hex) — matches the `conversations/cnv-*.json` naming convention and stays self-describing without cross-referencing `db/scenes.json`. Empty scaffold folders carry `.gitkeep`.
 
 ## config/book.json
 
@@ -90,7 +95,7 @@ Scene filenames: `{sceneHash}-{slug}.md`. Slug follows title renames; hash never
 
 Bookkeeping toggles default **on** for new books; unknown future keys default off.
 
-## db/scenes.json — array of
+## db/scenes.json — the master table, array of
 
 ```json
 {
@@ -98,32 +103,50 @@ Bookkeeping toggles default **on** for new books; unknown future keys default of
   "title": "The Arrival",
   "file": "scenes/1f2e9b-the-arrival.md",
   "description": "(required)",
-  "location": "", "dateTime": "",
   "previousSceneId": null, "nextSceneId": null,
+  "status": "active",
   "chapterId": null, "partId": null,
   "primaryPlotlineId": null, "secondaryPlotlineIds": [],
-  "mood": "", "emotionalArc": "", "summary": "",
-  "characterIds": [],
-  "status": "active",
-  "contentHash": "sha256:...", "wordCount": 0,
   "createdAt": "...", "updatedAt": "..."
 }
 ```
 
+This is deliberately the **only** thing every mutation atomically rewrites as
+a whole collection — identity, hard-chain, and structure, the low-churn,
+author-driven facts that ChainService, the Scene Graph, the Scene Table's
+default columns, and StructureService's chapter/part/plotline checks need in
+bulk. Everything that changes far more often (content saves, AI enrichment) or
+is soft narrative detail lives in the scene's own folder instead (below), so
+neither shares a file, a write, or a corruption blast radius with this table.
+
 - `chapterId` XOR `partId` (both may be null; never both set) — API-enforced.
 - `previousSceneId`/`nextSceneId` may hold sentinel IDs.
-- `status` ∈ `active | archived`. Archiving splice-heals the chain (A→X→B ⇒ A→B) and hides the scene from graph/default table/placeholders/compilation; soft relationships kept but dormant. Unarchiving returns it **floating**.
-- `summary` and `characterIds` are system-maintained (enrichment) when the corresponding toggle is on; manually editable regardless.
-- `contentHash`/`wordCount` recomputed on every content save. A hash change triggers dependency-todo creation and the enrichment settle timer.
+- `status` ∈ `active | archived`. Archiving splice-heals the chain (A→X→B ⇒ A→B) and hides the scene from graph/default table/placeholders/compilation; soft relationships kept but dormant. Unarchiving returns it **floating**. Archive/unarchive is the one thing that must stay in this table rather than move to the per-scene folder: it fires chain splice/heal (relinking 2-3 scenes' prev/next) in the same atomic write.
+- `updatedAt` here reflects only *this table's* own changes. The API's assembled `Scene.updatedAt` is `max(scenes.json's updatedAt, meta.json's updatedAt, bookkeeping.json's updatedAt)` — a mood-only or summary-only edit still surfaces as the scene's latest update time without this table needing to be touched.
 
-## db/relationships.json — soft edges only
+## scenes/{id}/meta.json — soft, author-edited narrative metadata
 
 ```json
-{ "id": "rel-x", "fromSceneId": "scn-a", "toSceneId": "scn-b",
-  "type": "before" | "after" | "around", "createdAt": "..." }
+{ "location": "", "dateTime": "", "mood": "", "emotionalArc": "", "updatedAt": "..." }
 ```
 
-Semantics: *from is definitely-{type} to*. Rendered as thin dotted arrows ("around": no arrowhead).
+## scenes/{id}/bookkeeping.json — AI-owned + content-derived
+
+```json
+{ "summary": "", "characterIds": [], "contentHash": "sha256:...", "wordCount": 0, "updatedAt": "..." }
+```
+
+- `summary` and `characterIds` are system-maintained (enrichment) when the corresponding toggle is on; manually editable regardless. Enrichment's two independent calls (doc 05) each write here — never to the master table.
+- `contentHash`/`wordCount` recomputed on every content save. Autosave now touches **only this file** — never `db/scenes.json` — so it can never contend with or block a chain splice/heal on an unrelated scene. A hash change triggers dependency-todo creation and the enrichment settle timer.
+
+## scenes/{id}/relationships.json — this scene's outgoing soft edges
+
+```json
+[{ "id": "rel-x", "fromSceneId": "scn-a", "toSceneId": "scn-b",
+   "type": "before" | "after" | "around", "createdAt": "..." }]
+```
+
+Semantics: *from is definitely-{type} to*. Rendered as thin dotted arrows ("around": no arrowhead). Owned by the *from* scene's folder — `BookDataManager.get_relationships()` still returns the flattened aggregate across every scene's file, so ChainService's placement computation, the Scene Graph, and `GET /scenes`'s `relationships` array are all unaffected by where the edge physically lives.
 
 ## db/parts.json — array of
 
@@ -141,14 +164,27 @@ Simple integer ordering. New parts are appended with `seq = max + 1`. Reordering
 
 Global seq across the whole book (not per-part). The client groups chapters by `partId` for display; chapters with `partId: null` appear as "Unassigned". Reordering works the same as parts.
 
-## db/dependencies.json
+## scenes/{id}/dependencies.json — this scene's outgoing depends-on edges
 
 ```json
-{ "id": "dep-x", "sceneId": "scn-10", "dependsOnSceneId": "scn-02",
-  "reason": "(required)", "createdAt": "..." }
+[{ "id": "dep-x", "sceneId": "scn-10", "dependsOnSceneId": "scn-02",
+   "reason": "(required)", "createdAt": "..." }]
 ```
 
-Behavior: when `dependsOnSceneId`'s content hash changes on save, auto-create a todo on each dependent scene: action = `"'{depended-on title}' changed — verify dependency: {reason}"`, origin `dependency`, `sourceDependencyId` set. No status on the dependency itself.
+Owned by the dependent scene's (`sceneId`'s) folder. `BookDataManager` keeps a
+live in-memory reverse index (`get_dependents(scene_id)`) — built by one full
+scan on first access, then kept current by an incremental update inside
+`save_scene_dependencies` (never rescanned) — so "what depends on me" is a
+memory lookup, not a folder scan, despite the edge itself living in the
+*other* scene's folder.
+
+**Not yet exposed via CRUD API.** The model and per-scene storage exist so the
+storage layer has a real shape; only the delete-blocked check
+(`SceneService.delete_scene`) reads it today. Fanout-on-content-save (auto-
+creating a todo on each dependent scene when `dependsOnSceneId`'s content hash
+changes: action = `"'{depended-on title}' changed — verify dependency:
+{reason}"`, origin `dependency`, `sourceDependencyId` set) is future work. No
+status on the dependency itself.
 
 ## db/todos.json
 
@@ -177,8 +213,10 @@ nationality, ethnicity, occupation — free text throughout; `age` is a string
 because fiction rarely wants a strict int, e.g. `"mid-30s"`) and **craft**
 (want = the external, plot-visible goal; need = the internal psychological
 truth, often in tension with want; flaw = what drives conflict; arc = how the
-character changes). `sceneCount` is **computed** on read (scanned from
-scenes' `characterIds`), never stored — same pattern as `Plotline.sceneCount`.
+character changes). `sceneCount` is **computed** on read (scanned from every
+scene's `scenes/{id}/bookkeeping.json` → `characterIds`), never stored — same
+pattern as `Plotline.sceneCount` (which scans the master table's
+`primaryPlotlineId`/`secondaryPlotlineIds` instead, since those stayed there).
 
 ## db/character_relationships.json
 
@@ -280,4 +318,22 @@ Protection is achieved through patterns (stdlib) plus exactly one library. Five 
 2. **In-process races** — the server runs exactly **one** Uvicorn worker (`workers=1`, pinned in the launcher; multiple workers would mean multiple writers). Within the async event loop, every mutation acquires the target book's `asyncio.Lock` (app.json has its own) around its read-modify-write-persist cycle. Reads take no lock; mutations replace collections rather than tweaking them in place, so readers never observe half-mutated state.
 3. **Double-instance protection** — at startup the API takes an exclusive lock on `{appDataRoot}/.lock` via the **`filelock`** library (the single added dependency; pure Python, cross-platform). A second instance fails fast with "Authority is already running" instead of silently double-writing.
 4. **Corrupt-load recovery** — a JSON file that fails to parse at load is never overwritten: it is copied to `{file}.corrupt-{timestamp}`, a loud error names it, and the book loads degraded. Derived files (`conversations/index.json`) are rebuilt automatically from a folder scan. Git is the ultimate restore mechanism: every commit is a known-good snapshot (`git checkout -- db/scenes.json`).
+
+   Per-scene files (`scenes/{id}/meta.json`, `bookkeeping.json`, `dependencies.json`, `relationships.json`) follow the same quarantine-and-never-overwrite rule, but scoped: a corrupt file degrades **only that scene** to defaults (blank mood/summary, no tagged characters) rather than the load-time `ApiError` that a corrupt `db/*.json` collection raises. This is a deliberate improvement from splitting `scenes.json` — the whole point of the split was shrinking the blast radius of a bad file, and this is where that pays off. The master `db/scenes.json` itself keeps the stricter raise-and-degrade-the-whole-book behavior, same as every other `db/*.json` collection.
 5. **Load-time schema validation** — on-disk documents are validated against the same Pydantic models used at the API boundary when a book loads; violations are reported per-file (treated as layer-4 corruption), catching hand-edited or drifted data before it compounds.
+
+## Migration: old flat scenes.json → master + per-scene
+
+Books created before this split have every scene field on one row in
+`db/scenes.json` plus flat `db/relationships.json`/`db/dependencies.json`.
+`BookDataManager` detects this transparently the first time a book is opened
+— no manual step: if any row carries a field that no longer belongs on the
+trimmed master (`location`, `dateTime`, `mood`, `emotionalArc`, `summary`,
+`characterIds`, `contentHash`, `wordCount`), it splits every row into master +
+`meta.json` + `bookkeeping.json`, groups the old flat relationships/
+dependencies files by owning scene into each scene's folder, then commits the
+trimmed `db/scenes.json` **last** — the actual commit point. A crash before
+that write leaves the old shape in place, so the next load simply retries the
+whole migration (rewriting already-written per-scene files is a harmless
+no-op). The superseded flat files are renamed (never deleted) to
+`relationships.json.pre-split-{ts}` / `dependencies.json.pre-split-{ts}`.

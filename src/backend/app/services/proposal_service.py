@@ -101,7 +101,7 @@ class ProposalService:
 
         mgr = self._registry.get(book_id)
         async with mgr.lock:
-            records = {r.id: r.model_copy(deep=True) for r in mgr.get_scenes()}
+            records = {r.id: r for r in mgr.get_scenes()}
             rec = records.get(scene_id)
             if rec is None:
                 raise not_found("scene", scene_id)
@@ -115,10 +115,11 @@ class ProposalService:
             new_content = content[:idx] + replace + content[idx + len(find) :]
             atomic_write_text(path, new_content)
             word_count, content_hash = _content_metrics(new_content)
-            rec.wordCount = word_count
-            rec.contentHash = content_hash
-            rec.updatedAt = scene_now()
-            mgr.save_scenes(list(records.values()))
+            bookkeeping = mgr.get_scene_bookkeeping(scene_id).model_copy()
+            bookkeeping.wordCount = word_count
+            bookkeeping.contentHash = content_hash
+            bookkeeping.updatedAt = scene_now()
+            mgr.save_scene_bookkeeping(scene_id, bookkeeping)
             self._hub.emit(book_id, "scene-updated", {"id": scene_id, "changed": ["content"]})
             return {"wordCount": word_count, "contentHash": content_hash}
 
@@ -184,12 +185,14 @@ class ProposalService:
 
         if payload.sceneId:
             scene = next((s for s in mgr.get_scenes() if s.id == payload.sceneId), None)
-            if scene is not None and chr_id not in scene.characterIds:
-                new_ids = [*scene.characterIds, chr_id]
-                body = SceneUpdate.model_construct(characterIds=new_ids)
-                object.__setattr__(body, "__pydantic_fields_set__", {"characterIds"})
-                await self._scenes.update_scene(book_id, payload.sceneId, body)
-                self._hub.emit(book_id, "scene-updated", {"id": payload.sceneId, "changed": ["characterIds"]})
+            if scene is not None:
+                current_ids = mgr.get_scene_bookkeeping(payload.sceneId).characterIds
+                if chr_id not in current_ids:
+                    new_ids = [*current_ids, chr_id]
+                    body = SceneUpdate.model_construct(characterIds=new_ids)
+                    object.__setattr__(body, "__pydantic_fields_set__", {"characterIds"})
+                    await self._scenes.update_scene(book_id, payload.sceneId, body)
+                    self._hub.emit(book_id, "scene-updated", {"id": payload.sceneId, "changed": ["characterIds"]})
 
         return {"characterId": chr_id}
 
