@@ -159,8 +159,8 @@ Models table (AG Grid not needed — plain table): Label · Provider · Model na
 | Model modal: Provider select | Drives contextual fields: cloud → Key required; `openai-compatible`/`ollama` → Base URL required, highlighted, placeholder shows LM Studio/Ollama example URLs | Provider rules (doc 04 §3) are taught by the form, not the error message |
 | Key input, hint "Paste a key or use ${ENV_VAR}" | `POST/PATCH /settings/models`; edit modal leaves the field blank-but-untouched (omit = keep stored key) | Secrets never round-trip to the client |
 | Row **Test** ↯ | `POST /settings/models/{id}/test` → button enters a spinner; success → green "OK · {latencyMs}ms" chip + toast "{label} replied"; failure → red "Failed" chip (reason on hover) + persistent error toast naming the fix (unset env var, bad key, unreachable base URL, timeout) | A model config that *looks* right isn't trustworthy until it has actually answered; the check turns "configured" into "works" without leaving Settings — especially for local `ollama`/`openai-compatible` servers that may simply be off |
-| Row edit ✎ / delete 🗑 | Delete → confirm → `DELETE`; 409 → blocked dialog listing AI-Jobs / utility-model references | A model in use can't silently vanish from under jobs |
-| **Default utility model** select | Below the table; `PATCH /settings/ai` | The model that acts without a conversation (enrichment, commit messages) must be an explicit, visible choice |
+| Row edit ✎ / delete 🗑 | Delete → confirm → `DELETE`; 409 → blocked dialog listing AI-Jobs / any of the five AI-task-model references | A model in use can't silently vanish from under jobs |
+| **AI task models** — five selects: Default utility model, Commit message model, Scene summarization model, Character parsing model, AI chat default model | Below the table; each independently `PATCH /settings/ai {<field>}` | Every model that acts without a conversation must be an explicit, visible choice — and different bookkeeping tasks (summarizing vs. matching characters) may warrant different models. The utility model is the shared fallback for whichever of the other four are left unset, plus sundry tasks like chat-thread titling |
 
 ### 5.3 AI-Jobs
 Jobs table: Name · Default model · Output type · actions. [Add AI-Job] → modal:
@@ -279,7 +279,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 | **AI-Jobs ▾** | Tool panel | Menu of saved jobs (`GET /settings/ai-jobs`). Pick → `POST /ai-jobs/run` with sceneId + scope: `selection` if the editor has an active selection (selectionText sent), else `full` → Conversation Modal opens on the new conversation, streaming | The author's own toolbox, one gesture from the prose; selection-awareness makes "fix this paragraph" and "review the scene" the same menu |
 | **Metadata** | Tool panel | Opens the Scene Modal | Facts about the scene without leaving the room |
 | **Bookkeeping** | Tool panel | Popover of iOS-style toggles: "Update summary on save" / "Update character references on save" → `PATCH /books/{id} {bookkeeping}`; footer note "Applies to this whole book". List component — future tasks append | Standing consent must be inspectable and revocable exactly where its effects are felt; book-level scope is stated because the button sits on a scene page |
-| **Chat** | Tool panel | `POST /conversations {kind:"chat", parent: scene, aiParticipant: {enabled:true, modelId: utilityModel}}` → Conversation Modal with AI on and the utility model preselected (falls back to the first configured model). If a selection is active, it rides the first message as `context` and renders as a quoted block | The "I'm stuck" button; selection-as-context is the v1 answer to inline markers |
+| **Chat** | Tool panel | `POST /conversations {kind:"chat", parent: scene, aiParticipant: {enabled:true, modelId: chatDefaultModel}}` → Conversation Modal with AI on and the chat default model preselected (falls back to the utility model, then the first configured model). If a selection is active, it rides the first message as `context` and renders as a quoted block | The "I'm stuck" button; selection-as-context is the v1 answer to inline markers |
 | ◫ pane toggle | Tool panel, right edge | Show/hide right pane; persisted in ui.json | Zen switch: full-width prose on demand, memory per book |
 | TipTap toolbar | Above sheet | Standard marks/blocks; Ctrl/Cmd+B/I etc. | Familiar; deliberately small — novels are mostly paragraphs |
 | Inline title | Top of sheet | Blur/Enter → `PATCH {title}` (slug-renames the file server-side) | The title is prose-adjacent; renaming shouldn't require a modal |
@@ -315,13 +315,18 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 
 ## 11. Character Sheet — `/book/{id}/characters`
 
-**Purpose:** the who's-who dictionary; also the enrichment matcher's vocabulary. **Layout:** 640px column; rows = name (medium) + first line of personality (`--ink-soft`) + scene-count badge; click expands inline to the edit form (Name*, Aliases tag-input, Personality / History / Notes textareas, [Delete] ghost-danger left, [Save] right). [＋ Add character] primary, top-right.
+**Purpose:** the who's-who dictionary; also the enrichment matcher's vocabulary. **Layout:** 640px column; rows = name (medium) + first line of personality (`--ink-soft`) + scene-count badge; click expands inline to the edit form, grouped **Identity** (Name*, Aliases tag-input, Age, Gender, Nationality, Ethnicity, Occupation), **Craft** (Want, Need, Flaw, Arc, Personality / History / Notes textareas), and **Relationships** (see below), with [Delete] ghost-danger left, [Save] right. [＋ Add character] primary, top-right.
 
 | Control | Behavior | Why |
 |---|---|---|
 | Aliases tag-input, hint "Nicknames and titles the prose uses — 'the Widow', 'Marlow'" | `POST/PATCH /characters`; 422 uniqueness conflict → inline "Already used by {name}" | Aliases are functional: they're how enrichment recognizes characters in prose; the hint teaches that |
-| Delete | `DELETE`; 409 → Blocked-deletion dialog listing referencing scenes as links | Same strict rule as structure: references are unwound by the author, never swept |
+| Want / Need / Flaw / Arc | Free text; `PATCH /characters/{id}` | The engine of character-driven fiction — an external goal in tension with an internal need, a flaw that generates conflict, and how the character changes |
+| Delete | `DELETE`; 409 → Blocked-deletion dialog listing referencing scenes **and** character-relationship rows as links | Same strict rule as structure: references are unwound by the author, never swept |
 | Scene-count badge | From `sceneCount` | Instantly shows who's load-bearing and who's vestigial |
+
+### Relationships (within the expanded row)
+
+A list of this character's relationships to others, each rendered as "*{this character} is {aToB} {other character}*" with a category chip and description; [✎] to edit, [✕] to remove. **[+ Add relationship]** picks the other character via SearchableSelect, a category (family / romantic / friendship / rivalry / professional / mentorship / other), and two independent direction labels — how this character relates to the other, and the reverse (e.g. "mother of" / "daughter of") — since most relationships aren't symmetric. `POST/PATCH/DELETE /character-relationships`; 422 on duplicate pair or missing direction labels.
 
 ---
 
@@ -364,7 +369,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 | [Stage all] | `stage {all:true}` | The common case in a single-author repo |
 | Diff panel | Read-only unified diff, mono, additions `--ok`, deletions `--danger`; binary → "Binary file" | Review without a terminal; deliberately not an editor — fixing happens in the editor |
 | Commit message textarea | | |
-| **✨ Suggest message** | `POST /git/suggest-message` → fills the textarea (spinner in-button); no utility model → stats fallback arrives with a faint note "Written from file stats" | Lowers the cost of good history; the message is *always* editable — the author owns the record |
+| **✨ Suggest message** | `POST /git/suggest-message` → fills the textarea (spinner in-button); no commit-message model (or utility fallback) resolves → stats fallback arrives with a faint note "Written from file stats" | Lowers the cost of good history; the message is *always* editable — the author owns the record |
 | [Commit staged files] | Enabled iff ≥1 staged ∧ message non-empty; `POST /git/commit` → toast "Committed {shorthash}" → badge clears via SSE | The button's precondition *is* the ritual: something chosen, something said |
 | History strip | `GET /git/log` — shorthash (mono) · message · relative time; read-only | Recent memory + restore points; anything deeper is CLI territory by design |
 | [Push ↑2] / [Pull ↓0] | Only when `hasRemote`; `POST /git/push|pull`; errors verbatim in a danger panel + "Resolve with your git tooling" | Backup without pretending to be a git client; honest hand-off at the edge of scope |

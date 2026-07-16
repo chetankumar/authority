@@ -11,11 +11,22 @@ blocked while any scene references the plotline.
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timezone
 
 from app.core.errors import ApiError, blocked, not_found, validation
 from app.models.book import Chapter, Part
+from app.models.character import (
+    Character,
+    CharacterRecord,
+    CharacterRelationship,
+    CharacterRelationshipCategory,
+)
 from app.models.plotline import Plotline, PlotlineRecord
 from app.services.book_registry import BookRegistry
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class StructureService:
@@ -225,6 +236,195 @@ class StructureService:
             remaining = [p for p in plotlines if p.id != plt_id]
             mgr.save_plotlines(remaining)
 
+    # ---- Characters ------------------------------------------------------------
+
+    async def list_characters(self, book_id: str) -> list[Character]:
+        mgr = self._registry.get(book_id)
+        records = mgr.get_characters()
+        counts = self._character_scene_counts(mgr.get_scenes())
+        return [Character(**r.model_dump(), sceneCount=counts.get(r.id, 0)) for r in records]
+
+    async def create_character(self, book_id: str, body) -> Character:
+        mgr = self._registry.get(book_id)
+        async with mgr.lock:
+            name = body.name.strip()
+            if not name:
+                raise validation({"name": "Give the character a name."})
+            aliases = [a.strip() for a in body.aliases if a.strip()]
+            characters = list(mgr.get_characters())
+            _check_name_uniqueness(characters, name, aliases)
+            chr_id = _mint_id("chr", {c.id for c in characters})
+            now = _now()
+            record = CharacterRecord(
+                id=chr_id,
+                name=name,
+                aliases=aliases,
+                age=body.age,
+                gender=body.gender,
+                nationality=body.nationality,
+                ethnicity=body.ethnicity,
+                occupation=body.occupation,
+                want=body.want,
+                need=body.need,
+                flaw=body.flaw,
+                arc=body.arc,
+                personality=body.personality,
+                history=body.history,
+                notes=body.notes,
+                createdAt=now,
+                updatedAt=now,
+            )
+            characters.append(record)
+            mgr.save_characters(characters)
+            return Character(**record.model_dump(), sceneCount=0)
+
+    async def update_character(self, book_id: str, chr_id: str, body) -> Character:
+        mgr = self._registry.get(book_id)
+        async with mgr.lock:
+            characters = list(mgr.get_characters())
+            record = _find(characters, chr_id, "character")
+            fields_set = body.model_fields_set
+            name = record.name
+            aliases = record.aliases
+            if "name" in fields_set and body.name is not None:
+                name = body.name.strip()
+                if not name:
+                    raise validation({"name": "Give the character a name."})
+            if "aliases" in fields_set and body.aliases is not None:
+                aliases = [a.strip() for a in body.aliases if a.strip()]
+            if name != record.name or aliases != record.aliases:
+                _check_name_uniqueness(characters, name, aliases, exclude_id=chr_id)
+            record.name = name
+            record.aliases = aliases
+            for field in (
+                "age", "gender", "nationality", "ethnicity", "occupation",
+                "want", "need", "flaw", "arc", "personality", "history", "notes",
+            ):
+                if field in fields_set:
+                    value = getattr(body, field)
+                    if value is not None:
+                        setattr(record, field, value)
+            record.updatedAt = _now()
+            mgr.save_characters(characters)
+            counts = self._character_scene_counts(mgr.get_scenes())
+            return Character(**record.model_dump(), sceneCount=counts.get(chr_id, 0))
+
+    async def delete_character(self, book_id: str, chr_id: str) -> None:
+        mgr = self._registry.get(book_id)
+        async with mgr.lock:
+            characters = list(mgr.get_characters())
+            _find(characters, chr_id, "character")
+            scenes_blocking = [
+                {"id": s.id, "title": s.title} for s in mgr.get_scenes() if chr_id in s.characterIds
+            ]
+            relationships_blocking = [
+                {"id": r.id, "title": f"{r.aToB} / {r.bToA}"}
+                for r in mgr.get_character_relationships()
+                if r.characterAId == chr_id or r.characterBId == chr_id
+            ]
+            blockers: dict = {}
+            if scenes_blocking:
+                blockers["scenes"] = scenes_blocking
+            if relationships_blocking:
+                blockers["relationships"] = relationships_blocking
+            if blockers:
+                raise blocked(blockers)
+            remaining = [c for c in characters if c.id != chr_id]
+            mgr.save_characters(remaining)
+
+    @staticmethod
+    def _character_scene_counts(scenes) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for s in scenes:
+            for cid in s.characterIds:
+                counts[cid] = counts.get(cid, 0) + 1
+        return counts
+
+    # ---- Character relationships ------------------------------------------------
+
+    async def list_character_relationships(self, book_id: str) -> list[CharacterRelationship]:
+        mgr = self._registry.get(book_id)
+        return list(mgr.get_character_relationships())
+
+    async def create_character_relationship(
+        self,
+        book_id: str,
+        character_a_id: str,
+        character_b_id: str,
+        category: CharacterRelationshipCategory,
+        a_to_b: str,
+        b_to_a: str,
+        description: str = "",
+    ) -> CharacterRelationship:
+        mgr = self._registry.get(book_id)
+        async with mgr.lock:
+            if character_a_id == character_b_id:
+                raise validation({"characterBId": "A character can't be related to themself."})
+            characters = {c.id for c in mgr.get_characters()}
+            if character_a_id not in characters:
+                raise not_found("character", character_a_id)
+            if character_b_id not in characters:
+                raise not_found("character", character_b_id)
+            relationships = list(mgr.get_character_relationships())
+            pair = {character_a_id, character_b_id}
+            if any({r.characterAId, r.characterBId} == pair for r in relationships):
+                raise validation({"characterBId": "A relationship between these characters already exists."})
+            if not a_to_b.strip() or not b_to_a.strip():
+                raise validation({"aToB": "Describe how each character relates to the other."})
+            rel_id = _mint_id("crl", {r.id for r in relationships})
+            now = _now()
+            rel = CharacterRelationship(
+                id=rel_id,
+                characterAId=character_a_id,
+                characterBId=character_b_id,
+                category=category,
+                aToB=a_to_b.strip(),
+                bToA=b_to_a.strip(),
+                description=description,
+                createdAt=now,
+                updatedAt=now,
+            )
+            relationships.append(rel)
+            mgr.save_character_relationships(relationships)
+            return rel
+
+    async def update_character_relationship(
+        self,
+        book_id: str,
+        rel_id: str,
+        category: CharacterRelationshipCategory | None = None,
+        a_to_b: str | None = None,
+        b_to_a: str | None = None,
+        description: str | None = None,
+    ) -> CharacterRelationship:
+        mgr = self._registry.get(book_id)
+        async with mgr.lock:
+            relationships = list(mgr.get_character_relationships())
+            rel = _find(relationships, rel_id, "character relationship")
+            if category is not None:
+                rel.category = category
+            if a_to_b is not None:
+                if not a_to_b.strip():
+                    raise validation({"aToB": "Describe how characterA relates to characterB."})
+                rel.aToB = a_to_b.strip()
+            if b_to_a is not None:
+                if not b_to_a.strip():
+                    raise validation({"bToA": "Describe how characterB relates to characterA."})
+                rel.bToA = b_to_a.strip()
+            if description is not None:
+                rel.description = description
+            rel.updatedAt = _now()
+            mgr.save_character_relationships(relationships)
+            return rel
+
+    async def delete_character_relationship(self, book_id: str, rel_id: str) -> None:
+        mgr = self._registry.get(book_id)
+        async with mgr.lock:
+            relationships = list(mgr.get_character_relationships())
+            _find(relationships, rel_id, "character relationship")
+            remaining = [r for r in relationships if r.id != rel_id]
+            mgr.save_character_relationships(remaining)
+
 
 # ---- helpers ----------------------------------------------------------------
 
@@ -262,3 +462,23 @@ def _compact_seq(items: list) -> None:
     items.sort(key=lambda x: x.seq)
     for i, item in enumerate(items, 1):
         item.seq = i
+
+
+def _check_name_uniqueness(
+    characters: list, name: str, aliases: list[str], exclude_id: str | None = None
+) -> None:
+    """Name + every alias must not collide case-insensitively with any existing
+    name/alias (doc 04 §7) — the enrichment matcher must never face ambiguity."""
+    taken: dict[str, object] = {}
+    for c in characters:
+        if c.id == exclude_id:
+            continue
+        taken[c.name.lower()] = c
+        for a in c.aliases:
+            taken[a.lower()] = c
+    for value in [name, *aliases]:
+        existing = taken.get(value.lower())
+        if existing is not None:
+            raise validation(
+                {"conflict": {"value": value, "existingCharacter": {"id": existing.id, "name": existing.name}}}
+            )

@@ -86,15 +86,12 @@ class EnrichmentService:
         mgr = self._registry.get(book_id)
         bk = mgr.config.bookkeeping
         scopes: list[str] = []
-        if bk.summaryOnSave:
+        if bk.summaryOnSave and self._settings.get_scene_summary_model() is not None:
             scopes.append("summary")
-        if bk.charactersOnSave:
+        if bk.charactersOnSave and self._settings.get_character_parsing_model() is not None:
             scopes.append("characters")
         if not scopes:
-            return
-        utility = self._settings.get_utility_model()
-        if utility is None:
-            log.info("enrichment skipped — no utility model")
+            log.info("enrichment skipped for %s/%s — no model configured for the enabled toggle(s)", book_id, scene_id)
             return
         if len(scopes) == 2:
             scope = JobScope.both
@@ -102,30 +99,27 @@ class EnrichmentService:
             scope = JobScope.summary
         else:
             scope = JobScope.characters
-        self._jobs.enqueue_system(
-            book_id, scene_id=scene_id, scope=scope, model_id=utility.id, replace_queued=True
-        )
+        # No fixed model_id here — run() resolves the model per sub-task (scene
+        # summary vs character parsing may be different models) at execution time.
+        self._jobs.enqueue_system(book_id, scene_id=scene_id, scope=scope, model_id=None, replace_queued=True)
 
     async def enrich_on_demand(self, book_id: str, scene_id: str, scope: JobScope) -> Job:
         if scope not in (JobScope.summary, JobScope.characters, JobScope.both):
             raise validation({"scope": "Use summary, characters, or both."})
-        utility = self._settings.get_utility_model()
-        if utility is None:
-            raise ApiError(422, "No utility model configured.", {"code": "no-utility-model"})
+        want_summary = scope in (JobScope.summary, JobScope.both)
+        want_chars = scope in (JobScope.characters, JobScope.both)
+        have_summary = want_summary and self._settings.get_scene_summary_model() is not None
+        have_chars = want_chars and self._settings.get_character_parsing_model() is not None
+        if not have_summary and not have_chars:
+            raise ApiError(422, "No model configured for the requested enrichment.", {"code": "no-utility-model"})
         if self._jobs is None:
             raise ApiError(500, "Job service not ready.", {})
         mgr = self._registry.get(book_id)
         if not any(s.id == scene_id for s in mgr.get_scenes()):
             raise ApiError(404, "Scene not found", {"kind": "scene", "id": scene_id})
-        return self._jobs.enqueue_system(
-            book_id, scene_id=scene_id, scope=scope, model_id=utility.id, replace_queued=True
-        )
+        return self._jobs.enqueue_system(book_id, scene_id=scene_id, scope=scope, model_id=None, replace_queued=True)
 
     async def run(self, book_id: str, job: Job) -> None:
-        utility = self._settings.get_model(job.modelId or "") or self._settings.get_utility_model()
-        if utility is None:
-            raise RuntimeError("No utility model")
-
         mgr = self._registry.get(book_id)
         scene = next((s for s in mgr.get_scenes() if s.id == job.sceneId), None)
         if scene is None:
@@ -148,24 +142,38 @@ class EnrichmentService:
         want_summary = job.scope in (JobScope.summary, JobScope.both)
         want_chars = job.scope in (JobScope.characters, JobScope.both)
 
-        prompt_parts = [
-            "You maintain scene bookkeeping for a novel.",
-            "Return a single fenced JSON object with keys as needed:",
-            '  "summary": string (if summarizing),',
-            '  "matchedCharacterIds": [ids from the directory that clearly appear],',
-            '  "unrecognizedNames": [proper names in prose not in the directory],',
-            '  "ambiguous": [{"name": "...", "candidates": ["id:...", ...], "question": "..."}]',
-            "Only exact/clear matches go in matchedCharacterIds. When unsure, use ambiguous.",
-            "Never invent character ids.",
-            "",
-            f"Character directory:\n{directory}",
-            "",
-            f"Scene title: {scene.title}",
-            f"Scene prose:\n{prose[:20000]}",
-        ]
-        messages = self._assembler.for_structured("\n".join(prompt_parts), book.systemPrompt)
-        raw = await self._orch.invoke_structured(utility, messages, timeout=120.0)
-        parsed = parse_enrichment_result(raw)
+        # Summarization and character-parsing are independent calls, each on
+        # its own configured model — a scene may want its summary from one
+        # model and its cast list matched by another. Doing this as two calls
+        # (rather than one combined prompt) is the whole point of separating
+        # the settings slots; if scope is `both` and both slots resolve to the
+        # same model, that's still two calls, kept simple and uniform.
+        parsed: dict[str, Any] = {}
+        models_used: dict[str, str] = {}
+
+        if want_summary:
+            summary_model = self._settings.get_scene_summary_model()
+            if summary_model is not None:
+                messages = self._assembler.for_structured(
+                    self._summary_prompt(scene, prose), book.systemPrompt
+                )
+                raw = await self._orch.invoke_structured(summary_model, messages, timeout=120.0)
+                parsed.update(parse_enrichment_result(raw))
+                models_used["sceneSummary"] = summary_model.id
+            else:
+                log.info("scene-summary enrichment skipped for %s — no model configured", job.sceneId)
+
+        chars_model = self._settings.get_character_parsing_model() if want_chars else None
+        if want_chars:
+            if chars_model is not None:
+                messages = self._assembler.for_structured(
+                    self._characters_prompt(scene, prose, directory), book.systemPrompt
+                )
+                raw = await self._orch.invoke_structured(chars_model, messages, timeout=120.0)
+                parsed.update(parse_enrichment_result(raw))
+                models_used["characterParsing"] = chars_model.id
+            else:
+                log.info("character-parsing enrichment skipped for %s — no model configured", job.sceneId)
 
         changed: list[str] = []
         unrecognized: list[str] = []
@@ -181,7 +189,7 @@ class EnrichmentService:
                 rec.summary = parsed["summary"].strip()
                 changed.append("summary")
 
-            if want_chars:
+            if want_chars and chars_model is not None:
                 matched = parsed.get("matchedCharacterIds") or []
                 if isinstance(matched, list):
                     valid_ids = {c.id for c in chars}
@@ -218,7 +226,7 @@ class EnrichmentService:
                                 "excerpt": prose[:400],
                             },
                         ),
-                        model_id=utility.id,
+                        model_id=chars_model.id,
                     )
                     conversation_ids.append(cid)
 
@@ -237,7 +245,7 @@ class EnrichmentService:
                             ),
                             context={"name": name, "excerpt": prose[:400]},
                         ),
-                        model_id=utility.id,
+                        model_id=chars_model.id,
                     )
                     conversation_ids.append(cid)
 
@@ -250,11 +258,43 @@ class EnrichmentService:
         job.result = {
             "unrecognizedNames": unrecognized,
             "conversationIds": conversation_ids,
+            "modelsUsed": models_used,
         }
         job.status = JobStatus.done
         job.finishedAt = _now()
         if self._jobs is not None:
             self._jobs.update_job(book_id, job)
+
+    @staticmethod
+    def _summary_prompt(scene: Any, prose: str) -> str:
+        return "\n".join(
+            [
+                "You maintain scene bookkeeping for a novel.",
+                "Return a single fenced JSON object: { \"summary\": string }.",
+                "",
+                f"Scene title: {scene.title}",
+                f"Scene prose:\n{prose[:20000]}",
+            ]
+        )
+
+    @staticmethod
+    def _characters_prompt(scene: Any, prose: str, directory: str) -> str:
+        return "\n".join(
+            [
+                "You maintain the character directory for a novel.",
+                "Return a single fenced JSON object with keys:",
+                '  "matchedCharacterIds": [ids from the directory that clearly appear],',
+                '  "unrecognizedNames": [proper names in prose not in the directory],',
+                '  "ambiguous": [{"name": "...", "candidates": ["id:...", ...], "question": "..."}]',
+                "Only exact/clear matches go in matchedCharacterIds. When unsure, use ambiguous.",
+                "Never invent character ids.",
+                "",
+                f"Character directory:\n{directory}",
+                "",
+                f"Scene title: {scene.title}",
+                f"Scene prose:\n{prose[:20000]}",
+            ]
+        )
 
     @staticmethod
     def _exact_match_ids(prose: str, chars: list[Any]) -> list[str]:

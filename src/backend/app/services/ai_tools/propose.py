@@ -36,11 +36,31 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
     class CharacterArgs(BaseModel):
         name: str
         aliases: list[str] = Field(default_factory=list)
+        age: str = Field(default="", description="Free text, e.g. '34' or 'mid-30s'")
+        gender: str = ""
+        nationality: str = ""
+        ethnicity: str = ""
+        occupation: str = Field(default="", description="Job or role in the story world")
+        want: str = Field(default="", description="External, plot-visible goal")
+        need: str = Field(default="", description="Internal psychological need, often in tension with want")
+        flaw: str = Field(default="", description="The trait that drives conflict")
+        arc: str = Field(default="", description="How the character changes over the story")
         personality: str = ""
         history: str = ""
         notes: str = ""
         rationale: str = ""
         sceneId: str | None = Field(default=None, description="Optional scene to tag after create")
+
+    class CharacterRelationshipArgs(BaseModel):
+        characterAId: str
+        characterBId: str
+        category: str = Field(
+            description="family | romantic | friendship | rivalry | professional | mentorship | other"
+        )
+        aToB: str = Field(description="How characterA relates to characterB, e.g. 'mother of'")
+        bToA: str = Field(description="How characterB relates to characterA, e.g. 'daughter of'")
+        description: str = Field(default="", description="Nuance/dynamic of the relationship")
+        rationale: str = ""
 
     def propose_edit(sceneId: str, find: str, replace: str, rationale: str = "") -> str:
         accumulator.add(
@@ -95,6 +115,15 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
     def propose_character_create(
         name: str,
         aliases: list[str] | None = None,
+        age: str = "",
+        gender: str = "",
+        nationality: str = "",
+        ethnicity: str = "",
+        occupation: str = "",
+        want: str = "",
+        need: str = "",
+        flaw: str = "",
+        arc: str = "",
         personality: str = "",
         history: str = "",
         notes: str = "",
@@ -109,6 +138,15 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
                 payload={
                     "name": name,
                     "aliases": aliases or [],
+                    "age": age,
+                    "gender": gender,
+                    "nationality": nationality,
+                    "ethnicity": ethnicity,
+                    "occupation": occupation,
+                    "want": want,
+                    "need": need,
+                    "flaw": flaw,
+                    "arc": arc,
                     "personality": personality,
                     "history": history,
                     "notes": notes,
@@ -118,6 +156,33 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
             )
         )
         return "Character-create proposal recorded for author review."
+
+    def propose_character_relationship(
+        characterAId: str,
+        characterBId: str,
+        category: str,
+        aToB: str,
+        bToA: str,
+        description: str = "",
+        rationale: str = "",
+    ) -> str:
+        accumulator.add(
+            Proposal(
+                id=new_id("prp"),
+                type=ProposalType.character_relationship_create,
+                status=ProposalStatus.pending,
+                payload={
+                    "characterAId": characterAId,
+                    "characterBId": characterBId,
+                    "category": category,
+                    "aToB": aToB,
+                    "bToA": bToA,
+                    "description": description,
+                    "rationale": rationale,
+                },
+            )
+        )
+        return "Character-relationship proposal recorded for author review."
 
     return [
         StructuredTool.from_function(
@@ -143,8 +208,23 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
             name="propose_character_create",
             description=(
                 "Propose adding a character to the sheet. Author must accept. "
-                "Use when a name is new or ambiguous — never invent silently."
+                "Use when a name is new or ambiguous — never invent silently. "
+                "Fill in any fields the prose or conversation makes clear "
+                "(demographics, occupation, want/need/flaw/arc, personality, "
+                "history) — not just the name."
             ),
             args_schema=CharacterArgs,
+        ),
+        StructuredTool.from_function(
+            func=propose_character_relationship,
+            name="propose_character_relationship",
+            description=(
+                "Propose a relationship between two existing characters. Author "
+                "must accept. Relationships are directional: describe how "
+                "characterA relates to characterB (aToB) and the reverse (bToA) "
+                "separately, since most relationships aren't symmetric "
+                "(e.g. 'mother of' / 'daughter of')."
+            ),
+            args_schema=CharacterRelationshipArgs,
         ),
     ]

@@ -46,6 +46,10 @@ export interface Appearance {
 
 export interface AISettings {
   utilityModelId: string | null;
+  commitMessageModelId: string | null;
+  characterParsingModelId: string | null;
+  sceneSummaryModelId: string | null;
+  chatDefaultModelId: string | null;
 }
 
 export interface AIJobDefinition {
@@ -86,9 +90,9 @@ export const patchModel = (id: string, body: Partial<ModelInput>) =>
 export const deleteModel = (id: string) => apiSend<void>("DELETE", `/settings/models/${id}`);
 export const testModel = (id: string) => apiSend<ModelTestResult>("POST", `/settings/models/${id}/test`);
 
-// -- ai (utility model) -----------------------------------------------------
+// -- ai (utility model + task-specific model slots) --------------------------
 export const getAI = () => apiGet<AISettings>("/settings/ai");
-export const patchAI = (patch: AISettings) => apiSend<AISettings>("PATCH", "/settings/ai", patch);
+export const patchAI = (patch: Partial<AISettings>) => apiSend<AISettings>("PATCH", "/settings/ai", patch);
 
 // -- ai-jobs ----------------------------------------------------------------
 export const listJobs = () => apiGet<AIJobDefinition[]>("/settings/ai-jobs");

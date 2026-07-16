@@ -172,7 +172,10 @@ class SettingsService:
         raise not_found("model", model_id)
 
     def get_utility_model(self) -> ModelConfig | None:
-        """The model for system tasks (enrichment, git suggest-message).
+        """The general-purpose fallback for sundry system tasks (chat-title
+        naming, escalation seeding when nothing more specific applies) — and
+        the fallback every task-specific slot below degrades to when its own
+        slot is unset or dangling.
 
         ``None`` when unset or dangling — callers degrade to a non-AI fallback
         rather than failing, since no utility model is a valid configuration.
@@ -182,6 +185,33 @@ class SettingsService:
         if model_id is None:
             return None
         return next((m for m in data.models if m.id == model_id), None)
+
+    def _resolve_ai_slot(self, specific_id: str | None) -> ModelConfig | None:
+        """A task-specific slot resolves to its own model if set and known,
+        else falls back to the utility model, else ``None`` (degrade, never fail)."""
+        if specific_id is not None:
+            data = self._load()
+            found = next((m for m in data.models if m.id == specific_id), None)
+            if found is not None:
+                return found
+        return self.get_utility_model()
+
+    def get_commit_message_model(self) -> ModelConfig | None:
+        """Model for git commit-message suggestions."""
+        return self._resolve_ai_slot(self._load().ai.commitMessageModelId)
+
+    def get_character_parsing_model(self) -> ModelConfig | None:
+        """Model for enrichment's character-matching pass (and the escalation
+        chats it seeds when a match is ambiguous or unrecognized)."""
+        return self._resolve_ai_slot(self._load().ai.characterParsingModelId)
+
+    def get_scene_summary_model(self) -> ModelConfig | None:
+        """Model for enrichment's scene-summarization pass."""
+        return self._resolve_ai_slot(self._load().ai.sceneSummaryModelId)
+
+    def get_chat_default_model(self) -> ModelConfig | None:
+        """Model preselected when the author opens a new chat from the editor."""
+        return self._resolve_ai_slot(self._load().ai.chatDefaultModelId)
 
     def get_model(self, model_id: str) -> ModelConfig | None:
         return next((m for m in self._load().models if m.id == model_id), None)
@@ -249,9 +279,15 @@ class SettingsService:
             referencing_jobs = [
                 {"id": j.id, "name": j.name} for j in data.aiJobs if j.defaultModelId == model_id
             ]
-            utility_ref = data.ai.utilityModelId == model_id
-            if referencing_jobs or utility_ref:
-                raise blocked({"aiJobs": referencing_jobs, "utilityModel": utility_ref})
+            slot_refs = {
+                "utilityModel": data.ai.utilityModelId == model_id,
+                "commitMessageModel": data.ai.commitMessageModelId == model_id,
+                "characterParsingModel": data.ai.characterParsingModelId == model_id,
+                "sceneSummaryModel": data.ai.sceneSummaryModelId == model_id,
+                "chatDefaultModel": data.ai.chatDefaultModelId == model_id,
+            }
+            if referencing_jobs or any(slot_refs.values()):
+                raise blocked({"aiJobs": referencing_jobs, **{k: v for k, v in slot_refs.items() if v}})
 
             data.models = [m for m in data.models if m.id != model_id]
             self._save(data)
@@ -291,11 +327,20 @@ class SettingsService:
     async def patch_ai(self, patch: AISettingsPatch) -> AISettings:
         async with self._lock:
             data = self._load()
-            if "utilityModelId" in patch.model_fields_set:
-                model_id = patch.utilityModelId
+            fields = patch.model_fields_set
+            for field in (
+                "utilityModelId",
+                "commitMessageModelId",
+                "characterParsingModelId",
+                "sceneSummaryModelId",
+                "chatDefaultModelId",
+            ):
+                if field not in fields:
+                    continue
+                model_id = getattr(patch, field)
                 if model_id is not None and not any(m.id == model_id for m in data.models):
-                    raise validation({"utilityModelId": "Unknown model."})
-                data.ai.utilityModelId = model_id
+                    raise validation({field: "Unknown model."})
+                setattr(data.ai, field, model_id)
             self._save(data)
             return data.ai
 

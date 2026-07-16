@@ -127,16 +127,24 @@ class AppearancePatch(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# AI (utility model)
+# AI (utility model + task-specific model slots)
 # ---------------------------------------------------------------------------
 
 
 class AISettings(BaseModel):
     utilityModelId: str | None = None
+    commitMessageModelId: str | None = None
+    characterParsingModelId: str | None = None
+    sceneSummaryModelId: str | None = None
+    chatDefaultModelId: str | None = None
 
 
 class AISettingsPatch(BaseModel):
     utilityModelId: str | None = None
+    commitMessageModelId: str | None = None
+    characterParsingModelId: str | None = None
+    sceneSummaryModelId: str | None = None
+    chatDefaultModelId: str | None = None
 
 
 # ---------------------------------------------------------------------------

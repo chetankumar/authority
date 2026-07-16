@@ -87,6 +87,7 @@ class ProposalType(str, Enum):
     metadata_update = "metadata-update"
     todo_create = "todo-create"
     character_create = "character-create"
+    character_relationship_create = "character-relationship-create"
 
 
 class ProposalStatus(str, Enum):
@@ -121,3 +122,16 @@ class ParentType(str, Enum):
     chapter = "chapter"
     part = "part"
     book = "book"
+
+
+class CharacterRelationshipCategory(str, Enum):
+    """Broad category for a character-to-character relationship (doc 04 §2.1);
+    the directional ``aToB``/``bToA`` free-text labels carry the actual nuance."""
+
+    family = "family"
+    romantic = "romantic"
+    friendship = "friendship"
+    rivalry = "rivalry"
+    professional = "professional"
+    mentorship = "mentorship"
+    other = "other"

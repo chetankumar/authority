@@ -33,12 +33,12 @@ authority/
 ```json
 {
   "port": 8700,
-  "appDataRoot": "./data",     // where app.json lives
+  "appDataRoot": "<OS-standard per-user app-data dir>/Authority",  // where app.json lives; omit to use the OS default
   "envName": "authority"        // conda/venv environment name
 }
 ```
 
-Created with defaults on first run if absent.
+Created with defaults on first run if absent. `appDataRoot` defaults to an OS-standard **per-user directory outside the repo** — `%LOCALAPPDATA%\Authority` on Windows, `~/Library/Application Support/Authority` on macOS, `$XDG_DATA_HOME/authority` (or `~/.local/share/authority`) on Linux — computed at runtime, not hardcoded in the committed file. This is deliberate: `app.json` holds the author's only settings and API keys, and must not sit somewhere a repo-wide `git clean`, `rm -rf`, or other working-tree operation could sweep it up as disposable build output. A relative path (e.g. `"./data"`) is still honored for local dev — it resolves against the repo root as before — but is opt-in, never the default.
 
 ## Launcher behavior (start.sh / start.bat)
 

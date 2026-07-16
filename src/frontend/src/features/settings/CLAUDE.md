@@ -10,9 +10,9 @@ Three pages sharing a 640px centered column; forms label-over-field; Save is the
 ## AI Settings
 
 - Models table (plain, not AG Grid): Label · Provider · Model name · Key (masked) · Base URL · actions.
-- **Model modal:** Provider select drives contextual fields — openai-compatible/ollama → Base URL required + example placeholders. Key is optional: blank uses the provider's default env var (anthropic→`ANTHROPIC_API_KEY`, openai→`OPENAI_API_KEY`, gemini→`GOOGLE_API_KEY`); a literal or `${ENV_VAR}` also work. Edit modal leaves key blank = keep stored. `POST/PATCH /settings/models`; delete → confirm → 409 → BlockedDeletionDialog (AI-Jobs / utility-model refs).
+- **Model modal:** Provider select drives contextual fields — openai-compatible/ollama → Base URL required + example placeholders. Key is optional: blank uses the provider's default env var (anthropic→`ANTHROPIC_API_KEY`, openai→`OPENAI_API_KEY`, gemini→`GOOGLE_API_KEY`); a literal or `${ENV_VAR}` also work. Edit modal leaves key blank = keep stored. `POST/PATCH /settings/models`; delete → confirm → 409 → BlockedDeletionDialog (AI-Jobs / any of the five AI-task-model refs).
 - **Test row action** (↯): `POST /settings/models/{id}/test` runs a live `hello model` completion. Spinner while in flight; result renders as a chip (green "OK · {ms}ms" / red "Failed", reason on hover) plus a toast. Failures arrive as 200 `ModelTestResult` bodies, not thrown errors.
-- **Default utility model** select below table → `PATCH /settings/ai`.
+- **AI task models** — five independent selects below the table, each `PATCH /settings/ai {<field>}` on change (`AISettingsPage.tsx`'s `MODEL_SLOTS`): Default utility model (fallback for the rest, plus sundry tasks like chat titling), Commit message model, Scene summarization model, Character parsing model, AI chat default model. A task-specific slot left "None" silently falls back to the utility model server-side (doc 05) — the UI doesn't need to show that resolution, just the raw slot value.
 
 ## AI-Jobs
 

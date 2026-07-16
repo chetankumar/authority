@@ -45,7 +45,7 @@ Routers hold no logic. Every router validates via Pydantic, then delegates:
 | **BookDataManager** (one per open book) | Loads `db/*.json` + `config/book.json` into memory; owns the book's **asyncio mutation lock**; atomic write-through persistence; conversation files + derived index; ui.json |
 | **ChainService** | Hard-chain algebra: splice, heal, walk, seq/placement computation, contiguity + completeness checks |
 | **SceneService** | Scene CRUD orchestration; content saves (hash, word count); dependency-todo fanout; enrichment settle timers; file naming/renames |
-| **StructureService** | Parts/chapters linked lists; move-before/after rewiring; blocked deletions; plotlines; characters (uniqueness) |
+| **StructureService** | Parts/chapters linked lists; move-before/after rewiring; blocked deletions; plotlines; characters (uniqueness) + character relationships (directional, category + free text) |
 | **ConversationService** | Conversation lifecycle; message append; passes parent scene into ContextAssembler; streams via AIOrchestrator |
 | **ProposalService** | Locates a proposal by id (via conversation index); applies/rejects; the only code path that mutates on behalf of AI output |
 | **JobService + Worker** | `jobs.json` queue; resolves AI-Job placeholders then ContextAssembler → AIOrchestrator; per-book FIFO, ≤2 global |
@@ -81,7 +81,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 **`relationshipType`** (soft): `before` · `after` · `around` — read as *fromScene is definitely-{type} toScene*.
 **`todoStatus`**: `open` · `done` · `closed`. **`todoOrigin`**: `user` · `dependency` · `ai`.
 **`conversationKind`**: `note` · `chat` · `ai-job` · `task-discussion`.
-**`proposalType`**: `edit` · `metadata-update` · `todo-create` · `character-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`.
+**`proposalType`**: `edit` · `metadata-update` · `todo-create` · `character-create` · `character-relationship-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`. **`characterRelationshipCategory`**: `family` · `romantic` · `friendship` · `rivalry` · `professional` · `mentorship` · `other`.
 **`jobType`**: `user` (AI-Job run) · `system` (enrichment). **`jobStatus`**: `queued` · `running` · `done` · `failed`. **`jobScope`**: `full` · `selection` (user jobs) · `summary` · `characters` · `both` (system jobs).
 **`parentType`** (conversations, todos): `scene` · `chapter` · `part` · `book`.
 **`gitFileStatus`**: `modified` · `added` · `deleted` · `untracked` · `renamed`.
@@ -165,7 +165,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "payload": { "sceneId": "scn-..", "find": "exact current text",
                "replace": "replacement text", "rationale": "why" } }
 ```
-Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, "personality"?, "history"?, "notes"?, "rationale"?, "sceneId"? }` — Accept runs character uniqueness checks; may be unavailable until the Characters API lands (`422 characters-unavailable`).
+Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, "age"?, "gender"?, "nationality"?, "ethnicity"?, "occupation"?, "want"?, "need"?, "flaw"?, "arc"?, "personality"?, "history"?, "notes"?, "rationale"?, "sceneId"? }` — Accept dedupes case-insensitively against existing name/aliases (reuses the existing character instead of erroring) and, if `sceneId` is set, tags the character onto that scene's `characterIds`. `character-relationship-create`: `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"?, "rationale"? }`.
 
 **Job**
 ```json
@@ -217,16 +217,16 @@ Launcher readiness poll; frontend disconnect detection. **Response** `{ "status"
 **Request:** same fields, all optional. Omitted `apiKey` keeps the stored secret (clients round-trip the masked form by *not* sending the field). Re-validates provider rules against the merged result. 404 unknown id.
 
 ### DELETE /api/settings/models/{id}
-**Logic:** SettingsService collects references — AI-Job `defaultModelId`s and `ai.utilityModelId`. Any → **409** `{ "blockedBy": { "aiJobs": [{id,name}], "utilityModel": true } }`. Else remove. (Conversations referencing it historically are unaffected; a later message-send with a deleted model → 422 at send time.)
+**Logic:** SettingsService collects references — AI-Job `defaultModelId`s and every `ai.*ModelId` slot. Any → **409** `{ "blockedBy": { "aiJobs": [{id,name}], "utilityModel"?: true, "commitMessageModel"?: true, "characterParsingModel"?: true, "sceneSummaryModel"?: true, "chatDefaultModel"?: true } }` (only the slots actually referencing this model are present). Else remove. (Conversations referencing it historically are unaffected; a later message-send with a deleted model → 422 at send time.)
 
 ### POST /api/settings/models/{id}/test
 **Logic:** SettingsService loads the stored config and asks ModelFactory to build the LangChain chat model, resolving a `${ENV_VAR}` key at call time; it then sends a single `"hello model"` chat completion (guarded by a ~30s timeout). **Response** 200 `ModelTestResult`: `ok:true` with a short reply excerpt + `latencyMs`, or `ok:false` with a human-readable `error` (unset env var, auth failure, unreachable base URL, timeout). **404** unknown id. This is the only settings endpoint that performs network I/O and it never mutates `app.json`; failures are results, not error responses (still 200), so the client renders them inline. No connectivity test happens on model create/patch — this endpoint is the explicit, on-demand check.
 
 ### GET /api/settings/ai
-**Response** `{ "utilityModelId": "mdl-..|null" }` — the model EnrichmentService and git suggest-message use.
+**Response** `{ "utilityModelId": "mdl-..|null", "commitMessageModelId": "mdl-..|null", "characterParsingModelId": "mdl-..|null", "sceneSummaryModelId": "mdl-..|null", "chatDefaultModelId": "mdl-..|null" }`. `utilityModelId` is the general-purpose fallback; each of the other four is a task-specific model that independently resolves to its own value if set, else `utilityModelId`, else unset (doc 05).
 
 ### PATCH /api/settings/ai
-**Request** `{ "utilityModelId": "mdl-..|null" }`. 422 if id unknown.
+**Request:** any subset of the five `*ModelId` fields, each `"mdl-.."|null`; omitted fields are unchanged. 422 `{fields:{<field>: "Unknown model."}}` per field if its id is unknown.
 
 ### GET /api/settings/appearance
 **Response** `{ "theme": "light" | "dark" | "system" }` — the app-wide color theme (doc 06 §1.2). **Logic:** SettingsService reads `app.json.appearance`; missing/unknown → `system`.
@@ -318,7 +318,7 @@ GET returns `db/ui.json` verbatim (client-defined shape: AG Grid column state, r
 
 ### POST /api/books/{b}/scenes/{id}/enrich
 **Request** `{ "scope": "summary" | "characters" | "both" }` — the on-demand AI-redo; **ignores** bookkeeping toggles (an explicit request is its own consent).
-**Logic:** 422 `no-utility-model` if unset. JobService enqueues a system Job (scope as given, modelId = utility); replaces any queued (not running) enrichment for this scene. **Response 202** `{ "jobId": "job-.." }`; results arrive as `job` + `scene-updated` SSE events.
+**Logic:** 422 `no-utility-model` if *neither* task-specific model needed for the requested scope resolves (own slot or its utility-model fallback). JobService enqueues a system Job (scope as given, `modelId` left unset — the model for each sub-task is resolved at run time, not enqueue time); replaces any queued (not running) enrichment for this scene. **Response 202** `{ "jobId": "job-.." }`; results arrive as `job` + `scene-updated` SSE events.
 
 ### GET /api/books/{b}/scenes/{id}/conversations
 **Response** `[ConversationSummary]` for `parentType=scene, parentId=id`, from the derived index (no conversation files opened). Newest first.
@@ -383,10 +383,15 @@ Removes it; existing dependency-generated todos remain (they're the author's to 
 ### PATCH /{id} — `{ "title"?, "description"? }`.
 ### DELETE /{id} — **409** `{ "blockedBy": { "scenes": [{id,title}] } }` while any scene references this plotline (via `primaryPlotlineId` or `secondaryPlotlineIds`); unassign from scenes first.
 
-### GET /api/books/{b}/characters → `[Character]` with sceneCounts.
-### POST — `{ "name": required, "aliases"?: [], "personality"?, "history"?, "notes"? }`. **Uniqueness:** the new name and every alias must not collide (case-insensitive) with any existing character's name or aliases → 422 `{ "conflict": { "value": "Marlow", "existingCharacter": {id,name} } }`. The enrichment matcher must never face ambiguity.
-### PATCH /{id} — same fields; same uniqueness on the merged result.
-### DELETE /{id} — **409** listing scenes whose characterIds reference it; remove from those scenes first.
+### GET /api/books/{b}/characters → `[Character]` with computed `sceneCount`.
+### POST — `{ "name": required, "aliases"?: [], "age"?, "gender"?, "nationality"?, "ethnicity"?, "occupation"?, "want"?, "need"?, "flaw"?, "arc"?, "personality"?, "history"?, "notes"? }`. **Uniqueness:** the new name and every alias must not collide (case-insensitive) with any existing character's name or aliases → 422 `{ "conflict": { "value": "Marlow", "existingCharacter": {id,name} } }`. The enrichment matcher must never face ambiguity.
+### PATCH /{id} — same fields (partial); same uniqueness on the merged result.
+### DELETE /{id} — **409** `{ "blockedBy": { "scenes"?: [...], "relationships"?: [...] } }` listing scenes whose `characterIds` reference it and/or `character_relationships` rows involving it; unassign/remove first.
+
+### GET /api/books/{b}/character-relationships → `[CharacterRelationship]`.
+### POST — `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"? }` → 201. Validates both ids exist, `characterAId != characterBId`, and no existing record already covers this unordered pair → 422 on any violation.
+### PATCH /{id} — `{ "category"?, "aToB"?, "bToA"?, "description"? }`.
+### DELETE /{id} — unblocked, like scene relationships. **204**.
 
 ---
 
@@ -498,7 +503,7 @@ All endpoints: GitService (GitPython over the system git; the user's credentials
 ### POST /api/books/{b}/git/stage · /unstage — **Request** `{ "paths"?: ["scenes/x.md"], "all"?: true }` (one required). Real `git add` / `git reset` on those paths. **Response** refreshed GitStatus; emits `git-status`.
 ### GET /api/books/{b}/git/diff?path= — **Response** `{ "path", "diff": "unified diff text (staged+unstaged vs HEAD)" }`; binary files → `{ "binary": true }`.
 ### POST /api/books/{b}/git/suggest-message
-**Logic:** staged diff (422 `nothing-staged` if empty) → truncate to a size cap (~20k chars, largest hunks first) → utility model: *"Summarize these changes to a novel manuscript as a single-line git commit message."* No utility model → deterministic fallback from stats (`"3 scenes updated, 1 added"`). **Response** `{ "message": "..." }` — fills the textarea, author edits freely.
+**Logic:** staged diff (422 `nothing-staged` if empty) → truncate to a size cap (~20k chars, largest hunks first) → **commit-message model** (`ai.commitMessageModelId`, falling back to the utility model): *"Summarize these changes to a novel manuscript as a single-line git commit message."* No commit-message model resolvable → deterministic fallback from stats (`"3 scenes updated, 1 added"`). **Response** `{ "message": "..." }` — fills the textarea, author edits freely.
 ### POST /api/books/{b}/git/commit — **Request** `{ "message": required non-empty }`. 422 `nothing-staged`. Commits staged files. **Response** `{ "hash" }`; emits `git-status`.
 ### POST /api/books/{b}/git/push · /pull — 422 `no-remote` if unconfigured. Errors pass through as readable messages (`detail.gitError`); pull halts on conflicts with guidance *"resolve with your git tooling"* — Authority never attempts conflict resolution. **Response** `{ "ok": true, "summary": "..." }`; emits `git-status`.
 ### GET /api/books/{b}/git/log?limit=20 → `[CommitInfo]`.

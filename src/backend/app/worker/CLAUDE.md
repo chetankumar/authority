@@ -19,7 +19,7 @@ Explicit git actions (stage/unstage/commit/push/pull) recompute status and emit 
 ## Job types
 
 - **User jobs** — AI-Job runs (scope `full`/`selection`), linked to a conversation. Worker resolves the prompt template (PlaceholderRegistry), appends format instructions for `edit`/`metadata` output types, posts a system-authored first message, streams the model with tools into the conversation, parses fenced JSON into proposals. See [conversations API](../api/conversations/CLAUDE.md).
-- **System jobs** — enrichment (scope `summary`/`characters`/`both`), utility model. Summary → overwrite `scene.summary`. Characters → set `characterIds` to matched **existing** characters only (never creates records; unmatched names → `result.unrecognizedNames`). Emits `scene-updated`. On-demand `POST /scenes/{id}/enrich` runs regardless of toggles.
+- **System jobs** — enrichment (scope `summary`/`characters`/`both`). `both` runs as **two independent model calls**, each against its own configured slot (`ai.sceneSummaryModelId` / `ai.characterParsingModelId`, falling back to `ai.utilityModelId`) — no single `modelId` on the job itself; `job.result.modelsUsed` records which model served each half. Summary → overwrite `scene.summary`. Characters → set `characterIds` to matched **existing** characters only (never creates records; unmatched names → `result.unrecognizedNames`). Emits `scene-updated`. On-demand `POST /scenes/{id}/enrich` runs regardless of toggles.
 
 ## Toggle semantics (doc 05)
 

@@ -14,7 +14,19 @@ One factory: `model_config → BaseChatModel`.
 
 Key resolution at call time: a literal key is used verbatim; `${ENV_VAR}` reads that environment variable; an **empty** key falls back to the provider's default environment variable (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`), so authors who already export the standard variable need not enter anything. A missing/unset variable surfaces as a clear error (at model-test or first use). Everything downstream (chat, jobs, streaming, tool-calling) is provider-agnostic.
 
-**Utility model** (`app.json → ai.utilityModelId`): used for system tasks — enrichment, commit-message suggestion, and **chat conversation titles** (ask for a 3–5 word name when a thread is still `"Untitled"`, via a dedicated naming prompt — not the chat-assistant framing). The model’s reply is stored as returned (whitespace trimmed only — **no server-side sanitizer or word clipping**). If unset, those features skip or fall back gracefully (chat titles fall back to the first words of the user message).
+**AI task models** (`app.json → ai.*`): rather than one model for every system task, each task has its own slot, so (for example) scene summarization and character parsing can run on different models:
+
+| Slot | Used for |
+|---|---|
+| `utilityModelId` | The general-purpose fallback (below) **and** sundry system tasks that don't warrant their own slot — today, chat conversation title-naming |
+| `commitMessageModelId` | Git commit-message suggestion |
+| `sceneSummaryModelId` | Enrichment's scene-summarization pass |
+| `characterParsingModelId` | Enrichment's character-matching pass, and the escalation chats it seeds when a match is ambiguous or unrecognized |
+| `chatDefaultModelId` | Preselected model when the author opens a new chat from the editor (a UI default only — the author can still change it in the conversation) |
+
+**Resolution:** each task-specific slot resolves to its own model if set and known, else falls back to `utilityModelId`, else `null` — degrade gracefully, never fail. `utilityModelId` itself has no further fallback. More slots may be appended the same way as new AI-assisted tasks need independent model choice.
+
+Chat-title-naming: ask for a 3–5 word name when a thread is still `"Untitled"`, via a dedicated naming prompt — not the chat-assistant framing. The model's reply is stored as returned (whitespace trimmed only — **no server-side sanitizer or word clipping**). If no model resolves, falls back to the first words of the user message.
 
 **Conversation titles (three paths):**
 
@@ -85,8 +97,8 @@ Server-defined; exposed via `GET /api/settings/placeholders`; drives the `@` aut
 | `@selection` | The selected text (empty if none) |
 | `@selection_or_scene` | Selection if present, else full scene |
 | `@scene_metadata` | Title, description, location, dateTime, mood, arc, summary of the target scene |
-| `@scene_characters` | Character sheets of characters tagged in the scene |
-| `@character_sheet` | All character sheets in the book |
+| `@scene_characters` | Full character sheets (identity + craft fields) of characters tagged in the scene |
+| `@character_sheet` | Full character sheets of everyone in the book, plus their relationships to each other |
 | `@previous_scenes_summary` | Hard prev-chain walked back to Start, emitted in story order as `Title — summary` lines (summaries only, never prose; missing summary → `(no summary)`); archived and soft-only scenes excluded |
 | `@all_scene_summaries` | Every active scene's title + summary in seq order |
 | `@story_summary` | book.json storySummary |
@@ -109,12 +121,14 @@ Unknown tokens are left literal at resolve time but flagged at AI-Job definition
 
 Maintains `scene.summary` and `scene.characterIds`.
 
-**Trigger — settle-then-run:** every content save with a changed hash (re)sets a per-scene 60s settle timer. Timer fires → queue one `system` job scoped by the book's toggles (`summaryOnSave`, `charactersOnSave`; both off → nothing queued). Saves while queued replace the queued job (never two per scene); navigation away settles immediately. On-demand: `POST /scenes/{id}/enrich` runs regardless of toggles.
+**Trigger — settle-then-run:** every content save with a changed hash (re)sets a per-scene 60s settle timer. Timer fires → queue one `system` job scoped by the book's toggles (`summaryOnSave`, `charactersOnSave`; both off, or neither toggle's model resolves, → nothing queued). Saves while queued replace the queued job (never two per scene); navigation away settles immediately. On-demand: `POST /scenes/{id}/enrich` runs regardless of toggles.
 
-**Execution:** utility model; input = scene prose + character directory (names + aliases).
+**Execution — two independent calls, not one:** scope `summary` and scope `characters` are **separate model invocations**, each against its own configured model (`ai.sceneSummaryModelId` / `ai.characterParsingModelId`, doc 03/04) — this is what makes it possible to run summarization on one model and character-matching on another. Scope `both` runs both calls (even when they happen to resolve to the same model, for uniformity); either half is skipped independently if its model doesn't resolve (own slot → utility fallback → unset). A system `Job` no longer carries a single `modelId` at enqueue time — each half resolves its model at run time, and `job.result.modelsUsed` records which model served each half (`{"sceneSummary": "mdl-..", "characterParsing": "mdl-.."}`).
 
-- **Clear cases:** Summary scope overwrites `scene.summary`. Characters scope sets `characterIds` to matched *existing* characters (exact name/alias + model-confirmed ids). Field changes emit `scene-updated` SSE.
-- **Unclear cases:** unmatched names, ambiguous matches, or “is this too minor?” → **EscalationService** opens a chat on the scene with a **caller-supplied short title** (enrichment uses `who is {name}?`) and seeds the thread with the longer question. The AI may then `propose_character_create` (or other propose tools); the author Accepts before anything is written to the sheet. Enrichment **never silently creates** character records.
+Input for each call: scene prose (+ character directory of names/aliases, for the character-parsing call).
+
+- **Clear cases:** Summary call overwrites `scene.summary`. Character call sets `characterIds` to matched *existing* characters (exact name/alias + model-confirmed ids). Field changes emit `scene-updated` SSE.
+- **Unclear cases:** unmatched names, ambiguous matches, or “is this too minor?” → **EscalationService** opens a chat on the scene with a **caller-supplied short title** (enrichment uses `who is {name}?`) and seeds the thread with the longer question, defaulting the escalation chat's AI participant to the **character-parsing model** that produced the ambiguity (not the summary model). The AI may then `propose_character_create` (or other propose tools); the author Accepts before anything is written to the sheet. Enrichment **never silently creates** character records.
 
 **Toggle semantics:** toggle ON = AI owns the field and always wins on save for *clear* updates. Want a hand-written summary? Flip it off. No freeze flags.
 
@@ -124,7 +138,9 @@ Bound via LangChain tool-calling on every assistant invocation (chats and jobs).
 
 **Read tools — execute freely:** `get_scene(id)` (prose + metadata), `list_scenes()` (titles, seq, placement), `get_scene_summaries()`, `get_character_sheet(id|all)`, `search_text(query)` (across active scene files), `get_plotlines()`, `get_story_summary()`, `get_todos(sceneId?)`.
 
-**Write tools — never mutate; emit proposal objects into the message:** `propose_edit(sceneId, find, replace, rationale)`, `propose_metadata_update(targetType, targetId, field, newValue)`, `propose_todo(parentType, parentId, action)`, `propose_character_create(name, aliases?, …, rationale, sceneId?)`.
+**Write tools — never mutate; emit proposal objects into the message:** `propose_edit(sceneId, find, replace, rationale)`, `propose_metadata_update(targetType, targetId, field, newValue)`, `propose_todo(parentType, parentId, action)`, `propose_character_create(name, aliases?, age?, gender?, nationality?, ethnicity?, occupation?, want?, need?, flaw?, arc?, personality?, history?, notes?, rationale?, sceneId?)` — the AI is expected to fill in whatever the prose or conversation makes clear, not just the name, `propose_character_relationship(characterAId, characterBId, category, aToB, bToA, description?, rationale?)` — directional on both sides since most relationships aren't symmetric.
+
+On accept, character-create proposals dedupe case-insensitively against existing names/aliases (reusing the match instead of erroring) and, if `sceneId` was passed, tag the character onto that scene.
 
 The only mutation endpoints acting on AI output are `POST /proposals/{id}/accept|reject` — both author-triggered. This is how the hard rule is enforced structurally, not by prompt.
 

@@ -1,5 +1,4 @@
 {
   "port": 8700,
-  "appDataRoot": "./data",
   "envName": "authority"
 }

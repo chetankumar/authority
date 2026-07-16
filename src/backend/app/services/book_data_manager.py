@@ -24,6 +24,7 @@ from app.core.atomic import atomic_write_json
 from app.core.errors import ApiError
 from app.core.event_hub import EventHub
 from app.models.book import Book, BookConfig, Chapter, Part
+from app.models.character import CharacterRecord, CharacterRelationship
 from app.models.conversation import Conversation, ConversationSummary
 from app.models.enums import ProposalStatus
 from app.models.job import Job
@@ -46,6 +47,8 @@ class BookDataManager:
         self._parts: list[Part] | None = None
         self._chapters: list[Chapter] | None = None
         self._plotlines: list[PlotlineRecord] | None = None
+        self._characters: list[CharacterRecord] | None = None
+        self._character_relationships: list[CharacterRelationship] | None = None
         self._jobs: list[Job] | None = None
         self._conversation_index: list[ConversationSummary] | None = None
 
@@ -185,6 +188,31 @@ class BookDataManager:
     def save_plotlines(self, plotlines: list[PlotlineRecord]) -> None:
         atomic_write_json(self._dir / "db" / "plotlines.json", [p.model_dump(mode="json") for p in plotlines])
         self._plotlines = plotlines
+        self._changed()
+
+    def get_characters(self) -> list[CharacterRecord]:
+        if self._characters is None:
+            self._characters = self._load_collection("characters.json", CharacterRecord)
+        return self._characters
+
+    def save_characters(self, characters: list[CharacterRecord]) -> None:
+        atomic_write_json(self._dir / "db" / "characters.json", [c.model_dump(mode="json") for c in characters])
+        self._characters = characters
+        self._changed()
+
+    def get_character_relationships(self) -> list[CharacterRelationship]:
+        if self._character_relationships is None:
+            self._character_relationships = self._load_collection(
+                "character_relationships.json", CharacterRelationship
+            )
+        return self._character_relationships
+
+    def save_character_relationships(self, relationships: list[CharacterRelationship]) -> None:
+        atomic_write_json(
+            self._dir / "db" / "character_relationships.json",
+            [r.model_dump(mode="json") for r in relationships],
+        )
+        self._character_relationships = relationships
         self._changed()
 
     def save_config(self) -> None:

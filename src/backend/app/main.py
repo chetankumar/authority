@@ -18,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.books.router import router as books_router
+from app.api.characters.router import rel_router as character_relationships_router
+from app.api.characters.router import router as characters_router
 from app.api.conversations.router import router as conversations_router
 from app.api.deps import get_git_status_worker, get_job_worker
 from app.api.events.router import router as events_router
@@ -94,6 +96,8 @@ app.include_router(scenes_router, prefix="/api")
 app.include_router(relationships_router, prefix="/api")
 app.include_router(structure_router, prefix="/api")
 app.include_router(plotlines_router, prefix="/api")
+app.include_router(characters_router, prefix="/api")
+app.include_router(character_relationships_router, prefix="/api")
 app.include_router(conversations_router, prefix="/api")
 app.include_router(proposals_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")

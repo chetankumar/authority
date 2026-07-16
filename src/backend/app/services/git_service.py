@@ -209,7 +209,7 @@ class GitService:
 
         fallback = SuggestedMessage(message=_stats_message(name_status), fromStats=True)
 
-        cfg = self._settings.get_utility_model()
+        cfg = self._settings.get_commit_message_model()
         if cfg is None:
             return fallback
 
@@ -411,7 +411,7 @@ def _truncate_diff(diff_text: str) -> str:
 
 
 def _stats_message(name_status: str) -> str:
-    """Deterministic fallback when no utility model is configured (doc 04 §13)."""
+    """Deterministic fallback when no commit-message model is configured (doc 04 §13)."""
     added = updated = deleted = 0
     for line in name_status.splitlines():
         code = line[:1]

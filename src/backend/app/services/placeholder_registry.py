@@ -109,6 +109,39 @@ class PlaceholderRegistry:
             active.sort(key=lambda r: (computed.get(r.id, (10**9, None))[0] or 10**9, r.id))
             return "\n".join(f"{r.title} — {r.summary or '(no summary)'}" for r in active)
 
+        def format_character(c: Any) -> str:
+            aliases = ", ".join(getattr(c, "aliases", []) or [])
+            lines = [c.name + (f" (aka {aliases})" if aliases else "")]
+            facts = [
+                f"{label}: {value}"
+                for label, value in (
+                    ("Age", c.age),
+                    ("Gender", c.gender),
+                    ("Nationality", c.nationality),
+                    ("Ethnicity", c.ethnicity),
+                    ("Occupation", c.occupation),
+                )
+                if value
+            ]
+            if facts:
+                lines.append("  " + " · ".join(facts))
+            craft = [
+                f"{label}: {value}"
+                for label, value in (
+                    ("Want", c.want),
+                    ("Need", c.need),
+                    ("Flaw", c.flaw),
+                    ("Arc", c.arc),
+                )
+                if value
+            ]
+            if craft:
+                lines.append("  " + " · ".join(craft))
+            for label, value in (("Personality", c.personality), ("History", c.history), ("Notes", c.notes)):
+                if value:
+                    lines.append(f"  {label}: {value}")
+            return "\n".join(lines)
+
         def character_sheet_all() -> str:
             getter = getattr(mgr, "get_characters", None)
             if getter is None:
@@ -116,11 +149,23 @@ class PlaceholderRegistry:
             chars = getter()
             if not chars:
                 return "(no characters)"
-            parts = []
-            for c in chars:
-                aliases = ", ".join(getattr(c, "aliases", []) or [])
-                parts.append(f"{c.name}" + (f" (aka {aliases})" if aliases else ""))
-            return "\n".join(parts)
+            by_id = {c.id: c for c in chars}
+            parts = [format_character(c) for c in chars]
+
+            rel_getter = getattr(mgr, "get_character_relationships", None)
+            rels = rel_getter() if rel_getter else []
+            rel_lines = []
+            for r in rels:
+                a, b = by_id.get(r.characterAId), by_id.get(r.characterBId)
+                if a and b:
+                    line = f"{a.name} is {r.aToB} {b.name}; {b.name} is {r.bToA} {a.name}."
+                    if r.description:
+                        line += f" {r.description}"
+                    rel_lines.append(line)
+            if rel_lines:
+                parts.append("Relationships:\n" + "\n".join(rel_lines))
+
+            return "\n\n".join(parts)
 
         def scene_characters() -> str:
             if scene is None or not scene.characterIds:
@@ -129,8 +174,8 @@ class PlaceholderRegistry:
             if getter is None:
                 return "(character sheet not loaded)"
             by_id = {c.id: c for c in getter()}
-            names = [by_id[i].name for i in scene.characterIds if i in by_id]
-            return "\n".join(names) if names else "(none tagged)"
+            entries = [format_character(by_id[i]) for i in scene.characterIds if i in by_id]
+            return "\n\n".join(entries) if entries else "(none tagged)"
 
         def plotlines() -> str:
             pls = mgr.get_plotlines()

@@ -11,7 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import ParentType, ProposalStatus, ProposalType
+from app.models.enums import CharacterRelationshipCategory, ParentType, ProposalStatus, ProposalType
 
 
 class EditPayload(BaseModel):
@@ -39,12 +39,31 @@ class TodoCreatePayload(BaseModel):
 class CharacterCreatePayload(BaseModel):
     name: str
     aliases: list[str] = Field(default_factory=list)
+    age: str = ""
+    gender: str = ""
+    nationality: str = ""
+    ethnicity: str = ""
+    occupation: str = ""
+    want: str = ""
+    need: str = ""
+    flaw: str = ""
+    arc: str = ""
     personality: str = ""
     history: str = ""
     notes: str = ""
     rationale: str = ""
     # Optional: tag this scene after create.
     sceneId: str | None = None
+
+
+class CharacterRelationshipCreatePayload(BaseModel):
+    characterAId: str
+    characterBId: str
+    category: CharacterRelationshipCategory
+    aToB: str
+    bToA: str
+    description: str = ""
+    rationale: str = ""
 
 
 class Proposal(BaseModel):

@@ -12,11 +12,13 @@ from app.core.atomic import atomic_write_text
 from app.core.errors import ApiError, not_found, validation
 from app.core.event_hub import EventHub
 from app.core.ids import new_id
+from app.models.character import CharacterCreate
 from app.models.enums import ProposalStatus, ProposalType
-from app.models.proposal import Proposal, ProposalAcceptResult
+from app.models.proposal import CharacterCreatePayload, CharacterRelationshipCreatePayload, Proposal, ProposalAcceptResult
 from app.models.scene import SceneUpdate
 from app.services.book_registry import BookRegistry
 from app.services.scene_service import SceneService, _content_metrics, _now as scene_now
+from app.services.structure_service import StructureService
 
 log = logging.getLogger("authority.proposals")
 
@@ -31,10 +33,12 @@ class ProposalService:
         registry: BookRegistry,
         scene_service: SceneService,
         hub: EventHub,
+        structure_service: StructureService,
     ) -> None:
         self._registry = registry
         self._scenes = scene_service
         self._hub = hub
+        self._structure = structure_service
 
     def reject(self, book_id: str, proposal_id: str) -> Proposal:
         mgr = self._registry.get(book_id)
@@ -74,7 +78,9 @@ class ProposalService:
         elif prop.type == ProposalType.todo_create:
             result = self._apply_todo(book_id, prop)
         elif prop.type == ProposalType.character_create:
-            result = self._apply_character(book_id, prop)
+            result = await self._apply_character(book_id, prop)
+        elif prop.type == ProposalType.character_relationship_create:
+            result = await self._apply_character_relationship(book_id, prop)
         else:
             raise validation({"type": f"Unsupported proposal type: {prop.type}"})
 
@@ -149,9 +155,64 @@ class ProposalService:
             {"code": "todos-unavailable"},
         )
 
-    def _apply_character(self, book_id: str, prop: Proposal) -> dict:
-        raise ApiError(
-            422,
-            "Characters aren't available yet — add the Character Sheet first, or create manually.",
-            {"code": "characters-unavailable"},
+    async def _apply_character(self, book_id: str, prop: Proposal) -> dict:
+        payload = CharacterCreatePayload.model_validate(prop.payload)
+        mgr = self._registry.get(book_id)
+
+        existing = _find_matching_character(mgr.get_characters(), payload.name, payload.aliases)
+        if existing is not None:
+            chr_id = existing.id
+        else:
+            body = CharacterCreate(
+                name=payload.name,
+                aliases=payload.aliases,
+                age=payload.age,
+                gender=payload.gender,
+                nationality=payload.nationality,
+                ethnicity=payload.ethnicity,
+                occupation=payload.occupation,
+                want=payload.want,
+                need=payload.need,
+                flaw=payload.flaw,
+                arc=payload.arc,
+                personality=payload.personality,
+                history=payload.history,
+                notes=payload.notes,
+            )
+            character = await self._structure.create_character(book_id, body)
+            chr_id = character.id
+
+        if payload.sceneId:
+            scene = next((s for s in mgr.get_scenes() if s.id == payload.sceneId), None)
+            if scene is not None and chr_id not in scene.characterIds:
+                new_ids = [*scene.characterIds, chr_id]
+                body = SceneUpdate.model_construct(characterIds=new_ids)
+                object.__setattr__(body, "__pydantic_fields_set__", {"characterIds"})
+                await self._scenes.update_scene(book_id, payload.sceneId, body)
+                self._hub.emit(book_id, "scene-updated", {"id": payload.sceneId, "changed": ["characterIds"]})
+
+        return {"characterId": chr_id}
+
+    async def _apply_character_relationship(self, book_id: str, prop: Proposal) -> dict:
+        payload = CharacterRelationshipCreatePayload.model_validate(prop.payload)
+        rel = await self._structure.create_character_relationship(
+            book_id,
+            payload.characterAId,
+            payload.characterBId,
+            payload.category,
+            payload.aToB,
+            payload.bToA,
+            payload.description,
         )
+        return {"characterRelationshipId": rel.id}
+
+
+def _find_matching_character(characters, name: str, aliases: list[str]):
+    """Case-insensitive match on name/aliases — avoids creating a duplicate
+    when the AI proposes a character that (partially) already exists."""
+    candidates = {name.lower(), *(a.lower() for a in aliases)}
+    for c in characters:
+        existing = {c.name.lower(), *(a.lower() for a in c.aliases)}
+        if candidates & existing:
+            return c
+    return None

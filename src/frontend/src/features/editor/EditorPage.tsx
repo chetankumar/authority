@@ -207,7 +207,7 @@ export default function EditorPage() {
     try {
       const excerpt = getSelectionExcerpt();
       const [ai, models] = await Promise.all([getAI(), listModels()]);
-      const modelId = ai.utilityModelId ?? models[0]?.id ?? null;
+      const modelId = ai.chatDefaultModelId ?? ai.utilityModelId ?? models[0]?.id ?? null;
       if (!modelId) {
         toast.error("Add a model in Settings before chatting.");
         return;

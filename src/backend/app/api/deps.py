@@ -99,7 +99,7 @@ def get_conversation_service() -> ConversationService:
 
 @lru_cache(maxsize=1)
 def get_proposal_service() -> ProposalService:
-    return ProposalService(get_book_registry(), get_scene_service(), get_event_hub())
+    return ProposalService(get_book_registry(), get_scene_service(), get_event_hub(), get_structure_service())
 
 
 @lru_cache(maxsize=1)

@@ -1,0 +1,55 @@
+{
+    "user": {
+      "name": "Chetan Kumar",
+      "booksHome": "C:\\Users\\cheta\\Documents\\Books"
+    },
+    "appearance": {
+      "theme": "system"
+    },
+    "ai": {
+      "utilityModelId": "mdl-92c71d"
+    },
+    "models": [
+      {
+        "id": "mdl-65a1d7",
+        "label": "Sonnet 4.6",
+        "provider": "anthropic",
+        "modelName": "claude-sonnet-4-6",
+        "apiKey": null,
+        "baseUrl": null
+      },
+      {
+        "id": "mdl-a4d11a",
+        "label": "Opus 4.8",
+        "provider": "anthropic",
+        "modelName": "claude-opus-4-8",
+        "apiKey": null,
+        "baseUrl": null
+      },
+      {
+        "id": "mdl-d7c3b9",
+        "label": "Gemini 3.5 Flash",
+        "provider": "gemini",
+        "modelName": "gemini-3.5-flash",
+        "apiKey": null,
+        "baseUrl": null
+      },
+      {
+        "id": "mdl-e00e99",
+        "label": "Gemini 3.1 Pro",
+        "provider": "gemini",
+        "modelName": "gemini-3.1-pro-preview",
+        "apiKey": null,
+        "baseUrl": null
+      },
+      {
+        "id": "mdl-92c71d",
+        "label": "Gemini 3.1 Flash Lite",
+        "provider": "gemini",
+        "modelName": "gemini-3.1-flash-lite",
+        "apiKey": null,
+        "baseUrl": null
+      }
+    ],
+    "aiJobs": []
+  }

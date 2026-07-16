@@ -44,11 +44,11 @@ Per doc 02, these launcher files belong at the repository root and are created d
 
 - `start.sh` / `start.bat` — Mac/Linux and Windows launchers (env resolution, first-run install+build, health poll, open browser, single-instance).
 - `dev.sh` — development mode: Uvicorn `--reload` (API only) + Vite dev server with `/api` proxied. For working on Authority itself, never for writing.
-- `launcher.config.json` — `{ "port": 8700, "appDataRoot": "./data", "envName": "authority" }`; created with defaults on first run if absent.
+- `launcher.config.json` — `{ "port": 8700, "appDataRoot"?: "...", "envName": "authority" }`; created with defaults on first run if absent.
 
 ## Runtime data (not in the repo)
 
-- `data/` — the `appDataRoot`; holds app-level `app.json` (user, models, AI-Jobs, utility model, API keys). Created by the app at first run; gitignored.
+- `appDataRoot` — holds app-level `app.json` (user, models, AI-Jobs, utility model, API keys). Defaults to an **OS-standard per-user directory outside the repo** (`%LOCALAPPDATA%\Authority` on Windows, `~/Library/Application Support/Authority` on macOS, `~/.local/share/authority` on Linux), computed at runtime — never hardcoded into the committed `launcher.config.json`. This is deliberate: it must not live somewhere a repo-wide `git clean`/`rm -rf`/working-tree operation could delete it as if it were disposable build output. A relative override (e.g. `"./data"`) is still honored for local dev but is opt-in. Created by the app on first write.
 - Book folders live under the author-configured `booksHome` (outside this repo). Each is `{6hex}-{slug}/` with its own `.git`, `config/`, `scenes/`, `db/`, `assets/`, `compiled-book/`.
 
 ## Build phases (implementation order, doc 02)

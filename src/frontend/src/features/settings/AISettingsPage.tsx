@@ -3,13 +3,31 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../api/client";
-import { deleteModel, patchAI, testModel, type ModelConfig } from "../../api/settings";
+import { deleteModel, patchAI, testModel, type AISettings, type ModelConfig } from "../../api/settings";
 import { BlockedDeletionDialog, type BlockedRef } from "../../components/BlockedDeletionDialog";
 import { Button, Field, Select } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { keys } from "../../queries/keys";
 import { useAI, useModels } from "../../queries/settings";
 import { ModelModal } from "./ModelModal";
+
+const MODEL_SLOTS: { key: keyof AISettings; label: string; hint: string }[] = [
+  { key: "utilityModelId", label: "Default utility model", hint: "Fallback for any task below that's left unset, plus sundry system tasks (chat-thread titling)" },
+  { key: "commitMessageModelId", label: "Commit message model", hint: "Suggests a commit message from the staged diff" },
+  { key: "sceneSummaryModelId", label: "Enrichment — scene summarization model", hint: "Writes scene.summary after a save (if the toggle is on)" },
+  { key: "characterParsingModelId", label: "Enrichment — character parsing model", hint: "Matches characters mentioned in prose against the character sheet" },
+  { key: "chatDefaultModelId", label: "AI chat default model", hint: "Preselected when opening a new chat from the editor" },
+];
+
+// Keys match the backend's 409 blockedBy shape (settings_service.delete_model),
+// which drops the "Id" suffix from the AISettings field names.
+const BLOCKED_SLOT_LABELS: Record<string, string> = {
+  utilityModel: "Default utility model (below)",
+  commitMessageModel: "Commit message model (below)",
+  characterParsingModel: "Character parsing model (below)",
+  sceneSummaryModel: "Scene summarization model (below)",
+  chatDefaultModel: "AI chat default model (below)",
+};
 
 export default function AISettingsPage() {
   const models = useModels();
@@ -51,12 +69,14 @@ export default function AISettingsPage() {
       if (err instanceof ApiError && err.status === 409) {
         const by = (err.detail.blockedBy ?? {}) as {
           aiJobs?: { id: string; name: string }[];
-          utilityModel?: boolean;
+          [slot: string]: unknown;
         };
         const refs: BlockedRef[] = [];
         for (const job of by.aiJobs ?? [])
           refs.push({ label: `AI-Job: ${job.name}`, onNavigate: () => navigate("/settings/ai-jobs") });
-        if (by.utilityModel) refs.push({ label: "Default utility model (below)" });
+        for (const [slot, label] of Object.entries(BLOCKED_SLOT_LABELS)) {
+          if (by[slot]) refs.push({ label });
+        }
         setBlocked({ name: m.label, refs });
       } else if (err instanceof ApiError && err.status === 404) {
         qc.invalidateQueries({ queryKey: keys.settings("models") });
@@ -100,13 +120,13 @@ export default function AISettingsPage() {
     }
   }
 
-  async function onUtilityChange(id: string) {
+  async function onSlotChange(key: keyof AISettings, id: string, label: string) {
     try {
-      const updated = await patchAI({ utilityModelId: id || null });
+      const updated = await patchAI({ [key]: id || null });
       qc.setQueryData(keys.settings("ai"), updated);
-      toast.success("Utility model updated");
+      toast.success(`${label} updated`);
     } catch {
-      toast.error("Couldn't update the utility model.");
+      toast.error(`Couldn't update ${label.toLowerCase()}.`);
     }
   }
 
@@ -178,17 +198,23 @@ export default function AISettingsPage() {
         </table>
       )}
 
-      <div className="max-w-xs border-t border-line pt-5">
-        <Field label="Default utility model" hint="Used for enrichment and commit-message suggestions">
-          <Select value={ai.data?.utilityModelId ?? ""} onChange={(e) => onUtilityChange(e.target.value)}>
-            <option value="">None</option>
-            {list.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+      <div className="max-w-xs space-y-4 border-t border-line pt-5">
+        <h2 className="text-[0.875rem] font-semibold text-ink">AI task models</h2>
+        {MODEL_SLOTS.map((slot) => (
+          <Field key={slot.key} label={slot.label} hint={slot.hint}>
+            <Select
+              value={ai.data?.[slot.key] ?? ""}
+              onChange={(e) => onSlotChange(slot.key, e.target.value, slot.label)}
+            >
+              <option value="">None</option>
+              {list.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ))}
       </div>
 
       {modalOpen && <ModelModal existing={editing} onClose={() => setModalOpen(false)} onSaved={onSaved} />}

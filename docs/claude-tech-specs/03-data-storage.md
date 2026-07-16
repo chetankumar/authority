@@ -12,7 +12,7 @@
 
 `{prefix}-{6 lowercase hex}` via `secrets.token_hex(3)`, collision-checked against the collection, regenerate on hit.
 
-Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` character · `plt` plotline · `cnv` conversation · `msg` message · `tdo` todo · `dep` dependency · `rel` soft relationship · `job` job · `prp` proposal · `mdl` model config · `aij` AI-Job definition.
+Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` character · `crl` character relationship · `plt` plotline · `cnv` conversation · `msg` message · `tdo` todo · `dep` dependency · `rel` soft relationship · `job` job · `prp` proposal · `mdl` model config · `aij` AI-Job definition.
 
 **Sentinels:** `scn-START` and `scn-END` are reserved IDs recognized as valid relationship endpoints. They have no record in `scenes.json`, no file, cannot be edited/deleted. Rules: Start has no previous; The End has no next; nothing may be *before Start* or *after The End*. They appear in every scene dropdown (pinned top/bottom) and are implicit members of every scenes response.
 
@@ -24,7 +24,13 @@ Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` char
 {
   "user": { "name": "Chetan", "booksHome": "/Users/chetan/Books" },
   "appearance": { "theme": "system" },
-  "ai": { "utilityModelId": "mdl-a1b2c3" },
+  "ai": {
+    "utilityModelId": "mdl-a1b2c3",
+    "commitMessageModelId": null,
+    "characterParsingModelId": null,
+    "sceneSummaryModelId": null,
+    "chatDefaultModelId": null
+  },
   "models": [
     { "id": "mdl-a1b2c3", "label": "Sonnet 4.6", "provider": "anthropic",
       "modelName": "claude-sonnet-4-6", "apiKey": "${ANTHROPIC_API_KEY}", "baseUrl": null }
@@ -37,6 +43,7 @@ Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` char
 }
 ```
 
+- `ai.utilityModelId` is the general-purpose fallback for sundry system tasks (chat-thread auto-titling) **and** the fallback every task-specific slot below degrades to when its own slot is unset or dangling. The four task-specific slots (`commitMessageModelId`, `characterParsingModelId`, `sceneSummaryModelId`, `chatDefaultModelId`) each resolve independently: own slot if set and known → else `utilityModelId` → else `null` (degrade, never fail). More slots may be appended the same way as new AI-assisted tasks need their own model choice.
 - `appearance.theme` ∈ `light | dark | system` (default `system`) — the app-wide color theme (doc 06 §1.2). App-level only; never stored per book. Missing/unknown → `system`.
 - `provider` ∈ `anthropic | openai | gemini | openai-compatible | ollama`. `baseUrl` required for the latter two (LM Studio: `http://localhost:1234/v1`; Ollama: `http://localhost:11434`).
 - `apiKey` may be a literal or `${ENV_VAR}` reference, resolved at call time. Keys live only at app level — never inside a book folder, so they can never be committed/pushed.
@@ -55,7 +62,7 @@ a3f9c2-my-great-novel/
     1f2e9b-the-arrival.md        # prose only; source of truth for content
   db/
     scenes.json  relationships.json  dependencies.json  parts.json  chapters.json
-    characters.json  plotlines.json  todos.json  jobs.json  ui.json
+    characters.json  character_relationships.json  plotlines.json  todos.json  jobs.json  ui.json
     conversations/
       index.json
       cnv-9f2c1a.json
@@ -156,10 +163,41 @@ Behavior: when `dependsOnSceneId`'s content hash changes on save, auto-create a 
 
 ```json
 { "id": "chr-x", "name": "(required, unique across names+aliases)",
-  "aliases": [], "personality": "", "history": "", "notes": "" }
+  "aliases": [],
+  "age": "", "gender": "", "nationality": "", "ethnicity": "", "occupation": "",
+  "want": "", "need": "", "flaw": "", "arc": "",
+  "personality": "", "history": "", "notes": "",
+  "createdAt": "...", "updatedAt": "..." }
 ```
 
 The character collection is the master name list. Aliases feed the enrichment matcher.
+
+Fields beyond name/aliases are grouped by intent: **identity** (age, gender,
+nationality, ethnicity, occupation — free text throughout; `age` is a string
+because fiction rarely wants a strict int, e.g. `"mid-30s"`) and **craft**
+(want = the external, plot-visible goal; need = the internal psychological
+truth, often in tension with want; flaw = what drives conflict; arc = how the
+character changes). `sceneCount` is **computed** on read (scanned from
+scenes' `characterIds`), never stored — same pattern as `Plotline.sceneCount`.
+
+## db/character_relationships.json
+
+```json
+{ "id": "crl-x", "characterAId": "chr-x", "characterBId": "chr-y",
+  "category": "family" | "romantic" | "friendship" | "rivalry" | "professional" | "mentorship" | "other",
+  "aToB": "mother of", "bToA": "daughter of",
+  "description": "Free text — the dynamic, tension, or history.",
+  "createdAt": "...", "updatedAt": "..." }
+```
+
+Character relationships are their own collection, not a field on the
+character — most relationships aren't symmetric (mother/daughter,
+mentor/student, unrequited love), so `aToB` and `bToA` are independent labels
+rather than one shared string. `category` is a small controlled vocabulary
+for future filtering/visualization; the labels and `description` carry the
+actual nuance. One record per unordered `(characterAId, characterBId)` pair —
+duplicates rejected at creation. No status/lifecycle field: relationships are
+current-state descriptions the author edits directly as the story evolves.
 
 ## db/plotlines.json
 
@@ -224,11 +262,11 @@ Rewritten on any conversation change; rebuildable by scanning the folder.
   "scope": "full" | "selection" | "summary" | "characters" | "both",
   "modelId": "mdl-...",
   "status": "queued" | "running" | "done" | "failed", "error": null,
-  "result": { "unrecognizedNames": [] },
+  "result": { "unrecognizedNames": [], "conversationIds": [], "modelsUsed": {} },
   "createdAt": "...", "startedAt": null, "finishedAt": null }
 ```
 
-User jobs = AI-Job runs (scope full/selection, linked conversation). System jobs = enrichment (scope summary/characters/both, utility model).
+User jobs = AI-Job runs (scope full/selection, linked conversation, `modelId` = the job's resolved model). System jobs = enrichment (scope summary/characters/both). Enrichment resolves its model(s) at run time rather than at enqueue — `modelId` is left `null` for system jobs; `scope: both` runs the scene-summary and character-parsing passes as **two independent calls**, each against its own configured model (doc 05), and `result.modelsUsed` records which model served each (`{"sceneSummary": "mdl-..", "characterParsing": "mdl-.."}`, only the keys that actually ran).
 
 ## db/ui.json
 

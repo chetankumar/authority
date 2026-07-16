@@ -210,12 +210,14 @@ Author stops typing for 60s (or navigates away → immediate settle).
 ```
 → SERVER  settle timer fires → EnrichmentService reads book.json.bookkeeping
           {summaryOnSave:true, charactersOnSave:true} → JobService enqueues
-          Job job-c2d4e6 {type:"system", scope:"both", sceneId, modelId: utility}
+          Job job-c2d4e6 {type:"system", scope:"both", sceneId, modelId: null}
           [db/jobs.json] · EventHub: job {status:"queued"}
 → WORKER  picks it up → job "running" (SSE) →
           reads scene prose [scenes/….md] + character directory (memory; empty so far)
-          → AIOrchestrator + utility model → summary text; character matching finds
+          → two independent calls: AIOrchestrator + sceneSummaryModel → summary text;
+          AIOrchestrator + characterParsingModel → character matching finds
           the name "Marlow" but no directory entry exists → never silently creates
+          (job.result.modelsUsed records both model ids)
 → SERVER  (lock) scene.summary = generated text · characterIds for exact matches only ·
           persist [db/scenes.json, db/jobs.json] ·
           unmatched/ambiguous → EscalationService opens a chat on the scene seeded
@@ -408,7 +410,7 @@ CLICK     [Stage all]
 CLICK     a filename → GET /git/diff?path=… → unified diff in the right panel
 CLICK     [✨ Suggest message]
 → SERVER  GitService staged diff (422 nothing-staged if empty) → truncate to cap →
-          SettingsService.get_utility_model() →
+          SettingsService.get_commit_message_model() (own slot, else utility fallback) →
             present → "Summarize these changes to a novel manuscript as a
                        single-line commit message."
             absent  → deterministic stats fallback ("3 scenes updated")
