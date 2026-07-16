@@ -121,9 +121,7 @@ class JobService:
         if scope == JobScope.selection and not (body.selectionText or "").strip():
             raise validation({"selectionText": "Selection text is required for selection scope."})
 
-        from datetime import datetime
-
-        title = f"{definition.name} — {datetime.now().strftime('%H:%M')}"
+        title = definition.name
         conv = self._conversations.create_ai_job_conversation(
             book_id,
             scene_id=body.sceneId,

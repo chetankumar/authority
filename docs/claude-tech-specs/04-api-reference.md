@@ -408,7 +408,7 @@ Removes it; existing dependency-generated todos remain (they're the author's to 
   "aiParticipant"?: { "enabled": bool, "modelId": "mdl-..|null" },
   "title"?: "optional initial title" }
 ```
-Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:** ConversationService creates `cnv-{hex}.json` with empty messages; title is the optional `title` or `"Untitled"`. Index updated. **201** Conversation. *(AI-Job runs don't call this — see §9.4. Escalations pass a title derived from the issue text.)*
+Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:** ConversationService creates `cnv-{hex}.json` with empty messages; title is the optional `title` or `"Untitled"`. Index updated. **201** Conversation. *(AI-Job runs don't call this — see §9.4. Escalations pass a caller-supplied short title — see EscalationService.)*
 
 ### GET /api/books/{b}/conversations/{id}
 **Response** full Conversation with messages + proposals (per-file load on demand).
@@ -427,7 +427,7 @@ Hard delete for mistakes. Removes `cnv-*.json` and the index entry; any jobs poi
 ```
 **Logic (ConversationService):**
 1. Append the user Message (id, timestamp; excerpts stored verbatim). Persist + index update.
-2. If title is still `"Untitled"`: call the **utility model** for a 3-word semantic title (short timeout); on missing utility model / failure → first three words of the user message. Persist title; emit SSE `title` `{ "title": ".." }`.
+2. If title is still `"Untitled"`: call the **utility model** with a dedicated naming prompt (ask for 3–5 words; **not** chat-assistant framing). Persist the model’s reply as returned (trim whitespace only — no sanitizer / word clipping); on missing utility model / failure → first ~5 words of the user message. Emit SSE `title` `{ "title": ".." }`.
 3. Emit SSE `message` for the user turn. **aiParticipant.enabled == false:** then `done`. Done (pure note).
 4. **enabled == true:** resolve ModelConfig (422 `model-missing`/`model-deleted` if unresolvable). Build the LangChain call: system = book systemPrompt + Authority's assistant framing + CURRENT SCENE + tool schemas; history = conversation messages mapped to roles (context excerpts injected as quoted blocks inside user turns; `@placeholders` in user text resolved for the model); bind read + propose tools (doc 05).
 5. Respond as **SSE**: `token` events (`{ "text": ".." }`) as the model streams; tool calls execute server-side mid-stream (read tools answer from BookDataManager; propose tools accumulate Proposal objects); on completion, persist the assistant Message (content, modelId, proposals) and send a final `message` event carrying it, then `done`.
@@ -440,7 +440,7 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 { "aiJobId": "aij-..", "sceneId": "scn-..",
   "scope": "full" | "selection", "selectionText"?: "required when scope=selection" }
 ```
-**Logic:** 1) 422: unknown job/scene; scope `selection` without selectionText. 2) ConversationService creates a Conversation: kind `ai-job`, parent = the scene, title `"{job.name} — {HH:MM}"`, aiParticipant `{enabled:true, modelId: job.defaultModelId}`, aiJobId set (+ name snapshot). 3) JobService enqueues a Job (type `user`, status `queued`, links to both). **Response 202** `{ "jobId", "conversationId" }` — the client opens the conversation modal immediately and watches.
+**Logic:** 1) 422: unknown job/scene; scope `selection` without selectionText. 2) ConversationService creates a Conversation: kind `ai-job`, parent = the scene, title = **job definition name** (no clock suffix), aiParticipant `{enabled:true, modelId: job.defaultModelId}`, aiJobId set (+ name snapshot). 3) JobService enqueues a Job (type `user`, status `queued`, links to both). **Response 202** `{ "jobId", "conversationId" }` — the client opens the conversation modal immediately and watches.
 **Worker execution:** status `running` (SSE `job`) → PlaceholderRegistry resolves the prompt template against the scene (selectionText feeds `@selection`) → outputType `edit-proposals`/`metadata-proposals` appends format instructions (§2.1) → the resolved prompt is posted as a **system-authored** first message in the conversation → model invoked with tools, streamed into the conversation (same §9.3 mechanics; clients subscribed to the modal see it live) → fenced JSON parsed into Proposals on the assistant message (parse failure → degrade to chat + `result.warning`) → status `done`/`failed` (SSE). The author then continues the conversation normally — follow-ups are plain §9.3 sends.
 
 ---

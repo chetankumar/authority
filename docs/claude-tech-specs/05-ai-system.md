@@ -14,9 +14,15 @@ One factory: `model_config → BaseChatModel`.
 
 Key resolution at call time: a literal key is used verbatim; `${ENV_VAR}` reads that environment variable; an **empty** key falls back to the provider's default environment variable (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`), so authors who already export the standard variable need not enter anything. A missing/unset variable surfaces as a clear error (at model-test or first use). Everything downstream (chat, jobs, streaming, tool-calling) is provider-agnostic.
 
-**Utility model** (`app.json → ai.utilityModelId`): used for system tasks — enrichment, commit-message suggestion, and **conversation title** (3-word semantic name when a chat is still `"Untitled"`). If unset, those features skip or fall back gracefully (titles fall back to the first three words of the user message).
+**Utility model** (`app.json → ai.utilityModelId`): used for system tasks — enrichment, commit-message suggestion, and **chat conversation titles** (ask for a 3–5 word name when a thread is still `"Untitled"`, via a dedicated naming prompt — not the chat-assistant framing). The model’s reply is stored as returned (whitespace trimmed only — **no server-side sanitizer or word clipping**). If unset, those features skip or fall back gracefully (chat titles fall back to the first words of the user message).
 
-**Book system prompt** (`book.json → systemPrompt`): prepended to every AI call for that book (chats, jobs, enrichment).
+**Conversation titles (three paths):**
+
+1. **Escalation** (any “background AI needs the author”): the **caller** supplies a short `title` on the escalation issue. EscalationService stores that title as-is (fallback `"Needs your input"`). Example: enrichment passes `who is Lencie?` for an unknown name — other future callers pass their own labels without changing EscalationService.
+2. **AI-Job:** conversation title = the job definition’s name (no clock suffix).
+3. **Chat / note:** utility model names the thread after the first user message while still Untitled. Truncation for display is **UI-only** (ellipsis + full title on hover).
+
+**Book system prompt** (`book.json → systemPrompt`): prepended to every AI call for that book (chats, jobs, enrichment) — not used for the title-naming one-shot.
 
 ## Context assembly & placeholders (who calls what)
 
@@ -108,7 +114,7 @@ Maintains `scene.summary` and `scene.characterIds`.
 **Execution:** utility model; input = scene prose + character directory (names + aliases).
 
 - **Clear cases:** Summary scope overwrites `scene.summary`. Characters scope sets `characterIds` to matched *existing* characters (exact name/alias + model-confirmed ids). Field changes emit `scene-updated` SSE.
-- **Unclear cases:** unmatched names, ambiguous matches, or “is this too minor?” → **EscalationService** opens a chat on the scene seeded with the question. The AI may then `propose_character_create` (or other propose tools); the author Accepts before anything is written to the sheet. Enrichment **never silently creates** character records.
+- **Unclear cases:** unmatched names, ambiguous matches, or “is this too minor?” → **EscalationService** opens a chat on the scene with a **caller-supplied short title** (enrichment uses `who is {name}?`) and seeds the thread with the longer question. The AI may then `propose_character_create` (or other propose tools); the author Accepts before anything is written to the sheet. Enrichment **never silently creates** character records.
 
 **Toggle semantics:** toggle ON = AI owns the field and always wins on save for *clear* updates. Want a hand-written summary? Flip it off. No freeze flags.
 

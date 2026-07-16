@@ -202,15 +202,18 @@ class EnrichmentService:
                 for amb in parsed.get("ambiguous") or []:
                     if not isinstance(amb, dict):
                         continue
-                    q = amb.get("question") or f"I'm unsure about '{amb.get('name')}'. How should I treat this character?"
+                    amb_name = str(amb.get("name") or "").strip() or "this character"
+                    q = amb.get("question") or f"I'm unsure about '{amb_name}'. How should I treat this character?"
                     cid = self._escalation.escalate(
                         book_id,
                         parent_type=ParentType.scene,
                         parent_id=rec.id,
                         issue=EscalationIssue(
                             kind="ambiguity",
+                            title=f"who is {amb_name}?",
                             message=q,
                             context={
+                                "name": amb_name,
                                 "candidates": amb.get("candidates") or [],
                                 "excerpt": prose[:400],
                             },
@@ -226,12 +229,13 @@ class EnrichmentService:
                         parent_id=rec.id,
                         issue=EscalationIssue(
                             kind="unmatched_name",
+                            title=f"who is {name}?",
                             message=(
                                 f"I found '{name}' in this scene, but it's not on the character sheet. "
                                 "Should I propose adding them, link to an existing character, or ignore "
                                 "(e.g. a minor walk-on)?"
                             ),
-                            context={"excerpt": prose[:400]},
+                            context={"name": name, "excerpt": prose[:400]},
                         ),
                         model_id=utility.id,
                     )

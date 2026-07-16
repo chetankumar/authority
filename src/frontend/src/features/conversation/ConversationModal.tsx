@@ -240,12 +240,13 @@ export function ConversationModal({
           <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
             <input
               value={titleDraft}
+              title={titleDraft}
               onFocus={() => {
                 titleFocused.current = true;
               }}
               onChange={(e) => setTitleDraft(e.target.value)}
               onBlur={() => void onTitleBlur()}
-              className="min-w-0 flex-1 bg-transparent text-[1rem] font-semibold text-ink outline-none"
+              className="min-w-0 flex-1 truncate bg-transparent text-[1rem] font-semibold text-ink outline-none focus:overflow-visible focus:text-clip"
             />
             <label className="flex items-center gap-2 text-[0.8125rem] text-ink-soft">
               <input

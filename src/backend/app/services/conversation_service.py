@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any
@@ -32,10 +31,15 @@ from app.services.settings_service import SettingsService
 log = logging.getLogger("authority.conversations")
 
 _TITLE_TIMEOUT_SECONDS = 12.0
-_TITLE_PROMPT = (
-    "Reply with exactly three words that title this writing-studio chat request. "
-    "No quotes, punctuation, or explanation — only the three words.\n\n"
-    "Message:\n"
+_TITLE_SYSTEM = (
+    "You name short chat threads for a novelist. "
+    "Reply with only a 3 to 5 word title that captures the author's request. "
+    "No quotes, punctuation, numbering, or explanation."
+)
+_TITLE_USER_PREFIX = (
+    "Title this writing-studio chat request in 3 to 5 words.\n"
+    "Example: for 'Please give an editorial review of this scene' → Scene editorial review\n\n"
+    "Request:\n"
 )
 
 
@@ -43,21 +47,11 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _first_words(text: str, n: int = 3) -> str:
+def _first_words(text: str, n: int = 5) -> str:
     words = text.strip().split()
     if not words:
         return "Untitled"
     return " ".join(words[:n])
-
-
-def _sanitize_three_word_title(raw: str) -> str | None:
-    cleaned = raw.strip().strip("\"'`").replace("\n", " ")
-    cleaned = re.sub(r"[^\w\s\-']", "", cleaned, flags=re.UNICODE)
-    words = [w for w in cleaned.split() if w]
-    if not words:
-        return None
-    title = " ".join(words[:3])
-    return title[:80] if title else None
 
 
 class ConversationService:
@@ -270,15 +264,20 @@ class ConversationService:
             self._generating.discard(conversation_id)
 
     async def _semantic_title(self, user_content: str) -> str:
-        """Utility-model 3-word title; fallback to first three words of the message."""
-        fallback = _first_words(user_content, n=3)
+        """Utility-model 3–5 word title; fallback to first words of the message."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        fallback = _first_words(user_content, n=5)
         cfg = self._settings.get_utility_model()
         if cfg is None:
             return fallback
         try:
-            messages = self._assembler.for_once(_TITLE_PROMPT + user_content[:4000])
+            messages = [
+                SystemMessage(content=_TITLE_SYSTEM),
+                HumanMessage(content=_TITLE_USER_PREFIX + user_content[:4000]),
+            ]
             raw = await self._orch.invoke_once(cfg, messages, timeout=_TITLE_TIMEOUT_SECONDS)
-            title = _sanitize_three_word_title(raw)
+            title = raw.strip()
             if title:
                 return title
         except Exception as exc:  # noqa: BLE001 — author still gets a title

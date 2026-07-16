@@ -17,7 +17,7 @@ Parent: [app](../CLAUDE.md). Spec: [04 API §1.3](../../../../docs/claude-tech-s
 | `ChainService` | Hard-chain algebra: splice, heal, walk, seq/placement computation, contiguity + completeness checks |
 | `SceneService` | Scene CRUD; content saves (hash, word count); dependency-todo fanout; enrichment settle timers; file naming/renames |
 | `StructureService` | Parts/chapters linked lists; move-before/after rewiring; blocked deletions; plotlines; characters (uniqueness) |
-| `ConversationService` | Conversation lifecycle; message append; utility-model semantic title when Untitled; passes parent scene into ContextAssembler; SSE streaming via AIOrchestrator; hard delete |
+| `ConversationService` | Conversation lifecycle; message append; utility-model title when Untitled (dedicated prompt; reply stored as-is); passes parent scene into ContextAssembler; SSE streaming via AIOrchestrator; hard delete |
 | `ProposalService` | Locate/apply/reject proposals — the **only** code path that mutates on behalf of AI output (plus enrichment exact-match writes) |
 | `JobService` + `JobWorker` | `jobs.json` queue; resolve job placeholders → ContextAssembler → AIOrchestrator; standing worker (per-book FIFO, ≤2 global) |
 | `EnrichmentService` | Settle timer + clear/unclear bookkeeping; unclear → EscalationService |

@@ -365,15 +365,16 @@ export default function EditorPage() {
                   <li key={n.id}>
                     <button
                       type="button"
-                      className="w-full rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
+                      className="flex w-full items-center gap-2 rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
+                      title={n.title}
                       onClick={() => {
                         setChatContext(null);
                         setConversationId(n.id);
                       }}
                     >
-                      <span className="text-ink">{n.title}</span>
+                      <span className="min-w-0 flex-1 truncate text-ink">{n.title}</span>
                       {n.pendingProposals > 0 && (
-                        <span className="ml-2 text-[0.6875rem] text-attn">{n.pendingProposals}</span>
+                        <span className="shrink-0 text-[0.6875rem] text-attn">{n.pendingProposals}</span>
                       )}
                     </button>
                   </li>
@@ -389,23 +390,34 @@ export default function EditorPage() {
               <p className="text-[0.75rem] text-ink-faint">No jobs yet.</p>
             ) : (
               <ul className="space-y-1">
-                {jobRows.slice(0, 20).map((j) => (
-                  <li key={j.id}>
-                    <button
-                      type="button"
-                      className="w-full rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
-                      onClick={() => {
-                        if (j.conversationId) {
-                          setChatContext(null);
-                          setConversationId(j.conversationId);
-                        }
-                      }}
-                    >
-                      <span className="text-ink">{j.type === "system" ? "Bookkeeping" : j.aiJobId ?? j.id}</span>
-                      <span className="ml-2 text-[0.6875rem] text-ink-faint">{j.status}</span>
-                    </button>
-                  </li>
-                ))}
+                {jobRows.slice(0, 20).map((j) => {
+                  const fromConv = j.conversationId
+                    ? noteRows.find((n) => n.id === j.conversationId)?.title
+                    : undefined;
+                  const fromDef = j.aiJobId ? jobDefs.find((d) => d.id === j.aiJobId)?.name : undefined;
+                  const label =
+                    fromConv ??
+                    fromDef ??
+                    (j.type === "system" ? "Bookkeeping" : j.aiJobId ?? j.id);
+                  return (
+                    <li key={j.id}>
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
+                        title={label}
+                        onClick={() => {
+                          if (j.conversationId) {
+                            setChatContext(null);
+                            setConversationId(j.conversationId);
+                          }
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-ink">{label}</span>
+                        <span className="shrink-0 text-[0.6875rem] text-ink-faint">{j.status}</span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </PaneSection>

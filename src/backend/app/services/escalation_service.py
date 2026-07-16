@@ -17,8 +17,11 @@ log = logging.getLogger("authority.escalation")
 
 @dataclass
 class EscalationIssue:
+    """Caller-built escalation. ``title`` is the Notes-list label; ``message`` is the thread seed."""
+
     kind: str  # unmatched_name | ambiguity | minor_character | other
     message: str
+    title: str = ""
     context: dict[str, Any] = field(default_factory=dict)
 
 
@@ -46,8 +49,7 @@ class EscalationService:
         utility = self._settings.get_utility_model()
         mid = model_id or (utility.id if utility else None)
         ai = AiParticipant(enabled=bool(mid), modelId=mid)
-        title_bits = issue.message.strip().split()
-        short = " ".join(title_bits[:8]) if title_bits else "Needs your input"
+        title = (issue.title or "").strip() or "Needs your input"
         conv = self._conversations.create(
             book_id,
             ConversationCreate(
@@ -55,7 +57,7 @@ class EscalationService:
                 parentType=parent_type,
                 parentId=parent_id,
                 aiParticipant=ai,
-                title=short,
+                title=title,
             ),
         )
 

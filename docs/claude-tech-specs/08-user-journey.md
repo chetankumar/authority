@@ -241,7 +241,7 @@ Author selects a paragraph, **CLICK** [Chat] in the tool panel.
 → UI      Types "Does this paragraph contradict the cellar scene?" → Send
 → HTTP    POST /conversations/cnv-9f2c1a/messages
           { content, context:[{sceneId, excerpt:"…the selected text…"}] }   (SSE response)
-→ SERVER  1. append user Message (title becomes "Does this paragraph contradict…")
+→ SERVER  1. append user Message; if title still Untitled → utility model names the thread (dedicated prompt; reply stored as-is)
              [cnv file + index]
           2. enabled → build LangChain call: system = book systemPrompt + framing +
              tool schemas; history = messages (excerpt as quoted block); bind tools
@@ -263,7 +263,7 @@ Author selects a paragraph, **CLICK** [Chat] in the tool panel.
 
 ```
 → HTTP    POST /ai-jobs/run { aiJobId:"aij-77d0be", sceneId:"scn-1f2e9b", scope:"full" }
-→ SERVER  1. ConversationService: cnv-b8d1f0 {kind:"ai-job", title:"Editorial Review — 14:52",
+→ SERVER  1. ConversationService: cnv-b8d1f0 {kind:"ai-job", title:"Editorial Review",
              aiParticipant:{enabled:true, modelId: job default}, aiJobId + name snapshot}
           2. JobService: Job job-e91a2b {type:"user", status:"queued"}  [jobs.json]
 → REPLY   202 { jobId, conversationId }
