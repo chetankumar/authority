@@ -8,6 +8,7 @@ Server-defined placeholder vocabulary. Single source of truth for the frontend
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from app.models.settings import Placeholder
 
@@ -49,3 +50,117 @@ class PlaceholderRegistry:
             if match not in _NAMES and match not in seen:
                 seen.append(match)
         return seen
+
+    @staticmethod
+    def resolve(
+        prompt: str,
+        *,
+        mgr: Any,
+        scene_id: str,
+        selection_text: str | None = None,
+    ) -> str:
+        """Replace ``@tokens`` with book/scene context at run time."""
+        from app.models.enums import SceneStatus
+        from app.models.scene import START_ID
+        from app.services import chain_service as chain
+
+        records = {r.id: r for r in mgr.get_scenes()}
+        scene = records.get(scene_id)
+        prose = mgr.read_scene_content(scene.file) if scene else ""
+        selection = selection_text or ""
+
+        def scene_meta(s: Any) -> str:
+            if s is None:
+                return ""
+            return "\n".join(
+                [
+                    f"Title: {s.title}",
+                    f"Description: {s.description}",
+                    f"Location: {s.location}",
+                    f"Date/Time: {s.dateTime}",
+                    f"Mood: {s.mood}",
+                    f"Emotional arc: {s.emotionalArc}",
+                    f"Summary: {s.summary or '(no summary)'}",
+                ]
+            )
+
+        def previous_summaries() -> str:
+            if scene is None:
+                return ""
+            # Walk prev chain toward Start, then reverse for story order.
+            chain_back: list[Any] = []
+            cur = scene.previousSceneId
+            seen: set[str] = set()
+            while cur and cur != START_ID and cur in records and cur not in seen:
+                seen.add(cur)
+                rec = records[cur]
+                if rec.status == SceneStatus.active:
+                    chain_back.append(rec)
+                cur = rec.previousSceneId
+            chain_back.reverse()
+            lines = [f"{r.title} — {r.summary or '(no summary)'}" for r in chain_back]
+            return "\n".join(lines) if lines else "(none)"
+
+        def all_summaries() -> str:
+            rels = mgr.get_relationships()
+            rel_ids = {r.fromSceneId for r in rels} | {r.toSceneId for r in rels}
+            computed = chain.compute_seq_placement(list(mgr.get_scenes()), rel_ids)
+            active = [r for r in mgr.get_scenes() if r.status == SceneStatus.active]
+            active.sort(key=lambda r: (computed.get(r.id, (10**9, None))[0] or 10**9, r.id))
+            return "\n".join(f"{r.title} — {r.summary or '(no summary)'}" for r in active)
+
+        def character_sheet_all() -> str:
+            getter = getattr(mgr, "get_characters", None)
+            if getter is None:
+                return "(character sheet not loaded)"
+            chars = getter()
+            if not chars:
+                return "(no characters)"
+            parts = []
+            for c in chars:
+                aliases = ", ".join(getattr(c, "aliases", []) or [])
+                parts.append(f"{c.name}" + (f" (aka {aliases})" if aliases else ""))
+            return "\n".join(parts)
+
+        def scene_characters() -> str:
+            if scene is None or not scene.characterIds:
+                return "(none tagged)"
+            getter = getattr(mgr, "get_characters", None)
+            if getter is None:
+                return "(character sheet not loaded)"
+            by_id = {c.id: c for c in getter()}
+            names = [by_id[i].name for i in scene.characterIds if i in by_id]
+            return "\n".join(names) if names else "(none tagged)"
+
+        def plotlines() -> str:
+            pls = mgr.get_plotlines()
+            if not pls:
+                return "(none)"
+            lines = []
+            for p in pls:
+                flag = ""
+                if scene and (
+                    scene.primaryPlotlineId == p.id or p.id in (scene.secondaryPlotlineIds or [])
+                ):
+                    flag = " [this scene]"
+                lines.append(f"{p.title}: {p.description or ''}{flag}".rstrip())
+            return "\n".join(lines)
+
+        replacements = {
+            "@current_scene": prose,
+            "@selection": selection,
+            "@selection_or_scene": selection if selection else prose,
+            "@scene_metadata": scene_meta(scene),
+            "@scene_characters": scene_characters(),
+            "@character_sheet": character_sheet_all(),
+            "@previous_scenes_summary": previous_summaries(),
+            "@all_scene_summaries": all_summaries(),
+            "@story_summary": mgr.config.storySummary or "(no story summary)",
+            "@plotlines": plotlines(),
+        }
+
+        def repl(match: re.Match[str]) -> str:
+            token = match.group(0)
+            return replacements.get(token, token)
+
+        return TOKEN_RE.sub(repl, prompt)

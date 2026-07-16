@@ -16,11 +16,14 @@ Parent: [app](../CLAUDE.md). Spec: [04 API §1.3](../../../../docs/claude-tech-s
 | `ChainService` | Hard-chain algebra: splice, heal, walk, seq/placement computation, contiguity + completeness checks |
 | `SceneService` | Scene CRUD; content saves (hash, word count); dependency-todo fanout; enrichment settle timers; file naming/renames |
 | `StructureService` | Parts/chapters linked lists; move-before/after rewiring; blocked deletions; plotlines; characters (uniqueness) |
-| `ConversationService` | Conversation lifecycle; message append; model context assembly; streaming orchestration; proposal parsing |
-| `ProposalService` | Locate/apply/reject proposals — the **only** code path that mutates on behalf of AI output |
-| `JobService` + Worker | `jobs.json` queue; single asyncio worker (per-book FIFO, concurrency 1/book, ≤2 global); status transitions |
-| `EnrichmentService` | System bookkeeping job: summary + character mapping (never creates characters) |
-| `AIService` / `ModelFactory` | `ModelConfig → LangChain BaseChatModel`; tool binding; `${ENV}` key resolution; streaming |
+| `ConversationService` | Conversation lifecycle; message append; SSE streaming via AIOrchestrator |
+| `ProposalService` | Locate/apply/reject proposals — the **only** code path that mutates on behalf of AI output (plus enrichment exact-match writes) |
+| `JobService` + `JobWorker` | `jobs.json` queue; standing asyncio worker (per-book FIFO, ≤2 global) |
+| `EnrichmentService` | Settle timer + clear/unclear bookkeeping; unclear → EscalationService |
+| `EscalationService` | Unclear → seeded chat conversation |
+| `AIOrchestrator` / `ModelFactory` | Model invoke_once / structured / stream + tool loop |
+| `ToolRegistry` | Read tools (execute) + propose tools (accumulate proposals) |
+| `PlaceholderRegistry` | List, validate, resolve `@tokens` at run time |
 | `GitService` | GitPython wrapper: status/stage/unstage/diff/commit/push/pull/log. `status()` builds the badge's `summary` string (`"all-changes-synced"` / `"7-new, 1-updated, 3-deleted"`) and emits nothing — callers decide when to broadcast. Mutating ops emit `git-status` immediately in-request; incidental dirtying is picked up by the [git-status worker](../worker/CLAUDE.md) instead. Never run inline on a write path |
 | `CompileService` | Completeness check (errors/warnings); build to `compiled-book/` |
 | `EventHub` | Per-book SSE pub/sub (lives in [core](../core/CLAUDE.md)); all services emit through it |

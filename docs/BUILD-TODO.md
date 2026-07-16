@@ -59,7 +59,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | SK-15 | ✅ | Logging (console + file) | As a developer, I want startup and errors logged. | `src/backend/app/core/logging.py` |
 | SK-16 | ⬜ | Single-instance filelock (`.lock`) | As an author, I want only one Authority process. | **Modify:** `src/backend/app/main.py`, `src/backend/app/core/config.py`; **Read:** `src/backend/requirements.txt` (filelock dep) |
 | SK-17 | ⬜ | `app.json` load at startup into SettingsService | As the server, I want settings in memory before serving. | **Modify:** `src/backend/app/main.py`, `src/backend/app/services/settings_service.py` |
-| SK-18 | ⬜ | Job worker asyncio task at startup | As an author, I want AI jobs to run in the background. | **Create:** `src/backend/app/worker/worker.py`; **Modify:** `src/backend/app/main.py`; **Pattern to copy:** `src/backend/app/worker/git_status_worker.py` (standing task started/cancelled in `lifespan`) |
+| SK-18 | ✅ | Job worker asyncio task at startup | As an author, I want AI jobs to run in the background. | **Create:** `src/backend/app/worker/worker.py`; **Modify:** `src/backend/app/main.py`; **Pattern to copy:** `src/backend/app/worker/git_status_worker.py` (standing task started/cancelled in `lifespan`) |
 | SK-19 | ✅ | EventHub (per-book SSE pub/sub) | As the UI, I want live updates without polling. *(Built in Phase 8 — generic core infra, no AI dependency; see doc 07 §24.)* | `src/backend/app/core/event_hub.py`, `src/backend/app/api/events/router.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
 | SK-20 | ✅ | ~~Git dirty-check after every book write~~ → **debounced worker** | As an author, I want the git badge accurate after any save — **without** `git status` running on my autosave. **Superseded (doc 07 §25):** writes fire `book-changed` from `BookDataManager`; `GitStatusWorker` re-checks after a 5s debounce. No per-service dirty-check hooks. | `src/backend/app/services/book_data_manager.py`, `src/backend/app/worker/git_status_worker.py`, `src/backend/app/services/git_service.py` |
 
@@ -178,8 +178,8 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | SCN-API-03 | ✅ | `GET /books/{b}/scenes/{id}` (+ content) | Metadata and prose for editor. | Same as above |
 | SCN-API-04 | ✅ | `PATCH /books/{b}/scenes/{id}` | Edit metadata, chain, chapter/part, archive. | Same as above |
 | SCN-API-05 | ✅ | `PUT /books/{b}/scenes/{id}/content` | Autosaved prose with word count/hash. | Same as above + `src/backend/app/core/atomic.py` |
-| SCN-API-06 | ⬜ | `POST /books/{b}/scenes/{id}/enrich` | On-demand AI redo of summary/characters. | **Modify:** `src/backend/app/api/scenes/router.py`, `src/backend/app/services/scene_service.py`; **Depends on:** Phase 7 (JobService, EnrichmentService) |
-| SCN-API-07 | ⬜ | `GET /books/{b}/scenes/{id}/conversations` | Notes/chats scoped to scene. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 7 (ConversationService) |
+| SCN-API-06 | ✅ | `POST /books/{b}/scenes/{id}/enrich` | On-demand AI redo of summary/characters. | **Modify:** `src/backend/app/api/scenes/router.py`, `src/backend/app/services/scene_service.py`; **Depends on:** Phase 7 (JobService, EnrichmentService) |
+| SCN-API-07 | ✅ | `GET /books/{b}/scenes/{id}/conversations` | Notes/chats scoped to scene. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 7 (ConversationService) |
 | SCN-API-08 | ⬜ | `GET /books/{b}/scenes/{id}/todos` | Scene-scoped todos. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 6 (TodoService) |
 | SCN-API-09 | ⬜ | `GET /books/{b}/scenes/{id}/dependencies` | Depends-on + depended-on-by. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 6 (dependencies) |
 | SCN-API-10 | ✅ | `DELETE /books/{b}/scenes/{id}` | As an author, I want to permanently delete an archived scene; if it has references (relationships, dependencies, todos, conversations, plotlines, running jobs) the API returns 409 with `blockedBy` details. The `.md` file moves to `.trash/`, never physically deleted. | `src/backend/app/api/scenes/router.py`, `src/backend/app/services/scene_service.py` |
@@ -191,7 +191,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | SCN-SVC-01 | ✅ | ChainService (splice, heal, seq/placement) | Deterministic story order. Floating/orphan scenes get `seq: null` — only hard-chain scenes are numbered. | `src/backend/app/services/chain_service.py` |
 | SCN-SVC-02 | ✅ | SceneService CRUD + content save | Only prose write paths guarded. | `src/backend/app/services/scene_service.py` |
 | SCN-SVC-03 | 🔄 | Content save — dependency todo fanout (stub) | Todos when depended-on scene changes. | **Modify:** `src/backend/app/services/scene_service.py` (line ~209, phase 6 hook) |
-| SCN-SVC-04 | 🔄 | Content save — enrichment settle timer (stub) | Summary/character updates after typing stops. | **Modify:** `src/backend/app/services/scene_service.py` (line ~212, phase 7 hook) |
+| SCN-SVC-04 | ✅ | Content save — enrichment settle timer (stub) | Summary/character updates after typing stops. | **Modify:** `src/backend/app/services/scene_service.py` (line ~212, phase 7 hook) |
 
 ### Frontend — Scene graph
 
@@ -284,17 +284,17 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | EDT-FE-13 | ✅ | Prev disabled at start | Clear chain start boundary. | `src/frontend/src/features/editor/EditorPage.tsx` |
 | EDT-FE-14 | ✅ | [Metadata] → Scene Modal | Scene facts adjacent to prose. | Same + `src/frontend/src/features/sceneModal/SceneModal.tsx` |
 | EDT-FE-15 | ✅ | ◫ pane toggle + ui.json | Zen or side context, remembered. | `src/frontend/src/features/editor/EditorPage.tsx`, `src/frontend/src/api/books.ts` |
-| EDT-FE-16 | 🔄 | Right pane shell (accordion, "soon") | Notes/Todos/AI Jobs beside prose. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx` |
-| EDT-FE-17 | ⬜ | **AI-Jobs ▾** menu → run job | Job library one click from prose. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/api/jobs.ts`; **Modify:** `src/frontend/src/queries/keys.ts`; **Depends on:** AI-API-05 |
-| EDT-FE-18 | ⬜ | AI-Jobs — selection scope | "Fix this paragraph" vs "review whole scene". | Same as above |
+| EDT-FE-16 | ✅ | Right pane shell (accordion, "soon") | Notes/Todos/AI Jobs beside prose. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx` |
+| EDT-FE-17 | ✅ | **AI-Jobs ▾** menu → run job | Job library one click from prose. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/api/jobs.ts`; **Modify:** `src/frontend/src/queries/keys.ts`; **Depends on:** AI-API-05 |
+| EDT-FE-18 | ✅ | AI-Jobs — selection scope | "Fix this paragraph" vs "review whole scene". | Same as above |
 | EDT-FE-19 | ⬜ | **Bookkeeping** popover | Standing consent visible at point of effect. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Modify:** `src/frontend/src/api/books.ts` (add `patchBook`); **Depends on:** BOOK-API-04 |
 | EDT-FE-20 | ⬜ | Bookkeeping → PATCH bookkeeping | Toggles persist at book level. | Same as above |
-| EDT-FE-21 | ⬜ | **Chat** → Conversation Modal | Help when stuck, selection as context. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/features/conversation/ConversationModal.tsx`; **Create:** `src/frontend/src/api/conversations.ts`; **Depends on:** AI-API-01 |
-| EDT-FE-22 | ⬜ | **Notes** accordion | Past threads for scene. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SCN-API-07, Phase 7 |
+| EDT-FE-21 | ✅ | **Chat** → Conversation Modal | Help when stuck, selection as context. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/features/conversation/ConversationModal.tsx`; **Create:** `src/frontend/src/api/conversations.ts`; **Depends on:** AI-API-01 |
+| EDT-FE-22 | ✅ | **Notes** accordion | Past threads for scene. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SCN-API-07, Phase 7 |
 | EDT-FE-23 | ⬜ | **To-dos** accordion | Open obligations while writing. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/api/todos.ts`, `src/frontend/src/queries/todos.ts`; **Depends on:** SCN-API-08, Phase 6 |
-| EDT-FE-24 | ⬜ | **AI Jobs** accordion — SSE status | Running/done jobs visible. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SSE-FE-01, Phase 7 |
+| EDT-FE-24 | ✅ | **AI Jobs** accordion — SSE status | Running/done jobs visible. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SSE-FE-01, Phase 7 |
 | EDT-FE-25 | ⬜ | Amber count badges | Pending items use attention color. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/components/Badge.tsx` |
-| EDT-FE-26 | ⬜ | Toast on job completion | Know when background job finishes. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SSE |
+| EDT-FE-26 | 🔄 | Toast on job completion | Know when background job finishes. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SSE |
 
 ---
 
@@ -396,29 +396,29 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 | ID | Status | Endpoint | User story | Files |
 |---|---|---|---|---|
-| AI-API-01 | ⬜ | `POST /books/{b}/conversations` | Start a note/chat on a scene. | **Create:** `src/backend/app/api/conversations/router.py`, `__init__.py`; **Create:** `src/backend/app/services/conversation_service.py`; **Create model:** `src/backend/app/models/conversation.py`; **Modify:** `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py`, `src/backend/app/models/enums.py` (add ConversationKind, etc.) |
-| AI-API-02 | ⬜ | `GET /books/{b}/conversations/{id}` | Full thread + proposals. | Same files as AI-API-01 |
-| AI-API-03 | ⬜ | `PATCH /books/{b}/conversations/{id}` | Rename, toggle AI, switch model. | Same files |
-| AI-API-04 | ⬜ | `POST /books/{b}/conversations/{id}/messages` (SSE) | Streaming AI replies. | Same + `src/backend/app/services/model_factory.py` (streaming), `src/backend/app/core/event_hub.py` |
-| AI-API-05 | ⬜ | `POST /books/{b}/ai-jobs/run` | Execute saved job against scene. | Same + `src/backend/app/worker/worker.py`, `src/backend/app/services/placeholder_registry.py` (resolve) |
-| AI-API-06 | ⬜ | `POST /books/{b}/proposals/{id}/accept` | Apply AI edit after review. | **Create:** `src/backend/app/api/proposals/router.py`, `__init__.py`; **Create:** `src/backend/app/services/proposal_service.py`; **Modify:** `src/backend/app/services/scene_service.py` (content path for applied edits), `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
-| AI-API-07 | ⬜ | `POST /books/{b}/proposals/{id}/reject` | Dismiss suggestion. | Same files as AI-API-06 |
-| AI-API-08 | ⬜ | `GET /books/{b}/jobs` | Job history by scene/status. | **Create:** `src/backend/app/api/jobs/router.py`, `__init__.py`; **Modify:** `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py`; **Create model:** `src/backend/app/models/job.py` |
+| AI-API-01 | ✅ | `POST /books/{b}/conversations` | Start a note/chat on a scene. | **Create:** `src/backend/app/api/conversations/router.py`, `__init__.py`; **Create:** `src/backend/app/services/conversation_service.py`; **Create model:** `src/backend/app/models/conversation.py`; **Modify:** `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py`, `src/backend/app/models/enums.py` (add ConversationKind, etc.) |
+| AI-API-02 | ✅ | `GET /books/{b}/conversations/{id}` | Full thread + proposals. | Same files as AI-API-01 |
+| AI-API-03 | ✅ | `PATCH /books/{b}/conversations/{id}` | Rename, toggle AI, switch model. | Same files |
+| AI-API-04 | ✅ | `POST /books/{b}/conversations/{id}/messages` (SSE) | Streaming AI replies. | Same + `src/backend/app/services/model_factory.py` (streaming), `src/backend/app/core/event_hub.py` |
+| AI-API-05 | ✅ | `POST /books/{b}/ai-jobs/run` | Execute saved job against scene. | Same + `src/backend/app/worker/worker.py`, `src/backend/app/services/placeholder_registry.py` (resolve) |
+| AI-API-06 | ✅ | `POST /books/{b}/proposals/{id}/accept` | Apply AI edit after review. | **Create:** `src/backend/app/api/proposals/router.py`, `__init__.py`; **Create:** `src/backend/app/services/proposal_service.py`; **Modify:** `src/backend/app/services/scene_service.py` (content path for applied edits), `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
+| AI-API-07 | ✅ | `POST /books/{b}/proposals/{id}/reject` | Dismiss suggestion. | Same files as AI-API-06 |
+| AI-API-08 | ✅ | `GET /books/{b}/jobs` | Job history by scene/status. | **Create:** `src/backend/app/api/jobs/router.py`, `__init__.py`; **Modify:** `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py`; **Create model:** `src/backend/app/models/job.py` |
 
 ### Services — AI layer
 
 | ID | Status | Service | User story | Files |
 |---|---|---|---|---|
-| AI-SVC-01 | ⬜ | ConversationService | Thread primitive for notes/chat/jobs. | **Create:** `src/backend/app/services/conversation_service.py` |
-| AI-SVC-02 | ⬜ | ProposalService | AI prose changes only via author accept. | **Create:** `src/backend/app/services/proposal_service.py` |
-| AI-SVC-03 | ⬜ | JobService + Worker | Background AI work. | **Create:** `src/backend/app/services/job_service.py`, `src/backend/app/worker/worker.py` |
-| AI-SVC-04 | ⬜ | EnrichmentService | Maintain metadata while writing. | **Create:** `src/backend/app/services/enrichment_service.py` |
-| AI-SVC-05 | ⬜ | PlaceholderRegistry.resolve | Fill prompts with scene context. | **Modify:** `src/backend/app/services/placeholder_registry.py` (currently has list+validate only; add resolve method) |
-| AI-SVC-06 | ⬜ | ModelFactory — full streaming | All providers usable in chat/jobs. | **Modify:** `src/backend/app/services/model_factory.py` (currently build+test only; add streaming) |
-| AI-SVC-07 | ⬜ | LangChain read tools | AI reads book context during chat. | **Create:** `src/backend/app/services/ai_tools.py` |
-| AI-SVC-08 | ⬜ | LangChain propose tools → Proposal objects | AI never writes prose directly. | Same as AI-SVC-07 |
-| AI-SVC-09 | ⬜ | Edit-proposals JSON parse | Structured edit cards from jobs. | **Modify:** `src/backend/app/services/conversation_service.py` |
-| AI-SVC-10 | ⬜ | Metadata-proposals parse | AI-suggested field updates. | Same as above |
+| AI-SVC-01 | ✅ | ConversationService | Thread primitive for notes/chat/jobs. | **Create:** `src/backend/app/services/conversation_service.py` |
+| AI-SVC-02 | ✅ | ProposalService | AI prose changes only via author accept. | **Create:** `src/backend/app/services/proposal_service.py` |
+| AI-SVC-03 | ✅ | JobService + Worker | Background AI work. | **Create:** `src/backend/app/services/job_service.py`, `src/backend/app/worker/worker.py` |
+| AI-SVC-04 | ✅ | EnrichmentService | Maintain metadata while writing. | **Create:** `src/backend/app/services/enrichment_service.py` |
+| AI-SVC-05 | ✅ | PlaceholderRegistry.resolve | Fill prompts with scene context. | **Modify:** `src/backend/app/services/placeholder_registry.py` (currently has list+validate only; add resolve method) |
+| AI-SVC-06 | ✅ | ModelFactory — full streaming | All providers usable in chat/jobs. | **Modify:** `src/backend/app/services/model_factory.py` (currently build+test only; add streaming) |
+| AI-SVC-07 | ✅ | LangChain read tools | AI reads book context during chat. | **Create:** `src/backend/app/services/ai_tools.py` |
+| AI-SVC-08 | ✅ | LangChain propose tools → Proposal objects | AI never writes prose directly. | Same as AI-SVC-07 |
+| AI-SVC-09 | ✅ | Edit-proposals JSON parse | Structured edit cards from jobs. | **Modify:** `src/backend/app/services/conversation_service.py` |
+| AI-SVC-10 | ✅ | Metadata-proposals parse | AI-suggested field updates. | Same as above |
 
 ### Frontend — Conversation Modal
 
@@ -426,19 +426,19 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 | ID | Status | Control | User story | Files |
 |---|---|---|---|---|
-| CNV-FE-01 | ⬜ | Conversation Modal shell | One surface for notes/chat/jobs. | **Create:** `src/frontend/src/features/conversation/ConversationModal.tsx`; **Create:** `src/frontend/src/api/conversations.ts`, `src/frontend/src/queries/conversations.ts`; **Modify:** `src/frontend/src/queries/keys.ts` |
-| CNV-FE-02 | ⬜ | Editable title | Rename threads. | Same as above |
-| CNV-FE-03 | ⬜ | AI switch + model select | Private notes then invite AI. | Same as above |
-| CNV-FE-04 | ⬜ | Message list | Readable transcript with model attribution. | Same as above |
-| CNV-FE-05 | ⬜ | Context excerpt quotes | See what selection was sent. | Same as above |
-| CNV-FE-06 | ⬜ | Streaming tokens + cursor | Read AI output as it arrives. | Same as above; uses SSE helper from `src/frontend/src/api/client.ts` (needs SSE extension) |
-| CNV-FE-07 | ⬜ | Collapsed job prompt | Long prompts tucked away. | Same as above |
-| CNV-FE-08 | ⬜ | Proposal cards (edit/meta/todo) | AI suggestions as tactile cards. | Same as above; **Create:** `src/frontend/src/api/proposals.ts` |
-| CNV-FE-09 | ⬜ | [Accept] / [Reject] per card | Explicit approval. | Same as above |
-| CNV-FE-10 | ⬜ | [Accept all (n)] sequential | Bulk accept with not-found surfacing. | Same as above |
-| CNV-FE-11 | ⬜ | Applied/rejected/not-found states | Clear outcomes per proposal. | Same as above |
-| CNV-FE-12 | ⬜ | Composer — Enter/Shift+Enter | Familiar chat input. | Same as above |
-| CNV-FE-13 | ⬜ | Close without prompt | No "save conversation?" anxiety. | Same as above |
+| CNV-FE-01 | ✅ | Conversation Modal shell | One surface for notes/chat/jobs. | **Create:** `src/frontend/src/features/conversation/ConversationModal.tsx`; **Create:** `src/frontend/src/api/conversations.ts`, `src/frontend/src/queries/conversations.ts`; **Modify:** `src/frontend/src/queries/keys.ts` |
+| CNV-FE-02 | ✅ | Editable title | Rename threads. | Same as above |
+| CNV-FE-03 | ✅ | AI switch + model select | Private notes then invite AI. | Same as above |
+| CNV-FE-04 | ✅ | Message list | Readable transcript with model attribution. | Same as above |
+| CNV-FE-05 | ✅ | Context excerpt quotes | See what selection was sent. | Same as above |
+| CNV-FE-06 | ✅ | Streaming tokens + cursor | Read AI output as it arrives. | Same as above; uses SSE helper from `src/frontend/src/api/client.ts` (needs SSE extension) |
+| CNV-FE-07 | ✅ | Collapsed job prompt | Long prompts tucked away. | Same as above |
+| CNV-FE-08 | ✅ | Proposal cards (edit/meta/todo) | AI suggestions as tactile cards. | Same as above; **Create:** `src/frontend/src/api/proposals.ts` |
+| CNV-FE-09 | ✅ | [Accept] / [Reject] per card | Explicit approval. | Same as above |
+| CNV-FE-10 | ✅ | [Accept all (n)] sequential | Bulk accept with not-found surfacing. | Same as above |
+| CNV-FE-11 | ✅ | Applied/rejected/not-found states | Clear outcomes per proposal. | Same as above |
+| CNV-FE-12 | ✅ | Composer — Enter/Shift+Enter | Familiar chat input. | Same as above |
+| CNV-FE-13 | ✅ | Close without prompt | No "save conversation?" anxiety. | Same as above |
 
 ### Frontend — SSE client
 
@@ -449,8 +449,8 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | ID | Status | Item | User story | Files |
 |---|---|---|---|---|
 | SSE-FE-01 | ✅ | `useBookEvents(bookId)` hook | One EventSource per book; unknown event types ignored. *(Built in Phase 8.)* | `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/api/client.ts` |
-| SSE-FE-02 | ⬜ | `scene-updated` → patch scenes | Summary/character chips live. | **Modify:** `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/queries/scenes.ts`; **Depends on:** Phase 7 (enrichment) |
-| SSE-FE-03 | ⬜ | `job` → patch jobs | Job status live in accordion. | Same + `src/frontend/src/queries/jobs.ts` (create); **Depends on:** Phase 7 |
+| SSE-FE-02 | ✅ | `scene-updated` → patch scenes | Summary/character chips live. | **Modify:** `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/queries/scenes.ts`; **Depends on:** Phase 7 (enrichment) |
+| SSE-FE-03 | ✅ | `job` → patch jobs | Job status live in accordion. | Same + `src/frontend/src/queries/jobs.ts` (create); **Depends on:** Phase 7 |
 | SSE-FE-04 | ⬜ | `todos-created` → invalidate todos | New dependency todos immediately. | Same + `src/frontend/src/queries/todos.ts`; **Depends on:** Phase 6 |
 | SSE-FE-05 | ✅ | `git-status` → patch git + badge | Commit nudge stays accurate, live. *(Built in Phase 8.)* | `src/frontend/src/events/useBookEvents.ts`, `src/frontend/src/App.tsx` (GitBadge) |
 | SSE-FE-06 | ⬜ | `compile-done` → invalidate | Readiness refreshes after compile. | Same; **Depends on:** Phase 9 |
@@ -597,10 +597,10 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | J9 | Second scene, soft | ✅ | — |
 | J10 | Structure (part + chapter) | 🔄 | Phase 6 (parts/chapters/plotlines done; characters/deps/todos pending) |
 | J11 | Editor + autosave | ✅ | — |
-| J12 | Enrichment fires | ⬜ | Phase 7 |
-| J13 | Chat from selection | ⬜ | Phase 7 |
-| J14 | Editorial Review job | ⬜ | Phase 7 |
-| J15 | Accepting an edit | ⬜ | Phase 7 |
+| J12 | Enrichment fires | ✅ | Phase 7 |
+| J13 | Chat from selection | ✅ | Phase 7 |
+| J14 | Editorial Review job | ✅ | Phase 7 |
+| J15 | Accepting an edit | ✅ | Phase 7 |
 | J16 | Dependency + todo | ⬜ | Phase 6 |
 | J16.5 | Ambient — the badge keeps itself honest | ✅ | — |
 | J17 | Git deliberate save | ✅ | — |

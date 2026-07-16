@@ -24,6 +24,9 @@ from app.core.atomic import atomic_write_json
 from app.core.errors import ApiError
 from app.core.event_hub import EventHub
 from app.models.book import Book, BookConfig, Chapter, Part
+from app.models.conversation import Conversation, ConversationSummary
+from app.models.enums import ProposalStatus
+from app.models.job import Job
 from app.models.plotline import PlotlineRecord
 from app.models.scene import SceneRecord, SoftRelationship
 from app.services.book_scanner import _find_cover
@@ -43,6 +46,8 @@ class BookDataManager:
         self._parts: list[Part] | None = None
         self._chapters: list[Chapter] | None = None
         self._plotlines: list[PlotlineRecord] | None = None
+        self._jobs: list[Job] | None = None
+        self._conversation_index: list[ConversationSummary] | None = None
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -205,6 +210,141 @@ class BookDataManager:
         # the 10s poll disagree.
         self._changed()
         return merged
+
+    # ---- jobs (doc 03 db/jobs.json) ----------------------------------------
+
+    def get_jobs(self) -> list[Job]:
+        if self._jobs is None:
+            self._jobs = self._load_collection("jobs.json", Job)
+        return self._jobs
+
+    def save_jobs(self, jobs: list[Job]) -> None:
+        atomic_write_json(self._dir / "db" / "jobs.json", [j.model_dump(mode="json") for j in jobs])
+        self._jobs = jobs
+        self._changed()
+
+    # ---- conversations (doc 03 db/conversations/) --------------------------
+
+    def _conversations_dir(self) -> Path:
+        path = self._dir / "db" / "conversations"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _conversation_path(self, conversation_id: str) -> Path:
+        return self._conversations_dir() / f"{conversation_id}.json"
+
+    def _index_path(self) -> Path:
+        return self._conversations_dir() / "index.json"
+
+    @staticmethod
+    def _summary_from_conversation(conv: Conversation) -> ConversationSummary:
+        pending = sum(
+            1
+            for m in conv.messages
+            for p in m.proposals
+            if p.status == ProposalStatus.pending
+        )
+        return ConversationSummary(
+            id=conv.id,
+            kind=conv.kind,
+            title=conv.title,
+            parentType=conv.parentType,
+            parentId=conv.parentId,
+            status=conv.status,
+            updatedAt=conv.updatedAt,
+            messageCount=len(conv.messages),
+            pendingProposals=pending,
+        )
+
+    def get_conversation_index(self) -> list[ConversationSummary]:
+        if self._conversation_index is not None:
+            return self._conversation_index
+        path = self._index_path()
+        if not path.exists():
+            self._conversation_index = self.rebuild_conversation_index()
+            return self._conversation_index
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            self._conversation_index = [ConversationSummary.model_validate(row) for row in raw]
+            return self._conversation_index
+        except Exception as exc:
+            log.warning("conversation index corrupt (%s); rebuilding", exc)
+            self._conversation_index = self.rebuild_conversation_index()
+            return self._conversation_index
+
+    def rebuild_conversation_index(self) -> list[ConversationSummary]:
+        """Scan cnv-*.json files and rewrite index.json (doc 03 derived index)."""
+        summaries: list[ConversationSummary] = []
+        for path in sorted(self._conversations_dir().glob("cnv-*.json")):
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                conv = Conversation.model_validate(raw)
+                summaries.append(self._summary_from_conversation(conv))
+            except Exception as exc:
+                log.warning("skipping unreadable conversation %s: %s", path.name, exc)
+        summaries.sort(key=lambda s: s.updatedAt, reverse=True)
+        atomic_write_json(self._index_path(), [s.model_dump(mode="json") for s in summaries])
+        self._conversation_index = summaries
+        return summaries
+
+    def get_conversation(self, conversation_id: str) -> Conversation | None:
+        path = self._conversation_path(conversation_id)
+        if not path.exists():
+            return None
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return Conversation.model_validate(raw)
+        except Exception as exc:
+            self._quarantine(path, exc)
+            raise
+
+    def save_conversation(self, conv: Conversation) -> None:
+        path = self._conversation_path(conv.id)
+        atomic_write_json(path, conv.model_dump(mode="json"))
+        # Refresh index entry.
+        index = list(self.get_conversation_index())
+        summary = self._summary_from_conversation(conv)
+        index = [s for s in index if s.id != conv.id]
+        index.append(summary)
+        index.sort(key=lambda s: s.updatedAt, reverse=True)
+        atomic_write_json(self._index_path(), [s.model_dump(mode="json") for s in index])
+        self._conversation_index = index
+        self._changed()
+
+    def list_conversations_for_parent(
+        self, parent_type: str, parent_id: str
+    ) -> list[ConversationSummary]:
+        return [
+            s
+            for s in self.get_conversation_index()
+            if s.parentType.value == parent_type and s.parentId == parent_id
+        ]
+
+    def find_proposal(self, proposal_id: str) -> tuple[Conversation, int, int] | None:
+        """Locate a proposal via the index → conversation files.
+
+        Returns (conversation, message_index, proposal_index) or None.
+        """
+        for summary in self.get_conversation_index():
+            if summary.pendingProposals == 0 and summary.messageCount == 0:
+                continue
+            conv = self.get_conversation(summary.id)
+            if conv is None:
+                continue
+            for mi, msg in enumerate(conv.messages):
+                for pi, prop in enumerate(msg.proposals):
+                    if prop.id == proposal_id:
+                        return conv, mi, pi
+        # Full scan fallback (resolved proposals still findable).
+        for path in self._conversations_dir().glob("cnv-*.json"):
+            conv = self.get_conversation(path.stem)
+            if conv is None:
+                continue
+            for mi, msg in enumerate(conv.messages):
+                for pi, prop in enumerate(msg.proposals):
+                    if prop.id == proposal_id:
+                        return conv, mi, pi
+        return None
 
     # ---- scene file helpers -------------------------------------------------
 

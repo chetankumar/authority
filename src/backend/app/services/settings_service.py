@@ -183,6 +183,12 @@ class SettingsService:
             return None
         return next((m for m in data.models if m.id == model_id), None)
 
+    def get_model(self, model_id: str) -> ModelConfig | None:
+        return next((m for m in self._load().models if m.id == model_id), None)
+
+    def get_ai_job(self, job_id: str) -> AIJobDefinition | None:
+        return next((j for j in self._load().aiJobs if j.id == job_id), None)
+
     @staticmethod
     def _validate_provider(provider: Provider, api_key: str | None, base_url: str | None) -> None:
         # API keys are optional at save: an empty key means "use the provider's

@@ -1,10 +1,10 @@
 """ModelFactory (doc 05).
 
 Turns a :class:`ModelConfig` into a LangChain ``BaseChatModel``. Resolves
-``${ENV_VAR}`` API-key references at call time (never at rest). Only the pieces
-needed today are implemented — construction and key resolution; tool binding and
-streaming land with the AI phase. LangChain adapters are imported lazily so the
-app starts without touching provider SDKs.
+``${ENV_VAR}`` API-key references at call time (never at rest). Streaming and
+tool-binding are handled by :class:`AIOrchestrator` on the built model.
+LangChain adapters are imported lazily so the app starts without touching
+provider SDKs.
 """
 
 from __future__ import annotations

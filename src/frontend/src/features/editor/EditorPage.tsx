@@ -2,7 +2,7 @@
 // recedes. TipTap + tiptap-markdown on a 68ch Literata sheet; autosave (2s debounce +
 // blur + route-leave, Ctrl/Cmd+S immediate); inline title; live word count; Prev/Next.
 // Tool-panel AI buttons and the right-pane lists arrive with phases 6–7 (shown "soon").
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -10,10 +10,15 @@ import { Markdown } from "tiptap-markdown";
 
 import { getBookUi, patchBookUi } from "../../api/books";
 import { END_ID, START_ID } from "../../api/scenes";
+import { createConversation, runAiJob } from "../../api/conversations";
 import { Button } from "../../components/ui";
+import { useToast } from "../../components/Toast";
 import { useScene, useUpdateScene } from "../../queries/scenes";
+import { useSceneConversations, useSceneJobs } from "../../queries/conversations";
+import { useJobs as useAiJobDefinitions } from "../../queries/settings";
 import { saveContent } from "../../api/scenes";
 import { SceneModal } from "../sceneModal/SceneModal";
+import { ConversationModal } from "../conversation/ConversationModal";
 
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: string } | { kind: "error" };
 
@@ -26,6 +31,10 @@ export default function EditorPage() {
   const navigate = useNavigate();
   const sceneQ = useScene(bookId, sceneId);
   const updateScene = useUpdateScene(bookId);
+  const toast = useToast();
+  const aiJobs = useAiJobDefinitions();
+  const notes = useSceneConversations(bookId, sceneId);
+  const sceneJobs = useSceneJobs(bookId, sceneId);
 
   const [words, setWords] = useState(0);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
@@ -35,6 +44,9 @@ export default function EditorPage() {
   const [title, setTitle] = useState("");
   const [sourceMode, setSourceMode] = useState(false);
   const [sourceText, setSourceText] = useState("");
+  const [jobsMenuOpen, setJobsMenuOpen] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [chatContext, setChatContext] = useState<{ sceneId: string; excerpt: string } | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
 
   const loadedScene = useRef<string | null>(null);
@@ -180,20 +192,89 @@ export default function EditorPage() {
     else setCreateNext(true);
   };
 
+  const getSelectionExcerpt = (): string | null => {
+    if (sourceMode) {
+      const el = sourceRef.current;
+      if (!el || el.selectionStart === el.selectionEnd) return null;
+      return sourceText.slice(el.selectionStart, el.selectionEnd);
+    }
+    const sel = window.getSelection()?.toString().trim();
+    return sel || null;
+  };
+
+  const startChat = async () => {
+    try {
+      const excerpt = getSelectionExcerpt();
+      const conv = await createConversation(bookId, {
+        kind: "chat",
+        parentType: "scene",
+        parentId: sceneId,
+      });
+      setChatContext(excerpt ? { sceneId, excerpt } : null);
+      setConversationId(conv.id);
+    } catch {
+      toast.error("Couldn't start a chat.");
+    }
+  };
+
+  const runJob = async (aiJobId: string) => {
+    setJobsMenuOpen(false);
+    try {
+      const excerpt = getSelectionExcerpt();
+      const res = await runAiJob(bookId, {
+        aiJobId,
+        sceneId,
+        scope: excerpt ? "selection" : "full",
+        selectionText: excerpt ?? undefined,
+      });
+      setChatContext(null);
+      setConversationId(res.conversationId);
+      toast.success("AI-Job queued");
+    } catch {
+      toast.error("Couldn't run that job.");
+    }
+  };
+
   if (sceneQ.isLoading) return <div className="px-6 py-6 text-[0.875rem] text-ink-soft">Opening the scene…</div>;
   if (sceneQ.isError || !scene)
     return <div className="px-6 py-6 text-[0.875rem] text-danger">Couldn't open this scene.</div>;
+
+  const jobDefs = aiJobs.data ?? [];
+  const noteRows = notes.data ?? [];
+  const jobRows = sceneJobs.data ?? [];
 
   return (
     <div className="flex h-full min-h-0">
       {/* center column */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* tool panel */}
-        <div className="flex items-center gap-2 border-b border-line px-4 py-2">
-          <ToolButton disabled label="AI-Jobs ▾" soon />
+        <div className="relative flex items-center gap-2 border-b border-line px-4 py-2">
+          <div className="relative">
+            <ToolButton
+              label="AI-Jobs ▾"
+              onClick={() => setJobsMenuOpen((o) => !o)}
+              disabled={jobDefs.length === 0}
+              title={jobDefs.length === 0 ? "Define AI-Jobs in Settings first" : undefined}
+            />
+            {jobsMenuOpen && (
+              <ul className="absolute left-0 top-full z-20 mt-1 min-w-[12rem] rounded-control border border-line bg-surface py-1 shadow-overlay">
+                {jobDefs.map((j) => (
+                  <li key={j.id}>
+                    <button
+                      type="button"
+                      className="block w-full px-3 py-1.5 text-left text-[0.8125rem] hover:bg-accent-wash"
+                      onClick={() => void runJob(j.id)}
+                    >
+                      {j.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <ToolButton label="Metadata" onClick={() => setModalOpen(true)} />
           <ToolButton disabled label="Bookkeeping" soon />
-          <ToolButton disabled label="Chat" soon />
+          <ToolButton label="Chat" onClick={() => void startChat()} />
           <div className="ml-auto">
             <ToolButton label="◫" onClick={togglePane} title="Toggle side pane" />
           </div>
@@ -264,12 +345,62 @@ export default function EditorPage() {
       {/* right pane */}
       {paneOpen && (
         <aside className="w-80 shrink-0 overflow-auto border-l border-line bg-surface p-4">
-          <PaneSection title="Notes" />
-          <PaneSection title="To-dos" />
-          <PaneSection title="AI Jobs" />
-          <p className="mt-4 text-[0.75rem] text-ink-faint">
-            Notes, to-dos and AI jobs light up with the AI and structure phases.
-          </p>
+          <PaneSection
+            title="Notes"
+            count={noteRows.filter((n) => n.kind === "note" || n.kind === "chat").length}
+          >
+            {noteRows.length === 0 ? (
+              <p className="text-[0.75rem] text-ink-faint">No notes yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {noteRows.map((n) => (
+                  <li key={n.id}>
+                    <button
+                      type="button"
+                      className="w-full rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
+                      onClick={() => {
+                        setChatContext(null);
+                        setConversationId(n.id);
+                      }}
+                    >
+                      <span className="text-ink">{n.title}</span>
+                      {n.pendingProposals > 0 && (
+                        <span className="ml-2 text-[0.6875rem] text-attn">{n.pendingProposals}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </PaneSection>
+          <PaneSection title="To-dos">
+            <p className="text-[0.75rem] text-ink-faint">Tasks arrive with the structure phase.</p>
+          </PaneSection>
+          <PaneSection title="AI Jobs" count={jobRows.filter((j) => j.status === "queued" || j.status === "running").length}>
+            {jobRows.length === 0 ? (
+              <p className="text-[0.75rem] text-ink-faint">No jobs yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {jobRows.slice(0, 20).map((j) => (
+                  <li key={j.id}>
+                    <button
+                      type="button"
+                      className="w-full rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
+                      onClick={() => {
+                        if (j.conversationId) {
+                          setChatContext(null);
+                          setConversationId(j.conversationId);
+                        }
+                      }}
+                    >
+                      <span className="text-ink">{j.type === "system" ? "Bookkeeping" : j.aiJobId ?? j.id}</span>
+                      <span className="ml-2 text-[0.6875rem] text-ink-faint">{j.status}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </PaneSection>
         </aside>
       )}
 
@@ -281,6 +412,20 @@ export default function EditorPage() {
           initialPrevious={sceneId}
           onClose={() => setCreateNext(false)}
           onSaved={(s) => navigate(`/book/${bookId}/scene/${s.id}`)}
+        />
+      )}
+      {conversationId && (
+        <ConversationModal
+          bookId={bookId}
+          conversationId={conversationId}
+          sceneId={sceneId}
+          initialContext={chatContext}
+          onClose={() => {
+            setConversationId(null);
+            setChatContext(null);
+            void notes.refetch();
+            void sceneJobs.refetch();
+          }}
         />
       )}
     </div>
@@ -322,13 +467,24 @@ function MarkButton({ label, cmd, active }: { editor: unknown; label: string; cm
   );
 }
 
-function PaneSection({ title }: { title: string }) {
+function PaneSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: number;
+  children?: ReactNode;
+}) {
   return (
-    <div className="mb-2 border-b border-line pb-2">
-      <div className="flex items-center justify-between py-1 text-[0.8125rem] text-ink-soft">
+    <div className="mb-4 border-b border-line pb-3">
+      <div className="mb-2 flex items-center justify-between py-1 text-[0.8125rem] text-ink-soft">
         <span>{title}</span>
-        <span className="text-[0.625rem] text-ink-faint">soon</span>
+        {typeof count === "number" && count > 0 && (
+          <span className="rounded-full bg-attn-wash px-1.5 text-[0.6875rem] text-attn">{count}</span>
+        )}
       </div>
+      {children}
     </div>
   );
 }

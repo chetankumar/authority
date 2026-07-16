@@ -48,25 +48,28 @@ Resolution is server-side at run time. Unknown tokens are left literal but flagg
    - `metadata-proposals` — same pattern for metadata-update proposals.
 5. Author continues the conversation freely; accepts/rejects proposals whenever. Job status (`queued/running/done/failed`) rides the book SSE channel and shows in the AI Jobs accordion pane.
 
-## AI tool-calling surface
-
-Bound via LangChain tool-calling on every assistant invocation (chats and jobs).
-
-**Read tools — execute freely:** `get_scene(id)` (prose + metadata), `list_scenes()` (titles, seq, placement), `get_scene_summaries()`, `get_character_sheet(id|all)`, `search_text(query)` (across active scene files), `get_plotlines()`, `get_story_summary()`, `get_todos(sceneId?)`.
-
-**Write tools — never mutate; emit proposal objects into the message:** `propose_edit(sceneId, find, replace, rationale)`, `propose_metadata_update(targetType, targetId, field, newValue)`, `propose_todo(parentType, parentId, action)`.
-
-The only mutation endpoints acting on AI output are `POST /proposals/{id}/accept|reject` — both author-triggered. This is how the hard rule is enforced structurally, not by prompt.
-
 ## Enrichment (system bookkeeping)
 
 Maintains `scene.summary` and `scene.characterIds`.
 
 **Trigger — settle-then-run:** every content save with a changed hash (re)sets a per-scene 60s settle timer. Timer fires → queue one `system` job scoped by the book's toggles (`summaryOnSave`, `charactersOnSave`; both off → nothing queued). Saves while queued replace the queued job (never two per scene); navigation away settles immediately. On-demand: `POST /scenes/{id}/enrich` runs regardless of toggles.
 
-**Execution:** utility model; input = scene prose + character directory (names + aliases). Summary scope: overwrite `scene.summary`. Characters scope: set `characterIds` to matched *existing* characters only — **never creates character records**; unmatched names returned in `result.unrecognizedNames`, surfaced softly in the AI Jobs pane ("Unrecognized: Marlow — add to characters?"). Field changes emit `scene-updated` SSE so open views patch live.
+**Execution:** utility model; input = scene prose + character directory (names + aliases).
 
-**Toggle semantics:** toggle ON = AI owns the field and always wins on save. Want a hand-written summary? Flip it off. No freeze flags.
+- **Clear cases:** Summary scope overwrites `scene.summary`. Characters scope sets `characterIds` to matched *existing* characters (exact name/alias + model-confirmed ids). Field changes emit `scene-updated` SSE.
+- **Unclear cases:** unmatched names, ambiguous matches, or “is this too minor?” → **EscalationService** opens a chat on the scene seeded with the question. The AI may then `propose_character_create` (or other propose tools); the author Accepts before anything is written to the sheet. Enrichment **never silently creates** character records.
+
+**Toggle semantics:** toggle ON = AI owns the field and always wins on save for *clear* updates. Want a hand-written summary? Flip it off. No freeze flags.
+
+## AI tool-calling surface
+
+Bound via LangChain tool-calling on every assistant invocation (chats and jobs).
+
+**Read tools — execute freely:** `get_scene(id)` (prose + metadata), `list_scenes()` (titles, seq, placement), `get_scene_summaries()`, `get_character_sheet(id|all)`, `search_text(query)` (across active scene files), `get_plotlines()`, `get_story_summary()`, `get_todos(sceneId?)`.
+
+**Write tools — never mutate; emit proposal objects into the message:** `propose_edit(sceneId, find, replace, rationale)`, `propose_metadata_update(targetType, targetId, field, newValue)`, `propose_todo(parentType, parentId, action)`, `propose_character_create(name, aliases?, …, rationale, sceneId?)`.
+
+The only mutation endpoints acting on AI output are `POST /proposals/{id}/accept|reject` — both author-triggered. This is how the hard rule is enforced structurally, not by prompt.
 
 ## Streaming & events
 

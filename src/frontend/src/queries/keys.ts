@@ -12,6 +12,9 @@ export const keys = {
   scenes: (bookId: string) => ["scenes", bookId] as const,
   scene: (bookId: string, sceneId: string) => ["scene", bookId, sceneId] as const,
   todos: (bookId: string) => ["todos", bookId] as const,
+  conversations: (bookId: string, sceneId: string) => ["conversations", bookId, sceneId] as const,
+  conversation: (bookId: string, conversationId: string) => ["conversation", bookId, conversationId] as const,
+  jobs: (bookId: string, sceneId: string) => ["jobs", bookId, sceneId] as const,
   git: (bookId: string) => ["git", bookId] as const,
   compileCheck: (bookId: string) => ["compileCheck", bookId] as const,
 };

@@ -1,0 +1,386 @@
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
+import {
+  getConversation,
+  patchConversation,
+  sendMessageStream,
+  type Conversation,
+  type Message,
+  type Proposal,
+} from "../../api/conversations";
+import { acceptProposal, rejectProposal } from "../../api/proposals";
+import { listModels, type ModelConfig } from "../../api/settings";
+import { Modal } from "../../components/Modal";
+import { Button } from "../../components/ui";
+import { useToast } from "../../components/Toast";
+import { keys } from "../../queries/keys";
+
+export function ConversationModal({
+  bookId,
+  conversationId,
+  sceneId,
+  initialContext,
+  onClose,
+}: {
+  bookId: string;
+  conversationId: string;
+  sceneId?: string;
+  initialContext?: { sceneId: string; excerpt: string } | null;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const [conv, setConv] = useState<Conversation | null>(null);
+  const [models, setModels] = useState<ModelConfig[]>([]);
+  const [draft, setDraft] = useState("");
+  const [streaming, setStreaming] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showPrompt, setShowPrompt] = useState(false);
+  const pendingContext = useRef(initialContext ?? null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    void getConversation(bookId, conversationId).then(setConv);
+    void listModels().then(setModels);
+    return () => abortRef.current?.();
+  }, [bookId, conversationId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conv?.messages, streaming]);
+
+  async function refresh() {
+    const c = await getConversation(bookId, conversationId);
+    setConv(c);
+    if (sceneId) void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId) });
+  }
+
+  async function onTitleBlur(title: string) {
+    if (!conv || title === conv.title) return;
+    const updated = await patchConversation(bookId, conversationId, { title });
+    setConv(updated);
+  }
+
+  async function toggleAi(enabled: boolean) {
+    if (!conv) return;
+    try {
+      const modelId = conv.aiParticipant.modelId ?? models[0]?.id ?? null;
+      if (enabled && !modelId) {
+        setError("Pick a model to bring the AI in.");
+        return;
+      }
+      const updated = await patchConversation(bookId, conversationId, {
+        aiParticipant: { enabled, modelId },
+      });
+      setConv(updated);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update AI participant.");
+    }
+  }
+
+  async function setModel(modelId: string) {
+    if (!conv) return;
+    const updated = await patchConversation(bookId, conversationId, {
+      aiParticipant: { enabled: conv.aiParticipant.enabled, modelId },
+    });
+    setConv(updated);
+  }
+
+  function send() {
+    const content = draft.trim();
+    if (!content || busy || !conv) return;
+    setBusy(true);
+    setError(null);
+    setStreaming("");
+    setDraft("");
+    const context = pendingContext.current ? [pendingContext.current] : undefined;
+    pendingContext.current = null;
+
+    abortRef.current = sendMessageStream(
+      bookId,
+      conversationId,
+      { content, context },
+      {
+        onToken: (t) => setStreaming((s) => s + t),
+        onMessage: (msg) => {
+          if (msg.author === "user") {
+            setConv((c) => (c ? { ...c, messages: [...c.messages, msg] } : c));
+          } else {
+            setStreaming("");
+            setConv((c) => (c ? { ...c, messages: [...c.messages, msg] } : c));
+          }
+        },
+        onError: (e) => {
+          setError(e);
+          setBusy(false);
+        },
+        onDone: () => {
+          setBusy(false);
+          setStreaming("");
+          void refresh();
+        },
+      },
+    );
+  }
+
+  async function onAccept(p: Proposal) {
+    try {
+      const res = await acceptProposal(bookId, p.id);
+      if (res.proposal.status === "not-found") {
+        toast.error("This text is no longer in the scene.");
+      } else {
+        toast.success("Proposal applied");
+      }
+      await refresh();
+      if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
+      void qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't accept.");
+    }
+  }
+
+  async function onReject(p: Proposal) {
+    await rejectProposal(bookId, p.id);
+    await refresh();
+  }
+
+  async function acceptAll(pending: Proposal[]) {
+    for (const p of pending) {
+      const res = await acceptProposal(bookId, p.id);
+      if (res.proposal.status === "not-found") {
+        toast.error("A proposal's text is no longer in the scene.");
+        break;
+      }
+    }
+    await refresh();
+    if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
+  }
+
+  if (!conv) {
+    return (
+      <Modal title="Conversation" width={800} onClose={onClose}>
+        <p className="text-[0.875rem] text-ink-soft">Loading…</p>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal
+      title=""
+      width={800}
+      onClose={onClose}
+      footer={
+        <div className="flex w-full flex-col gap-2">
+          {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
+          <div className="flex gap-2">
+            <textarea
+              value={draft}
+              rows={2}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+              placeholder="Write a note or ask the AI…"
+              className="min-h-[2.5rem] flex-1 rounded-control border border-line bg-surface px-3 py-2 text-[0.875rem] text-ink outline-none focus:border-accent"
+              disabled={busy}
+            />
+            <Button variant="primary" onClick={send} disabled={busy || !draft.trim()}>
+              {busy ? "…" : "Send"}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="flex max-h-[60vh] flex-col">
+        <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
+          <input
+            defaultValue={conv.title}
+            onBlur={(e) => void onTitleBlur(e.target.value.trim() || conv.title)}
+            className="min-w-0 flex-1 bg-transparent text-[1rem] font-semibold text-ink outline-none"
+          />
+          <label className="flex items-center gap-2 text-[0.8125rem] text-ink-soft">
+            <input
+              type="checkbox"
+              checked={conv.aiParticipant.enabled}
+              onChange={(e) => void toggleAi(e.target.checked)}
+            />
+            AI
+          </label>
+          <select
+            value={conv.aiParticipant.modelId ?? ""}
+            onChange={(e) => void setModel(e.target.value)}
+            className="rounded-control border border-line bg-surface px-2 py-1 text-[0.8125rem]"
+          >
+            <option value="">Model…</option>
+            {models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
+          {conv.messages.map((m) => (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              showPrompt={showPrompt}
+              onTogglePrompt={() => setShowPrompt((s) => !s)}
+              onAccept={onAccept}
+              onReject={onReject}
+              onAcceptAll={acceptAll}
+            />
+          ))}
+          {streaming && (
+            <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
+              {streaming}
+              <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MessageBubble({
+  message,
+  showPrompt,
+  onTogglePrompt,
+  onAccept,
+  onReject,
+  onAcceptAll,
+}: {
+  message: Message;
+  showPrompt: boolean;
+  onTogglePrompt: () => void;
+  onAccept: (p: Proposal) => void;
+  onReject: (p: Proposal) => void;
+  onAcceptAll: (ps: Proposal[]) => void;
+}) {
+  if (message.author === "system") {
+    return (
+      <div className="text-[0.8125rem] text-ink-faint">
+        <button type="button" onClick={onTogglePrompt} className="underline">
+          Job prompt · {showPrompt ? "hide" : "show"}
+        </button>
+        {showPrompt && (
+          <pre className="mt-2 whitespace-pre-wrap rounded-control border border-line bg-paper p-2 font-mono text-[0.75rem] text-ink-soft">
+            {message.content}
+          </pre>
+        )}
+      </div>
+    );
+  }
+
+  const isUser = message.author === "user";
+  const pending = message.proposals.filter((p) => p.status === "pending");
+
+  return (
+    <div className={isUser ? "ml-8" : "mr-8"}>
+      {!isUser && message.modelId && (
+        <div className="mb-1 text-[0.6875rem] text-ink-faint">{message.modelId}</div>
+      )}
+      <div
+        className={[
+          "rounded-control px-3 py-2 text-[0.875rem]",
+          isUser ? "bg-accent-wash text-ink" : "bg-paper text-ink",
+        ].join(" ")}
+      >
+        {message.context.map((c, i) => (
+          <blockquote
+            key={i}
+            className="mb-2 border-l-2 border-line pl-2 text-[0.8125rem] text-ink-soft"
+          >
+            From {c.sceneId}: {c.excerpt}
+          </blockquote>
+        ))}
+        <div className="whitespace-pre-wrap">{message.content}</div>
+      </div>
+      {message.proposals.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {message.proposals.map((p) => (
+            <ProposalCard key={p.id} proposal={p} onAccept={onAccept} onReject={onReject} />
+          ))}
+          {pending.length > 1 && (
+            <Button variant="secondary" onClick={() => onAcceptAll(pending)}>
+              Accept all ({pending.length})
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProposalCard({
+  proposal,
+  onAccept,
+  onReject,
+}: {
+  proposal: Proposal;
+  onAccept: (p: Proposal) => void;
+  onReject: (p: Proposal) => void;
+}) {
+  const p = proposal.payload;
+  const pending = proposal.status === "pending";
+  const wash =
+    proposal.status === "applied"
+      ? "border-ok bg-ok-wash"
+      : proposal.status === "not-found"
+        ? "border-attn bg-attn-wash"
+        : proposal.status === "rejected"
+          ? "border-line opacity-60"
+          : "border-attn bg-attn-wash";
+
+  return (
+    <div className={`rounded-control border p-3 text-[0.8125rem] ${wash}`}>
+      {proposal.type === "edit" && (
+        <div>
+          <span className="line-through text-ink-soft">{String(p.find ?? "")}</span>
+          <span className="mx-2">→</span>
+          <span className="font-medium">{String(p.replace ?? "")}</span>
+          {p.rationale ? <p className="mt-1 text-ink-faint">{String(p.rationale)}</p> : null}
+        </div>
+      )}
+      {proposal.type === "metadata-update" && (
+        <div>
+          <span className="font-mono">{String(p.field)}</span>:{" "}
+          <span className="line-through text-ink-soft">{String(p.oldValue ?? "…")}</span>
+          <span className="mx-1">→</span>
+          <strong>{String(p.newValue ?? "")}</strong>
+        </div>
+      )}
+      {proposal.type === "todo-create" && <div>☐ {String(p.action ?? "")}</div>}
+      {proposal.type === "character-create" && (
+        <div>
+          Add character <strong>{String(p.name ?? "")}</strong>
+          {p.rationale ? <p className="mt-1 text-ink-faint">{String(p.rationale)}</p> : null}
+        </div>
+      )}
+      {proposal.status === "not-found" && (
+        <p className="mt-1 text-attn">This text is no longer in the scene.</p>
+      )}
+      {proposal.status === "applied" && <p className="mt-1 text-ok">✓ Applied</p>}
+      {pending && (
+        <div className="mt-2 flex gap-2">
+          <Button variant="ghost" onClick={() => onReject(proposal)}>
+            Reject
+          </Button>
+          <Button variant="primary" onClick={() => onAccept(proposal)}>
+            Accept
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

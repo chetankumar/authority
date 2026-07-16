@@ -214,20 +214,18 @@ Author stops typing for 60s (or navigates away → immediate settle).
           [db/jobs.json] · EventHub: job {status:"queued"}
 → WORKER  picks it up → job "running" (SSE) →
           reads scene prose [scenes/….md] + character directory (memory; empty so far)
-          → ModelFactory builds ChatAnthropic (resolves ${ANTHROPIC_API_KEY} now)
-          → one model call → summary text; character matching finds the name
-          "Marlow" but no directory entry exists → never auto-creates:
-          result.unrecognizedNames = ["Marlow"]
-→ SERVER  (lock) scene.summary = generated text · characterIds unchanged ·
+          → AIOrchestrator + utility model → summary text; character matching finds
+          the name "Marlow" but no directory entry exists → never silently creates
+→ SERVER  (lock) scene.summary = generated text · characterIds for exact matches only ·
           persist [db/scenes.json, db/jobs.json] ·
-          SSE: scene-updated {id, changed:["summary"]} · job {status:"done", result}
-→ UI      Right pane → AI Jobs: "Bookkeeping · done · Unrecognized: Marlow —
-          [Add to characters]". If the Scene Modal's Summary tab were open,
-          the text patches in live. No confirmation asked — the toggles are
-          the standing consent.
+          unmatched/ambiguous → EscalationService opens a chat on the scene seeded
+          with the question · SSE: scene-updated · job {status:"done", result}
+→ UI      Right pane → Notes/AI Jobs: escalation chat appears. Author answers;
+          AI may propose_character_create → Accept → character sheet (+ optional tag).
+          Clear bookkeeping writes need no confirm — the toggles are standing consent.
 ```
 
-**CLICK** [Add to characters] → Character Sheet flow → `POST /characters {name:"Marlow"}` `[db/characters.json]` → a later save (or Characters-tab ↻ AI-redo → `POST /scenes/{id}/enrich {scope:"characters"}`) now matches him → `scene-updated {changed:["characterIds"]}` → the chip appears.
+**CLICK** in the escalation chat → author decides → proposal Accept (when Characters API exists) → later enrichment matches him → `scene-updated {changed:["characterIds"]}`.
 
 ## J13 — Stuck: chat from a selection
 

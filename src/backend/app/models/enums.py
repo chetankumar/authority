@@ -50,3 +50,74 @@ class Placement(str, Enum):
     floating = "floating"
     orphan = "orphan"
     archived = "archived"
+
+
+class TodoStatus(str, Enum):
+    open = "open"
+    done = "done"
+    closed = "closed"
+
+
+class TodoOrigin(str, Enum):
+    user = "user"
+    dependency = "dependency"
+    ai = "ai"
+
+
+class ConversationKind(str, Enum):
+    note = "note"
+    chat = "chat"
+    ai_job = "ai-job"
+    task_discussion = "task-discussion"
+
+
+class ConversationStatus(str, Enum):
+    open = "open"
+    archived = "archived"
+
+
+class MessageAuthor(str, Enum):
+    user = "user"
+    assistant = "assistant"
+    system = "system"
+
+
+class ProposalType(str, Enum):
+    edit = "edit"
+    metadata_update = "metadata-update"
+    todo_create = "todo-create"
+    character_create = "character-create"
+
+
+class ProposalStatus(str, Enum):
+    pending = "pending"
+    applied = "applied"
+    rejected = "rejected"
+    not_found = "not-found"
+
+
+class JobType(str, Enum):
+    user = "user"
+    system = "system"
+
+
+class JobStatus(str, Enum):
+    queued = "queued"
+    running = "running"
+    done = "done"
+    failed = "failed"
+
+
+class JobScope(str, Enum):
+    full = "full"
+    selection = "selection"
+    summary = "summary"
+    characters = "characters"
+    both = "both"
+
+
+class ParentType(str, Enum):
+    scene = "scene"
+    chapter = "chapter"
+    part = "part"
+    book = "book"

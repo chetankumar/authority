@@ -29,8 +29,22 @@ export function useBookEvents(bookId: string | null): void {
           case "git-status":
             qc.setQueryData(keys.git(bookId), event.data as GitStatus);
             break;
-          // scene-updated / job / todos-created / compile-done land with the
-          // phases that own their data (doc 06 §2).
+          case "scene-updated": {
+            const data = event.data as { id?: string; changed?: string[] };
+            void qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
+            if (data.id) void qc.invalidateQueries({ queryKey: keys.scene(bookId, data.id) });
+            break;
+          }
+          case "job": {
+            const data = event.data as { sceneId?: string };
+            if (data.sceneId) {
+              void qc.invalidateQueries({ queryKey: keys.jobs(bookId, data.sceneId) });
+              void qc.invalidateQueries({ queryKey: keys.conversations(bookId, data.sceneId) });
+            } else {
+              void qc.invalidateQueries({ queryKey: ["jobs", bookId] });
+            }
+            break;
+          }
           default:
             break;
         }
@@ -38,6 +52,9 @@ export function useBookEvents(bookId: string | null): void {
       onReconnect: () => {
         // Missed events during the gap are gone for good — re-read the truth.
         qc.invalidateQueries({ queryKey: keys.git(bookId) });
+        qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
+        qc.invalidateQueries({ queryKey: ["jobs", bookId] });
+        qc.invalidateQueries({ queryKey: ["conversations", bookId] });
       },
     });
   }, [bookId, qc]);

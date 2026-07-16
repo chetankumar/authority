@@ -80,7 +80,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 **`relationshipType`** (soft): `before` · `after` · `around` — read as *fromScene is definitely-{type} toScene*.
 **`todoStatus`**: `open` · `done` · `closed`. **`todoOrigin`**: `user` · `dependency` · `ai`.
 **`conversationKind`**: `note` · `chat` · `ai-job` · `task-discussion`.
-**`proposalType`**: `edit` · `metadata-update` · `todo-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`.
+**`proposalType`**: `edit` · `metadata-update` · `todo-create` · `character-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`.
 **`jobType`**: `user` (AI-Job run) · `system` (enrichment). **`jobStatus`**: `queued` · `running` · `done` · `failed`. **`jobScope`**: `full` · `selection` (user jobs) · `summary` · `characters` · `both` (system jobs).
 **`parentType`** (conversations, todos): `scene` · `chapter` · `part` · `book`.
 **`gitFileStatus`**: `modified` · `added` · `deleted` · `untracked` · `renamed`.
@@ -164,7 +164,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "payload": { "sceneId": "scn-..", "find": "exact current text",
                "replace": "replacement text", "rationale": "why" } }
 ```
-Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`.
+Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, "personality"?, "history"?, "notes"?, "rationale"?, "sceneId"? }` — Accept runs character uniqueness checks; may be unavailable until the Characters API lands (`422 characters-unavailable`).
 
 **Job**
 ```json
@@ -446,6 +446,7 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 - **edit:** read the target scene's .md; find the *first exact occurrence* of `payload.find` (byte-exact, no normalization). Absent → status `not-found`, nothing changes, response reports it. Present → replace **one** occurrence, save through the standard content path (**PUT semantics: hash recompute → dependency fanout → settle timer** — an applied edit is a content change like any other). This is the sole prose-mutation path besides the editor, and it is author-triggered.
 - **metadata-update:** apply `payload.newValue` to `payload.field` via SceneService PATCH logic (full validation; XOR rules etc. — validation failure → 422, proposal stays pending).
 - **todo-create:** create the Todo, origin `ai`.
+- **character-create:** create the Character via StructureService uniqueness rules; optionally tag `sceneId` on the scene. 422 if Characters layer not loaded.
 Stamp status `applied` (or `not-found`) + resolvedAt; persist conversation; emit `scene-updated`/`todos-created` as applicable.
 **Response** `{ "proposal": Proposal, "result": { "wordCount"?, "contentHash"?, "todo"?: Todo } }`.
 

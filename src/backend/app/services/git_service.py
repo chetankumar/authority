@@ -27,7 +27,7 @@ from app.core.errors import ApiError, not_found
 from app.core.event_hub import EventHub
 from app.models.git import CommitInfo, GitDiff, GitFile, GitStatus, RemoteResult, SuggestedMessage
 from app.services.book_registry import BookRegistry
-from app.services.model_factory import ModelFactory
+from app.services.context_assembler import ContextAssembler
 from app.services.settings_service import SettingsService
 
 log = logging.getLogger("authority.git")
@@ -214,17 +214,16 @@ class GitService:
             return fallback
 
         try:
-            model = ModelFactory.build(cfg)
-            response = await asyncio.wait_for(
-                model.ainvoke(_SUGGEST_PROMPT + _truncate_diff(staged)),
-                timeout=_SUGGEST_TIMEOUT_SECONDS,
-            )
+            from app.api.deps import get_ai_orchestrator
+
+            orch = get_ai_orchestrator()
+            assembler = ContextAssembler()
+            messages = assembler.for_once(_SUGGEST_PROMPT + _truncate_diff(staged))
+            text = await orch.invoke_once(cfg, messages, timeout=_SUGGEST_TIMEOUT_SECONDS)
         except Exception as exc:  # noqa: BLE001 — the author still gets a message
             log.warning("suggest-message fell back to stats: %s", exc)
             return fallback
 
-        content = getattr(response, "content", "")
-        text = content if isinstance(content, str) else str(content)
         lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
         if not lines:
             return fallback

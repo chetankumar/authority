@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import datetime, timezone
+from typing import Any
 
 from app.core.atomic import atomic_write_text
 from app.core.errors import ApiError, validation
@@ -51,8 +52,12 @@ def _reject_same_neighbors(previous: str | None, next_: str | None) -> None:
 
 
 class SceneService:
-    def __init__(self, registry: BookRegistry) -> None:
+    def __init__(self, registry: BookRegistry, enrichment: Any | None = None) -> None:
         self._registry = registry
+        self._enrichment = enrichment
+
+    def set_enrichment(self, enrichment: Any) -> None:
+        self._enrichment = enrichment
 
     # ---- reads (no lock) ----------------------------------------------------
 
@@ -216,11 +221,10 @@ class SceneService:
 
             todos_created: list[dict] = []
             if hash_changed:
-                # Phase 6 hook — dependency-todo fanout: for every Dependency whose
-                # dependsOnSceneId == scene_id, create a dedup'd 'verify dependency'
-                # todo. No dependencies can exist yet, so nothing fires today.
-                # Phase 7 hook — EnrichmentService.reset_settle_timer(scene_id).
-                pass
+                # Phase 6 hook — dependency-todo fanout (when dependencies exist).
+                # Phase 7 — EnrichmentService settle timer.
+                if self._enrichment is not None:
+                    self._enrichment.reset_settle_timer(book_id, scene_id)
 
             return ContentSaveResult(wordCount=word_count, contentHash=content_hash, todosCreated=todos_created)
 
