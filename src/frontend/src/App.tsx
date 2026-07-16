@@ -108,7 +108,7 @@ function LeftNav({ bookId, collapsed }: { bookId: string | null; collapsed: bool
         { to: `/book/${bookId}/graph`, label: "Scene Graph", icon: "◇" },
         { to: `/book/${bookId}/table`, label: "Scene Table", icon: "▤" },
         { to: `/book/${bookId}/characters`, label: "Character Sheet", icon: "☺", soon: true },
-        { to: `/book/${bookId}/metadata`, label: "Metadata", icon: "❏", soon: true },
+        { to: `/book/${bookId}/metadata`, label: "Metadata", icon: "❏" },
         { to: `/book/${bookId}/tasks`, label: "Tasks", icon: "✓", soon: true },
         { to: `/book/${bookId}/git`, label: "Version control", icon: "⎇", soon: true },
       ]

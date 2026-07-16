@@ -54,7 +54,7 @@ a3f9c2-my-great-novel/
   scenes/
     1f2e9b-the-arrival.md        # prose only; source of truth for content
   db/
-    scenes.json  relationships.json  dependencies.json
+    scenes.json  relationships.json  dependencies.json  parts.json  chapters.json
     characters.json  plotlines.json  todos.json  jobs.json  ui.json
     conversations/
       index.json
@@ -77,14 +77,11 @@ Scene filenames: `{sceneHash}-{slug}.md`. Slug follows title renames; hash never
   "title": "My Great Novel",
   "systemPrompt": "Book-level style/genre notes prepended to every AI call for this book.",
   "storySummary": "Editable book-level summary (Metadata page).",
-  "bookkeeping": { "summaryOnSave": true, "charactersOnSave": true },
-  "parts":    [{ "id": "prt-x", "title": "", "description": "", "previousPartId": null, "nextPartId": null }],
-  "chapters": [{ "id": "chp-x", "title": "", "description": "", "partId": null,
-                 "previousChapterId": null, "nextChapterId": null }]
+  "bookkeeping": { "summaryOnSave": true, "charactersOnSave": true }
 }
 ```
 
-Bookkeeping toggles default **on** for new books; unknown future keys default off. Parts and chapters are linked lists ordered by prev/next; the API always returns them pre-ordered.
+Bookkeeping toggles default **on** for new books; unknown future keys default off.
 
 ## db/scenes.json — array of
 
@@ -97,6 +94,7 @@ Bookkeeping toggles default **on** for new books; unknown future keys default of
   "location": "", "dateTime": "",
   "previousSceneId": null, "nextSceneId": null,
   "chapterId": null, "partId": null,
+  "primaryPlotlineId": null, "secondaryPlotlineIds": [],
   "mood": "", "emotionalArc": "", "summary": "",
   "characterIds": [],
   "status": "active",
@@ -119,6 +117,22 @@ Bookkeeping toggles default **on** for new books; unknown future keys default of
 ```
 
 Semantics: *from is definitely-{type} to*. Rendered as thin dotted arrows ("around": no arrowhead).
+
+## db/parts.json — array of
+
+```json
+{ "id": "prt-x", "title": "Part One", "description": "", "seq": 1 }
+```
+
+Simple integer ordering. New parts are appended with `seq = max + 1`. Reordering reassigns seq 1..n from a client-provided ordered ID list. No linked-list pointers.
+
+## db/chapters.json — array of
+
+```json
+{ "id": "chp-x", "title": "Chapter 1", "description": "", "partId": "prt-x", "seq": 1 }
+```
+
+Global seq across the whole book (not per-part). The client groups chapters by `partId` for display; chapters with `partId: null` appear as "Unassigned". Reordering works the same as parts.
 
 ## db/dependencies.json
 
@@ -150,8 +164,10 @@ The character collection is the master name list. Aliases feed the enrichment ma
 ## db/plotlines.json
 
 ```json
-{ "id": "plt-x", "title": "", "description": "", "sceneIds": [] }
+{ "id": "plt-x", "title": "", "description": "" }
 ```
+
+Plotlines do not store scene references. The relationship is owned by scenes via `primaryPlotlineId` and `secondaryPlotlineIds`. The API computes `sceneCount` by scanning scenes on read.
 
 ## db/conversations/cnv-*.json (one file per conversation)
 

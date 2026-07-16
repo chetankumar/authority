@@ -10,6 +10,7 @@ from app.services.book_scanner import BookScanner
 from app.services.book_service import BookService
 from app.services.scene_service import SceneService
 from app.services.settings_service import SettingsService
+from app.services.structure_service import StructureService
 
 
 @lru_cache(maxsize=1)
@@ -35,3 +36,8 @@ def get_book_registry() -> BookRegistry:
 @lru_cache(maxsize=1)
 def get_scene_service() -> SceneService:
     return SceneService(get_book_registry())
+
+
+@lru_cache(maxsize=1)
+def get_structure_service() -> StructureService:
+    return StructureService(get_book_registry())

@@ -18,6 +18,8 @@ export interface Scene {
   nextSceneId: string | null;
   chapterId: string | null;
   partId: string | null;
+  primaryPlotlineId: string | null;
+  secondaryPlotlineIds: string[];
   mood: string;
   emotionalArc: string;
   summary: string;
@@ -73,6 +75,8 @@ export interface SceneCreate {
   softRelations?: SoftRelationInput[];
   chapterId?: string | null;
   partId?: string | null;
+  primaryPlotlineId?: string | null;
+  secondaryPlotlineIds?: string[];
   location?: string;
   dateTime?: string;
   mood?: string;
@@ -91,6 +95,8 @@ export interface SceneUpdate {
   characterIds?: string[];
   chapterId?: string | null;
   partId?: string | null;
+  primaryPlotlineId?: string | null;
+  secondaryPlotlineIds?: string[];
   previousSceneId?: string | null;
   nextSceneId?: string | null;
   status?: SceneStatus;

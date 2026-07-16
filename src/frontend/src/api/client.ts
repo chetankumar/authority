@@ -35,6 +35,8 @@ export class ApiError extends Error {
       conversations: "conversation",
       plotlines: "plotline",
       jobs: "running job",
+      chapters: "chapter",
+      scenes: "scene",
     };
     for (const [key, label] of Object.entries(labels)) {
       const arr = blocked[key];

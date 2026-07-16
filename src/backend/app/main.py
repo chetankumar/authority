@@ -18,9 +18,11 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.api.books.router import router as books_router
 from app.api.health.router import router as health_router
+from app.api.plotlines.router import router as plotlines_router
 from app.api.relationships.router import router as relationships_router
 from app.api.scenes.router import router as scenes_router
 from app.api.settings.router import router as settings_router
+from app.api.structure.router import router as structure_router
 from app.core.config import load_config
 from app.core.errors import ApiError
 from app.core.logging import setup_logging
@@ -65,6 +67,8 @@ app.include_router(settings_router, prefix="/api")
 app.include_router(books_router, prefix="/api")
 app.include_router(scenes_router, prefix="/api")
 app.include_router(relationships_router, prefix="/api")
+app.include_router(structure_router, prefix="/api")
+app.include_router(plotlines_router, prefix="/api")
 
 _DIST = config.frontend_dist
 

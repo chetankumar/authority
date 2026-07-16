@@ -10,12 +10,20 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import FileResponse
 
+from pydantic import BaseModel
+
 from app.api.deps import get_book_registry, get_book_scanner, get_book_service
 from app.core.errors import not_found
-from app.models.book import Book, BookSummary
+from app.models.book import Book, Bookkeeping, BookSummary
 from app.services.book_registry import BookRegistry
 from app.services.book_scanner import BookScanner
 from app.services.book_service import BookService
+
+
+class BookPatch(BaseModel):
+    systemPrompt: str | None = None
+    storySummary: str | None = None
+    bookkeeping: Bookkeeping | None = None
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -47,6 +55,22 @@ async def create_book(
 @router.get("/{book_id}", response_model=Book)
 async def get_book(book_id: str, registry: BookRegistry = Registry) -> Book:
     return registry.get(book_id).get_book()
+
+
+@router.patch("/{book_id}", response_model=Book)
+async def patch_book(book_id: str, body: BookPatch, registry: BookRegistry = Registry) -> Book:
+    """Partial update for Book-tab fields: systemPrompt, storySummary, bookkeeping."""
+    mgr = registry.get(book_id)
+    async with mgr.lock:
+        config = mgr.config
+        if body.systemPrompt is not None:
+            config.systemPrompt = body.systemPrompt
+        if body.storySummary is not None:
+            config.storySummary = body.storySummary
+        if body.bookkeeping is not None:
+            config.bookkeeping = body.bookkeeping
+        mgr.save_config()
+    return mgr.get_book()
 
 
 @router.get("/{book_id}/cover")

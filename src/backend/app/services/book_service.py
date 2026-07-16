@@ -32,6 +32,8 @@ _EMPTY_ARRAY_FILES = (
     "plotlines.json",
     "todos.json",
     "jobs.json",
+    "parts.json",
+    "chapters.json",
 )
 
 _CONTENT_TYPE_EXT = {

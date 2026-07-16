@@ -22,7 +22,8 @@ from typing import Any
 
 from app.core.atomic import atomic_write_json
 from app.core.errors import ApiError
-from app.models.book import Book, BookConfig
+from app.models.book import Book, BookConfig, Chapter, Part
+from app.models.plotline import PlotlineRecord
 from app.models.scene import SceneRecord, SoftRelationship
 from app.services.book_scanner import _find_cover
 
@@ -36,6 +37,9 @@ class BookDataManager:
         self._config: BookConfig | None = None
         self._scenes: list[SceneRecord] | None = None
         self._relationships: list[SoftRelationship] | None = None
+        self._parts: list[Part] | None = None
+        self._chapters: list[Chapter] | None = None
+        self._plotlines: list[PlotlineRecord] | None = None
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -70,6 +74,8 @@ class BookDataManager:
 
     def get_book(self) -> Book:
         config = self._load()
+        parts = sorted(self.get_parts(), key=lambda p: p.seq)
+        chapters = sorted(self.get_chapters(), key=lambda c: c.seq)
         return Book(
             id=config.id,
             title=config.title,
@@ -77,8 +83,8 @@ class BookDataManager:
             systemPrompt=config.systemPrompt,
             storySummary=config.storySummary,
             bookkeeping=config.bookkeeping,
-            parts=config.parts,
-            chapters=config.chapters,
+            parts=parts,
+            chapters=chapters,
         )
 
     @property
@@ -98,7 +104,7 @@ class BookDataManager:
             log.error("%s in %s failed to load (%s); quarantine failed", path.name, self._dir.name, exc)
         raise ApiError(422, "This book's data couldn't be read.", {"code": "data-unreadable", "file": path.name})
 
-    def _load_collection(self, name: str, model: type[SceneRecord] | type[SoftRelationship]) -> list:
+    def _load_collection(self, name: str, model: type) -> list:
         path = self._dir / "db" / name
         try:
             raw = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
@@ -126,6 +132,40 @@ class BookDataManager:
             self._dir / "db" / "relationships.json", [r.model_dump(mode="json") for r in relationships]
         )
         self._relationships = relationships
+
+    # ---- parts / chapters / plotlines (doc 03) --------------------------------
+
+    def get_parts(self) -> list[Part]:
+        if self._parts is None:
+            self._parts = self._load_collection("parts.json", Part)
+        return self._parts
+
+    def save_parts(self, parts: list[Part]) -> None:
+        atomic_write_json(self._dir / "db" / "parts.json", [p.model_dump(mode="json") for p in parts])
+        self._parts = parts
+
+    def get_chapters(self) -> list[Chapter]:
+        if self._chapters is None:
+            self._chapters = self._load_collection("chapters.json", Chapter)
+        return self._chapters
+
+    def save_chapters(self, chapters: list[Chapter]) -> None:
+        atomic_write_json(self._dir / "db" / "chapters.json", [c.model_dump(mode="json") for c in chapters])
+        self._chapters = chapters
+
+    def get_plotlines(self) -> list[PlotlineRecord]:
+        if self._plotlines is None:
+            self._plotlines = self._load_collection("plotlines.json", PlotlineRecord)
+        return self._plotlines
+
+    def save_plotlines(self, plotlines: list[PlotlineRecord]) -> None:
+        atomic_write_json(self._dir / "db" / "plotlines.json", [p.model_dump(mode="json") for p in plotlines])
+        self._plotlines = plotlines
+
+    def save_config(self) -> None:
+        """Persist the in-memory config back to disk."""
+        if self._config is not None:
+            atomic_write_json(self._config_path(), self._config.model_dump(mode="json"))
 
     # ---- ui.json (client-owned shape, doc 04 §4) ----------------------------
 

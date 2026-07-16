@@ -17,8 +17,7 @@ export interface Part {
   id: string;
   title: string;
   description: string;
-  previousPartId: string | null;
-  nextPartId: string | null;
+  seq: number;
 }
 
 export interface Chapter {
@@ -26,8 +25,7 @@ export interface Chapter {
   title: string;
   description: string;
   partId: string | null;
-  previousChapterId: string | null;
-  nextChapterId: string | null;
+  seq: number;
 }
 
 export interface Book {
@@ -41,8 +39,15 @@ export interface Book {
   chapters: Chapter[];
 }
 
+export interface BookPatch {
+  systemPrompt?: string;
+  storySummary?: string;
+  bookkeeping?: Bookkeeping;
+}
+
 export const listBooks = () => apiGet<BookSummary[]>("/books");
 export const getBook = (id: string) => apiGet<Book>(`/books/${id}`);
+export const patchBook = (id: string, body: BookPatch) => apiSend<Book>("PATCH", `/books/${id}`, body);
 
 export function createBook(title: string, cover?: File | null): Promise<BookSummary> {
   const form = new FormData();

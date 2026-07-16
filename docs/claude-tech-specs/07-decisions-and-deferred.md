@@ -23,6 +23,8 @@
 19. Markers deferred; selection-as-context is the v1 substitute.
 20. Placeholder registry server-owned; @-autocomplete; save-time validation. `@previous_scenes_summary` = full prior chain, summaries only.
 21. **Theming (added post-v1-draft):** `light / dark / system`, default `system`; **app-level** preference in `app.json` (`appearance.theme`), never per book (a theme is a viewing preference, not part of the portable manuscript). Delivered purely through semantic CSS-variable tokens — light on `:root`, dark on `:root[data-theme="dark"]`; components reference tokens only, **no raw hex and no per-component light/dark stylesheets** (a theme difference gets a new token, not a second rule). Top-bar sun/moon toggle. Supersedes the earlier "dark theme out of v1 scope" note in doc 06 §1.2.
+22. **Parts/chapters use seq-based ordering** (not linked lists). Each part and chapter has a simple `seq` integer. Reordering is done via a dedicated reorder endpoint that accepts the full ordered list of IDs and reassigns seq 1..n. Drag-and-drop in the Metadata page. Stored in `db/parts.json` and `db/chapters.json`, not in `config/book.json`.
+23. **Plotline-scene relationship owned by Scene.** Scenes carry `primaryPlotlineId` (single FK, nullable) and `secondaryPlotlineIds` (array). Plotlines on disk are just `{ id, title, description }` — no scene references. `sceneCount` is computed by scanning scenes. Plotline assignment lives in the Scene Modal Basics tab.
 
 ## Defaults chosen by the spec (author may veto at review)
 
@@ -30,7 +32,7 @@ These closed remaining open threads with reasonable defaults; each is a one-line
 
 1. **Todo statuses:** `open / done / closed` — no in-progress state.
 2. **Character deletion:** blocked (409) while referenced by scenes — consistent with parts/chapters strictness.
-3. **Plotline deletion:** blocked while scenes linked.
+3. **Plotline deletion:** blocked while any scene references it (via `primaryPlotlineId` or `secondaryPlotlineIds`).
 4. **Soft-relation contradiction at compile time** (chain order violates a "definitely before/after") = **error**; satisfied/redundant soft relations = warning inviting cleanup.
 5. **Empty chapter at compile** = warning, emitted as heading-only file (not a block).
 6. **Bookkeeping toggles default ON** for new books.

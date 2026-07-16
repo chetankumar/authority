@@ -81,6 +81,7 @@ class SceneService:
             if not body.description.strip():
                 raise validation({"description": "A one-line description is required."})
             self._validate_structure(mgr, body.chapterId, body.partId)
+            self._validate_plotlines(mgr, body.primaryPlotlineId, body.secondaryPlotlineIds or None)
 
             working = {r.id: r.model_copy(deep=True) for r in mgr.get_scenes()}
 
@@ -160,6 +161,15 @@ class SceneService:
                 self._validate_structure(mgr, chapter_id, part_id)
                 record.chapterId = chapter_id
                 record.partId = part_id
+
+            if "primaryPlotlineId" in fields or "secondaryPlotlineIds" in fields:
+                p_id = body.primaryPlotlineId if "primaryPlotlineId" in fields else record.primaryPlotlineId
+                s_ids = body.secondaryPlotlineIds if "secondaryPlotlineIds" in fields else record.secondaryPlotlineIds
+                self._validate_plotlines(mgr, p_id, s_ids or None)
+                if "primaryPlotlineId" in fields:
+                    record.primaryPlotlineId = body.primaryPlotlineId
+                if "secondaryPlotlineIds" in fields:
+                    record.secondaryPlotlineIds = body.secondaryPlotlineIds
 
             if "status" in fields and body.status is not None:
                 if body.status == SceneStatus.archived and record.status != SceneStatus.archived:
@@ -264,11 +274,6 @@ class SceneService:
             if convo_hits:
                 blocked["conversations"] = [{"id": c["id"], "title": c.get("title", "")} for c in convo_hits]
 
-            plotlines = self._load_json(mgr, "plotlines.json")
-            plt_hits = [p for p in plotlines if scene_id in (p.get("sceneIds") or [])]
-            if plt_hits:
-                blocked["plotlines"] = [{"id": p["id"], "title": p.get("title", "")} for p in plt_hits]
-
             jobs = self._load_json(mgr, "jobs.json")
             job_hits = [j for j in jobs if j.get("sceneId") == scene_id and j.get("jobStatus") in ("queued", "running")]
             if job_hits:
@@ -353,11 +358,21 @@ class SceneService:
     def _validate_structure(self, mgr, chapter_id: str | None, part_id: str | None) -> None:
         if chapter_id and part_id:
             raise validation({"structure": "A scene belongs to a chapter or a part, not both."}, code="chapter-xor-part")
-        config = mgr.config
-        if chapter_id and not any(c.id == chapter_id for c in config.chapters):
+        if chapter_id and not any(c.id == chapter_id for c in mgr.get_chapters()):
             raise validation({"chapterId": "Unknown chapter."})
-        if part_id and not any(p.id == part_id for p in config.parts):
+        if part_id and not any(p.id == part_id for p in mgr.get_parts()):
             raise validation({"partId": "Unknown part."})
+
+    def _validate_plotlines(self, mgr, primary_id: str | None, secondary_ids: list[str] | None) -> None:
+        plotlines = {p.id for p in mgr.get_plotlines()}
+        if primary_id and primary_id not in plotlines:
+            raise validation({"primaryPlotlineId": "Unknown plotline."})
+        if secondary_ids:
+            for sid in secondary_ids:
+                if sid not in plotlines:
+                    raise validation({"secondaryPlotlineIds": f"Unknown plotline: {sid}"})
+            if primary_id and primary_id in secondary_ids:
+                raise validation({"primaryPlotlineId": "Primary plotline must not also appear in secondary plotlines."})
 
     def _find_duplicate(self, relationships: list[SoftRelationship], from_id: str, to_id: str, rtype) -> SoftRelationship | None:
         for r in relationships:

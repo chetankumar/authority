@@ -20,7 +20,7 @@ interface Section {
 const SECTIONS: Section[] = [
   { key: "graph", label: "Scene Graph", description: "See the story's shape", icon: "◇", path: "graph" },
   { key: "table", label: "Scene Table", description: "The working ledger of scenes", icon: "▤", path: "table" },
-  { key: "metadata", label: "Metadata", description: "Parts, chapters, plotlines & summary", icon: "❏" },
+  { key: "metadata", label: "Metadata", description: "Parts, chapters, plotlines & summary", icon: "❏", path: "metadata" },
   { key: "characters", label: "Characters", description: "The cast and their details", icon: "☺" },
   { key: "tasks", label: "Tasks", description: "To-dos across the book", icon: "✓" },
   { key: "notes", label: "Notes", description: "Conversations & AI chats", icon: "✎" },

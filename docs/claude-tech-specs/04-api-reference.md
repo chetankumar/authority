@@ -121,8 +121,8 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 ```
 `parts` pre-sorted in chain order; `chapters` pre-sorted and carrying `partId` (grouping is a client concern). `bookkeeping` keys = standing consents for EnrichmentService.
 
-**Part** `{ "id", "title", "description", "previousPartId", "nextPartId" }`
-**Chapter** `{ "id", "title", "description", "partId", "previousChapterId", "nextChapterId" }`
+**Part** `{ "id", "title", "description", "seq" }` — `seq` is a simple integer for ordering; no linked-list pointers. The API returns parts sorted by seq.
+**Chapter** `{ "id", "title", "description", "partId", "seq" }` — `seq` is global across the book (not per-part). The client groups by `partId` for display.
 
 **Scene** (metadata; prose never included except where noted)
 ```json
@@ -130,6 +130,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "description": "...", "location": "", "dateTime": "",
   "previousSceneId": "scn-START", "nextSceneId": "scn-7bd210",
   "chapterId": null, "partId": null,
+  "primaryPlotlineId": null, "secondaryPlotlineIds": [],
   "mood": "", "emotionalArc": "", "summary": "",
   "characterIds": ["chr-x"], "status": "active",
   "contentHash": "sha256:...", "wordCount": 1240,
@@ -137,11 +138,12 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "createdAt": "...", "updatedAt": "..." }
 ```
 `seq`/`placement` are **computed** by ChainService on read, never stored. `chapterId` XOR `partId` (both nullable, never both set). `dateTime`/`location` are free-text *story* values. `summary`/`characterIds` are system-maintained when the corresponding bookkeeping toggle is on, manually editable regardless.
+`primaryPlotlineId` is the scene's main plotline (nullable). `secondaryPlotlineIds` lists additional plotlines. A primary must not also appear in secondaries.
 
 **SoftRelationship** `{ "id", "fromSceneId", "toSceneId", "type", "createdAt" }`
 **Dependency** `{ "id", "sceneId", "dependsOnSceneId", "reason", "createdAt" }` — `sceneId` is the *dependent* scene; `reason` required, human text explaining the logical link.
 **Character** `{ "id", "name", "aliases": [], "personality", "history", "notes", "sceneCount": 3 }` — `sceneCount` computed. Uniqueness enforced across all names **and** aliases.
-**Plotline** `{ "id", "title", "description", "sceneIds": [], "sceneCount": 5 }`
+**Plotline** `{ "id", "title", "description", "sceneCount": 5 }` — `sceneCount` is computed by scanning scenes (via `primaryPlotlineId` and `secondaryPlotlineIds`). Plotlines do not store scene references.
 **Todo** `{ "id", "parentType", "parentId", "parentTitle", "action", "status", "origin", "sourceDependencyId", "conversationId", "createdAt", "updatedAt" }` — `parentTitle` resolved on read for grid display.
 
 **ConversationSummary** (index rows) `{ "id", "kind", "title", "parentType", "parentId", "status", "updatedAt", "messageCount", "pendingProposals" }`
@@ -266,6 +268,9 @@ Removes the definition. Historical job records/conversations keep the id + a nam
 **Fields (all optional):** `title` · `cover` (file) · `removeCover` (bool) · `systemPrompt` · `storySummary` · `bookkeeping` (JSON string `{ "summaryOnSave"?, "charactersOnSave"? }`, shallow-merged).
 **Logic:** under the book lock — 1) title: update book.json; compute new slug; `os.rename` the book folder (403 on failure, e.g. folder locked by another program; title change rolled back); BookScanner cache update. 2) cover/removeCover: replace or delete `assets/cover.*`. 3) Text/bookkeeping fields merged and persisted. 4) Git dirty-check + `git-status` emit; **title renames additionally auto-commit** `"renamed to {title}"` (folder+config must stay consistent in history). **Response** updated Book.
 
+### PATCH /api/books/{id} — JSON
+**Request** `{ "systemPrompt"?, "storySummary"?, "bookkeeping"?: { "summaryOnSave"?, "charactersOnSave"? } }` — JSON-only alternative for the Book tab on the Metadata page (no title rename or cover handling). Same merge/persist logic as the multipart variant for these fields. **Response** updated Book.
+
 ### GET /api/books/{id}/cover
 Streams the cover with correct content-type; **404** if none (client renders placeholder).
 
@@ -347,27 +352,31 @@ Removes it; existing dependency-generated todos remain (they're the author's to 
 
 ## 7. Parts, Chapters, Plotlines, Characters
 
-### GET /api/books/{b}/parts → `[Part]` chain-ordered (ChainService resolves the linked list; broken links repaired best-effort at load and logged).
+### GET /api/books/{b}/parts → `[Part]` sorted by `seq`.
 
 ### POST /api/books/{b}/parts
-**Request** `{ "title": required, "description"?: "" }`. Appends to the chain tail (new part's previous = current tail). **201** Part.
+**Request** `{ "title": required, "description"?: "" }`. Assigns `seq = max(existing) + 1`. **201** Part.
 
 ### PATCH /api/books/{b}/parts/{id}
-**Request** `{ "title"?, "description"?, "moveBefore"?: "prt-..", "moveAfter"?: "prt-.." }` — moveBefore/moveAfter (mutually exclusive, 422 if both) reposition via StructureService: detach-heal, re-link at target. **Response** the full ordered `[Part]` (moves affect siblings; simpler to return the list).
+**Request** `{ "title"?, "description"? }` — metadata only, no reordering (use the reorder endpoint). **Response** Part.
+
+### POST /api/books/{b}/parts/reorder
+**Request** `{ "ids": ["prt-a", "prt-b", ...] }` — the complete ordered list of all part IDs. Validates every existing part is present (422 if missing or extra). Reassigns `seq` 1..n in the given order. **Response** `[Part]` in new order.
 
 ### DELETE /api/books/{b}/parts/{id}
-**Logic:** collect chapters with this partId + scenes with this partId. Any → **409** `{ "blockedBy": { "chapters": [{id,title}], "scenes": [{id,title}] } }` — the author must manually unassign each before deletion succeeds (strict rule; nothing is auto-unassigned). Else: heal the part chain, delete. **204**.
+**Logic:** collect chapters with this partId + scenes with this partId. Any → **409** `{ "blockedBy": { "chapters": [{id,title}], "scenes": [{id,title}] } }` — the author must manually unassign each before deletion succeeds (strict rule; nothing is auto-unassigned). Else: delete and compact remaining seq numbers. **204**.
 
-### Chapters — same contract as parts, plus:
-- `GET` → `[Chapter]` each carrying `partId`, ordered by chain within the whole collection (client groups by part; part-less chapters group as "unassigned").
-- `POST` request adds `"partId"?: "prt-.."` (optional; assignable later — but required for compilation).
-- `PATCH` also accepts `partId` (or `null` to unassign).
-- `DELETE` blocked (409) while any scene has this chapterId, listing them.
+### Chapters — same CRUD contract as parts, plus:
+- `GET` → `[Chapter]` each carrying `partId`, sorted by global `seq` (client groups by part; part-less chapters group as "unassigned").
+- `POST` request adds `"partId"?: "prt-.."` (optional; assignable later — but required for compilation). Auto-assigns next seq.
+- `PATCH` also accepts `partId` (or `null` to unassign). Metadata only, no reordering.
+- `POST /api/books/{b}/chapters/reorder` — `{ "ids": [...] }` reassigns seq 1..n. Same semantics as parts reorder.
+- `DELETE` blocked (409) while any scene has this chapterId, listing them. Compacts seq on success.
 
-### GET /api/books/{b}/plotlines → `[Plotline]` with computed sceneCounts.
+### GET /api/books/{b}/plotlines → `[Plotline]` with computed `sceneCount` (scanned from scenes' `primaryPlotlineId` and `secondaryPlotlineIds`).
 ### POST — `{ "title": required, "description"? }` → 201.
-### PATCH /{id} — `{ "title"?, "description"?, "sceneIds"?: [..] }` — sceneIds full-replacement (populated via accepted chat proposals or future UI); unknown scene ids 422.
-### DELETE /{id} — **409** `{ "blockedBy": { "scenes": [...] } }` while sceneIds non-empty; unlink first.
+### PATCH /{id} — `{ "title"?, "description"? }`.
+### DELETE /{id} — **409** `{ "blockedBy": { "scenes": [{id,title}] } }` while any scene references this plotline (via `primaryPlotlineId` or `secondaryPlotlineIds`); unassign from scenes first.
 
 ### GET /api/books/{b}/characters → `[Character]` with sceneCounts.
 ### POST — `{ "name": required, "aliases"?: [], "personality"?, "history"?, "notes"? }`. **Uniqueness:** the new name and every alias must not collide (case-insensitive) with any existing character's name or aliases → 422 `{ "conflict": { "value": "Marlow", "existingCharacter": {id,name} } }`. The enrichment matcher must never face ambiguity.

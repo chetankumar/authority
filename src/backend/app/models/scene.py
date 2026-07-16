@@ -1,9 +1,9 @@
-"""Scene & soft-relationship schemas (doc 03 §db/scenes.json, §db/relationships.json;
-doc 04 §2.2, §5, §6).
+"""Scene & soft-relationship schemas (doc 03 db/scenes.json, db/relationships.json;
+doc 04 2.2, 5, 6).
 
 ``SceneRecord`` is the persisted shape in ``db/scenes.json``. ``Scene`` is the API
-response — the record plus ``seq``/``placement``, which ChainService **computes on
-read** and never stores. Prose lives only in the ``.md`` file; it rides a response
+response - the record plus ``seq``/``placement``, which ChainService computes on
+read and never stores. Prose lives only in the ``.md`` file; it rides a response
 only for the editor load (``SceneWithContent``).
 """
 
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.models.enums import Placement, RelationshipType, SceneStatus
 
-# Virtual sentinels (doc 03 §ID scheme): recordless, valid chain endpoints.
+# Virtual sentinels (doc 03 ID scheme): recordless, valid chain endpoints.
 START_ID = "scn-START"
 END_ID = "scn-END"
 SENTINELS = (START_ID, END_ID)
@@ -32,6 +32,8 @@ class SceneRecord(BaseModel):
     nextSceneId: str | None = None
     chapterId: str | None = None
     partId: str | None = None
+    primaryPlotlineId: str | None = None
+    secondaryPlotlineIds: list[str] = Field(default_factory=list)
     mood: str = ""
     emotionalArc: str = ""
     summary: str = ""
@@ -44,20 +46,20 @@ class SceneRecord(BaseModel):
 
 
 class Scene(SceneRecord):
-    """API scene (doc 04 §2.2): record + computed placement/seq."""
+    """API scene (doc 04 2.2): record + computed placement/seq."""
 
     seq: int | None = None
     placement: Placement = Placement.orphan
 
 
 class SceneWithContent(Scene):
-    """Editor load only (doc 04 §5 GET scene): metadata + full prose."""
+    """Editor load only (doc 04 5 GET scene): metadata + full prose."""
 
     content: str = ""
 
 
 class SoftRelationship(BaseModel):
-    """Soft edge in ``db/relationships.json`` (doc 03, doc 04 §2.2)."""
+    """Soft edge in ``db/relationships.json`` (doc 03, doc 04 2.2)."""
 
     id: str
     fromSceneId: str
@@ -82,6 +84,8 @@ class SceneCreate(BaseModel):
     softRelations: list[SoftRelationInput] = Field(default_factory=list)
     chapterId: str | None = None
     partId: str | None = None
+    primaryPlotlineId: str | None = None
+    secondaryPlotlineIds: list[str] = Field(default_factory=list)
     location: str = ""
     dateTime: str = ""
     mood: str = ""
@@ -89,7 +93,7 @@ class SceneCreate(BaseModel):
 
 
 class SceneUpdate(BaseModel):
-    """Partial PATCH (doc 04 §5): omitted = unchanged; explicit ``null`` clears a
+    """Partial PATCH (doc 04 5): omitted = unchanged; explicit ``null`` clears a
     nullable field. ``model_fields_set`` distinguishes "omitted" from "sent null".
     """
 
@@ -103,6 +107,8 @@ class SceneUpdate(BaseModel):
     characterIds: list[str] | None = None
     chapterId: str | None = None
     partId: str | None = None
+    primaryPlotlineId: str | None = None
+    secondaryPlotlineIds: list[str] | None = None
     previousSceneId: str | None = None
     nextSceneId: str | None = None
     status: SceneStatus | None = None
@@ -128,7 +134,7 @@ class ScenesResponse(BaseModel):
 
 
 class SceneMutationResult(BaseModel):
-    """POST/PATCH scene (doc 04 §5): the scene plus neighbors whose links changed,
+    """POST/PATCH scene (doc 04 5): the scene plus neighbors whose links changed,
     so the client patches the graph without a refetch."""
 
     scene: Scene

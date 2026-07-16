@@ -21,8 +21,7 @@ class Part(BaseModel):
     id: str
     title: str = ""
     description: str = ""
-    previousPartId: str | None = None
-    nextPartId: str | None = None
+    seq: int = 0
 
 
 class Chapter(BaseModel):
@@ -30,20 +29,17 @@ class Chapter(BaseModel):
     title: str = ""
     description: str = ""
     partId: str | None = None
-    previousChapterId: str | None = None
-    nextChapterId: str | None = None
+    seq: int = 0
 
 
 class BookConfig(BaseModel):
-    """Persisted ``config/book.json``."""
+    """Persisted ``config/book.json``. Parts and chapters live in db/ files."""
 
     id: str
     title: str
     systemPrompt: str = ""
     storySummary: str = ""
     bookkeeping: Bookkeeping = Field(default_factory=Bookkeeping)
-    parts: list[Part] = Field(default_factory=list)
-    chapters: list[Chapter] = Field(default_factory=list)
 
 
 class Book(BaseModel):

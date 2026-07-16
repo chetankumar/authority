@@ -132,7 +132,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | BOOK-API-01 | ✅ | `GET /api/books` | Shelf from live folder scan. | `src/backend/app/api/books/router.py`, `src/backend/app/services/book_scanner.py` |
 | BOOK-API-02 | ✅ | `POST /api/books` (multipart) | Create book with scaffold + git init. | `src/backend/app/api/books/router.py`, `src/backend/app/services/book_service.py` |
 | BOOK-API-03 | ✅ | `GET /api/books/{id}` | Full book context. | `src/backend/app/api/books/router.py`, `src/backend/app/services/book_data_manager.py`, `src/backend/app/services/book_registry.py` |
-| BOOK-API-04 | ⬜ | `PATCH /api/books/{id}` (multipart) | Rename book, change cover, edit summary/prompt, toggle bookkeeping. | **Modify:** `src/backend/app/api/books/router.py`, `src/backend/app/services/book_service.py`, `src/backend/app/services/book_data_manager.py`, `src/backend/app/services/book_scanner.py`; **Read:** `src/backend/app/models/book.py` |
+| BOOK-API-04 | 🔄 | `PATCH /api/books/{id}` (JSON partial) | Edit summary/prompt, toggle bookkeeping (title rename + cover = future). | `src/backend/app/api/books/router.py`, `src/backend/app/services/book_data_manager.py` |
 | BOOK-API-05 | ✅ | `GET /api/books/{id}/cover` | Cover images for shelf. | `src/backend/app/api/books/router.py` |
 | BOOK-API-06 | ✅ | `GET /api/books/{id}/ui` | Persisted UI prefs per book. | `src/backend/app/api/books/router.py`, `src/backend/app/services/book_data_manager.py` |
 | BOOK-API-07 | ✅ | `PATCH /api/books/{id}/ui` | Remember column/pane state. | Same as above |
@@ -140,7 +140,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | BOOK-SVC-02 | ✅ | BookService.create | New books are portable git repos. | `src/backend/app/services/book_service.py` |
 | BOOK-SVC-03 | ⬜ | BookService.patch (rename, cover, metadata) | Book edits consistent on disk and in git. | **Modify:** `src/backend/app/services/book_service.py`, `src/backend/app/services/book_data_manager.py` |
 | BOOK-SVC-04 | ✅ | BookDataManager (config + scenes + rels + ui) | One in-memory owner per book. | `src/backend/app/services/book_data_manager.py` |
-| BOOK-SVC-05 | 🔄 | BookDataManager — load all `db/*.json` | Characters, todos, jobs, plotlines in memory. | **Modify:** `src/backend/app/services/book_data_manager.py`; **Read:** `src/backend/app/models/enums.py` |
+| BOOK-SVC-05 | 🔄 | BookDataManager — load all `db/*.json` | Parts, chapters, plotlines in memory (characters, todos, jobs pending). | `src/backend/app/services/book_data_manager.py` |
 | BOOK-SVC-06 | ⬜ | BookDataManager — conversations index | Per-conversation JSON and derived index. | **Modify:** `src/backend/app/services/book_data_manager.py` |
 
 ### Frontend — Bookshelf & book home
@@ -306,23 +306,25 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 | ID | Status | Endpoint | User story | Files |
 |---|---|---|---|---|
-| STR-API-01 | ⬜ | `GET /books/{b}/parts` | Ordered parts for metadata/picks. | **Create:** `src/backend/app/api/structure/router.py`, `src/backend/app/api/structure/__init__.py`; **Create:** `src/backend/app/services/structure_service.py`; **Modify:** `src/backend/app/models/book.py` (if needed), `src/backend/app/main.py` (register router), `src/backend/app/api/deps.py` (add `get_structure_service`) |
-| STR-API-02 | ⬜ | `POST /books/{b}/parts` | Add parts to structure book. | Same files as STR-API-01 |
-| STR-API-03 | ⬜ | `PATCH /books/{b}/parts/{id}` | Reorder parts (moveBefore/moveAfter). | Same files |
-| STR-API-04 | ⬜ | `DELETE /books/{b}/parts/{id}` (409) | Blocked until unassigned. | Same files |
-| STR-API-05 | ⬜ | `GET /books/{b}/chapters` | Chapters with partId grouping. | Same files as STR-API-01 |
-| STR-API-06 | ⬜ | `POST /books/{b}/chapters` | Create chapters. | Same files |
-| STR-API-07 | ⬜ | `PATCH /books/{b}/chapters/{id}` | Assign/reorder chapters. | Same files |
-| STR-API-08 | ⬜ | `DELETE /books/{b}/chapters/{id}` (409) | Blocked while scenes reference. | Same files |
-| STR-API-09 | ⬜ | `GET /books/{b}/plotlines` | Plot threads + scene counts. | **Create:** `src/backend/app/api/plotlines/router.py`, `src/backend/app/api/plotlines/__init__.py`; **Modify:** `src/backend/app/services/structure_service.py`, `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py`; **Create model:** `src/backend/app/models/plotline.py` (or add to existing) |
-| STR-API-10 | ⬜ | `POST /books/{b}/plotlines` | Named plotlines. | Same as STR-API-09 |
-| STR-API-11 | ⬜ | `PATCH /books/{b}/plotlines/{id}` | Link scenes to plotlines. | Same files |
-| STR-API-12 | ⬜ | `DELETE /books/{b}/plotlines/{id}` (409) | Unlink scenes before deleting. | Same files |
+| STR-API-01 | ✅ | `GET /books/{b}/parts` | Ordered parts for metadata/picks. | `src/backend/app/api/structure/router.py`, `src/backend/app/services/structure_service.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py` |
+| STR-API-02 | ✅ | `POST /books/{b}/parts` | Add parts to structure book. | Same files as STR-API-01 |
+| STR-API-02a | ✅ | `POST /books/{b}/parts/reorder` | Reorder parts via drag-and-drop (seq-based). | Same files |
+| STR-API-03 | ✅ | `PATCH /books/{b}/parts/{id}` | Update part metadata. | Same files |
+| STR-API-04 | ✅ | `DELETE /books/{b}/parts/{id}` (409) | Blocked until unassigned. | Same files |
+| STR-API-05 | ✅ | `GET /books/{b}/chapters` | Chapters with partId grouping. | Same files as STR-API-01 |
+| STR-API-06 | ✅ | `POST /books/{b}/chapters` | Create chapters. | Same files |
+| STR-API-06a | ✅ | `POST /books/{b}/chapters/reorder` | Reorder chapters via drag-and-drop (seq-based). | Same files |
+| STR-API-07 | ✅ | `PATCH /books/{b}/chapters/{id}` | Assign/update chapter metadata. | Same files |
+| STR-API-08 | ✅ | `DELETE /books/{b}/chapters/{id}` (409) | Blocked while scenes reference. | Same files |
+| STR-API-09 | ✅ | `GET /books/{b}/plotlines` | Plot threads + computed scene counts. | `src/backend/app/api/plotlines/router.py`, `src/backend/app/services/structure_service.py`, `src/backend/app/models/plotline.py` |
+| STR-API-10 | ✅ | `POST /books/{b}/plotlines` | Named plotlines. | Same as STR-API-09 |
+| STR-API-11 | ✅ | `PATCH /books/{b}/plotlines/{id}` | Update plotline metadata. | Same files |
+| STR-API-12 | ✅ | `DELETE /books/{b}/plotlines/{id}` (409) | Unlink scenes before deleting. | Same files |
 | STR-API-13 | ⬜ | `GET /books/{b}/characters` | Cast list + scene counts. | **Create:** `src/backend/app/api/characters/router.py`, `src/backend/app/api/characters/__init__.py`; **Modify:** `src/backend/app/services/structure_service.py`, `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py`, `src/backend/app/api/deps.py`; **Create model:** `src/backend/app/models/character.py` (or add to existing) |
 | STR-API-14 | ⬜ | `POST /books/{b}/characters` | Add characters for enrichment. | Same as STR-API-13 |
 | STR-API-15 | ⬜ | `PATCH /books/{b}/characters/{id}` | Maintain aliases and notes. | Same files |
 | STR-API-16 | ⬜ | `DELETE /books/{b}/characters/{id}` (409) | Blocked while scenes reference. | Same files |
-| STR-SVC-01 | ⬜ | StructureService | Ordered structure + blocked deletions. | **Create:** `src/backend/app/services/structure_service.py` |
+| STR-SVC-01 | ✅ | StructureService | Seq-based ordering + blocked deletions. | `src/backend/app/services/structure_service.py` |
 
 ### API — Dependencies & Todos
 
@@ -345,16 +347,16 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 | ID | Status | Control / tab | User story | Files |
 |---|---|---|---|---|
-| META-FE-01 | ⬜ | Metadata route + nav live | Structural workshop. | **Create:** `src/frontend/src/features/metadata/MetadataPage.tsx`; **Modify:** `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx` (nav item `soon` → live); **Create:** `src/frontend/src/api/structure.ts`; **Create:** `src/frontend/src/queries/structure.ts`; **Modify:** `src/frontend/src/queries/keys.ts` |
+| META-FE-01 | ✅ | Metadata route + nav live | Structural workshop. | `src/frontend/src/features/metadata/MetadataPage.tsx`, `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx`, `src/frontend/src/api/structure.ts`, `src/frontend/src/queries/structure.ts`, `src/frontend/src/queries/keys.ts` |
 | META-FE-02 | ⬜ | Readiness strip | Standing "how ready?" gauge. | **Modify:** `src/frontend/src/features/metadata/MetadataPage.tsx`; **Create:** `src/frontend/src/api/compile.ts`; **Modify:** `src/frontend/src/queries/keys.ts`; **Depends on:** CMP-API-01 |
 | META-FE-03 | ⬜ | Readiness expand → deep links | Every violation links to fix. | Same as above |
 | META-FE-04 | ⬜ | [Compile book] | Compile one click away. | Same; **Depends on:** CMP-API-02 |
-| META-FE-05 | ⬜ | **Parts** tab — rows, ↑↓, CRUD | Define and reorder parts. | `src/frontend/src/features/metadata/MetadataPage.tsx`, `src/frontend/src/api/structure.ts`, `src/frontend/src/queries/structure.ts` |
-| META-FE-06 | ⬜ | **Chapters** tab — grouped by part | Table of contents takes shape. | Same files |
-| META-FE-07 | ⬜ | Chapter Part select → PATCH | Assign chapters to parts inline. | Same files |
-| META-FE-08 | ⬜ | **Plotlines** tab — CRUD + scene counts | Track narrative threads. | Same files; **Create:** `src/frontend/src/api/plotlines.ts` (if separate from structure.ts) |
-| META-FE-09 | ⬜ | **Book** tab — summary + system prompt | Book-level texts for AI. | `src/frontend/src/features/metadata/MetadataPage.tsx`; **Modify:** `src/frontend/src/api/books.ts` (add `patchBook`), `src/frontend/src/queries/books.ts`; **Depends on:** BOOK-API-04 |
-| META-FE-10 | ⬜ | Book tab Save → PATCH | Book metadata persisted. | Same as META-FE-09 |
+| META-FE-05 | ✅ | **Parts** tab — drag-and-drop reorder, CRUD | Define and reorder parts. | `src/frontend/src/features/metadata/MetadataPage.tsx`, `src/frontend/src/api/structure.ts`, `src/frontend/src/queries/structure.ts` |
+| META-FE-06 | ✅ | **Chapters** tab — grouped by part | Table of contents takes shape. | Same files |
+| META-FE-07 | ✅ | Chapter Part select → PATCH | Assign chapters to parts inline. | Same files |
+| META-FE-08 | ✅ | **Plotlines** tab — CRUD + scene counts | Track narrative threads. | Same files (plotlines API in `src/frontend/src/api/structure.ts`) |
+| META-FE-09 | ✅ | **Book** tab — summary + system prompt | Book-level texts for AI. | `src/frontend/src/features/metadata/MetadataPage.tsx`, `src/frontend/src/api/books.ts`, `src/frontend/src/queries/structure.ts` |
+| META-FE-10 | ✅ | Book tab Save → PATCH | Book metadata persisted. | Same as META-FE-09 |
 
 ### Frontend — Character Sheet page
 
@@ -580,7 +582,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | J7 | Entering the book | 🔄 | SSE (Phase 7), full nav |
 | J8 | First scene | ✅ | — |
 | J9 | Second scene, soft | ✅ | — |
-| J10 | Structure (part + chapter) | ⬜ | Phase 6 |
+| J10 | Structure (part + chapter) | 🔄 | Phase 6 (parts/chapters/plotlines done; characters/deps/todos pending) |
 | J11 | Editor + autosave | ✅ | — |
 | J12 | Enrichment fires | ⬜ | Phase 7 |
 | J13 | Chat from selection | ⬜ | Phase 7 |

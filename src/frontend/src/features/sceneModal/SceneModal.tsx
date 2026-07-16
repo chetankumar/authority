@@ -10,6 +10,7 @@ import { SearchableSelect, type Option } from "../../components/SearchableSelect
 import { Button, Field, Input } from "../../components/ui";
 import { ApiError } from "../../api/client";
 import { END_ID, START_ID, type RelationshipType, type Scene } from "../../api/scenes";
+import type { Plotline } from "../../api/structure";
 import { useBook } from "../../queries/books";
 import {
   useCreateRelationship,
@@ -19,6 +20,7 @@ import {
   useScenes,
   useUpdateScene,
 } from "../../queries/scenes";
+import { usePlotlines } from "../../queries/structure";
 
 interface Props {
   bookId: string;
@@ -47,10 +49,12 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   const isEdit = sceneId !== null;
   const scenesQ = useScenes(bookId);
   const bookQ = useBook(bookId);
+  const plotlinesQ = usePlotlines(bookId);
 
   const scenes = scenesQ.data?.scenes ?? [];
   const relationships = scenesQ.data?.relationships ?? [];
   const existing = isEdit ? scenes.find((s) => s.id === sceneId) : undefined;
+  const plotlines: Plotline[] = plotlinesQ.data ?? [];
 
   const [tab, setTab] = useState<(typeof TABS)[number]>("Basics");
   const [title, setTitle] = useState(existing?.title ?? "");
@@ -65,6 +69,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   const [nextSceneId, setNextSceneId] = useState<string | null>(existing?.nextSceneId ?? null);
   const [chapterId, setChapterId] = useState<string | null>(existing?.chapterId ?? null);
   const [partId, setPartId] = useState<string | null>(existing?.partId ?? null);
+  const [primaryPlotlineId, setPrimaryPlotlineId] = useState<string | null>(existing?.primaryPlotlineId ?? null);
+  const [secondaryPlotlineIds, setSecondaryPlotlineIds] = useState<string[]>(existing?.secondaryPlotlineIds ?? []);
   const [softRows, setSoftRows] = useState<SoftRow[]>(
     relationships
       .filter((r) => r.fromSceneId === sceneId)
@@ -96,6 +102,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
 
   const chapterOptions: Option[] = (bookQ.data?.chapters ?? []).map((c) => ({ value: c.id, label: c.title || "Untitled chapter" }));
   const partOptions: Option[] = (bookQ.data?.parts ?? []).map((p) => ({ value: p.id, label: p.title || "Untitled part" }));
+  const plotlineOptions: Option[] = plotlines.map((p) => ({ value: p.id, label: p.title }));
+  const secondaryPlotlineOptions: Option[] = plotlineOptions.filter((o) => o.value !== primaryPlotlineId);
 
   // Previous & Next are a coupled adjacent slot (previous → [this] → next). Picking
   // one end snaps the other so they always describe a real gap in the chain — every
@@ -143,6 +151,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
           nextSceneId,
           chapterId,
           partId,
+          primaryPlotlineId,
+          secondaryPlotlineIds,
           location,
           dateTime,
           mood,
@@ -164,6 +174,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
           emotionalArc,
           chapterId,
           partId,
+          primaryPlotlineId,
+          secondaryPlotlineIds,
           previousSceneId,
           nextSceneId,
         };
@@ -397,6 +409,51 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
               />
             </Field>
             <p className="text-[0.6875rem] text-ink-faint">A scene belongs to a chapter or directly to a part.</p>
+          </fieldset>
+
+          <fieldset className="space-y-2">
+            <legend className="text-[0.75rem] font-medium text-ink-soft">Plotlines</legend>
+            <Field label="Primary plotline" hint="The main narrative thread this scene serves.">
+              <SearchableSelect
+                options={plotlineOptions}
+                value={primaryPlotlineId}
+                onChange={(v) => {
+                  setPrimaryPlotlineId(v);
+                  if (v) setSecondaryPlotlineIds((ids) => ids.filter((id) => id !== v));
+                }}
+                clearable
+                placeholder={plotlineOptions.length ? "Choose a plotline" : "No plotlines yet"}
+              />
+            </Field>
+            <Field label="Secondary plotlines">
+              <div className="space-y-1.5">
+                {secondaryPlotlineIds.map((id) => {
+                  const pl = plotlines.find((p) => p.id === id);
+                  return (
+                    <div key={id} className="flex items-center gap-1.5 rounded-control border border-line bg-surface px-2 py-1">
+                      <span className="flex-1 text-[0.8125rem] text-ink">{pl?.title ?? id}</span>
+                      <button
+                        onClick={() => setSecondaryPlotlineIds((ids) => ids.filter((x) => x !== id))}
+                        className="shrink-0 px-1 text-ink-faint hover:text-danger"
+                        aria-label="Remove plotline"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+                {secondaryPlotlineOptions.filter((o) => !secondaryPlotlineIds.includes(o.value)).length > 0 && (
+                  <SearchableSelect
+                    options={secondaryPlotlineOptions.filter((o) => !secondaryPlotlineIds.includes(o.value))}
+                    value={null}
+                    onChange={(v) => {
+                      if (v) setSecondaryPlotlineIds((ids) => [...ids, v]);
+                    }}
+                    placeholder="Add a plotline…"
+                  />
+                )}
+              </div>
+            </Field>
           </fieldset>
         </div>
       </div>
