@@ -175,10 +175,12 @@ Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "f
 ```
 
 **GitFile** `{ "path", "status": gitFileStatus, "staged": bool }`
-**GitStatus** `{ "dirty": bool, "files": [GitFile], "ahead": 0, "behind": 0, "hasRemote": bool, "summary": "7-new, 1-updated, 3-deleted" }`
+**GitStatus** `{ "dirty": bool, "files": [GitFile], "ahead": 0, "behind": 0, "hasRemote": bool, "branch": "main", "summary": "7-new, 1-updated, 3-deleted" }`
 **CommitInfo** `{ "hash", "message", "timestamp" }`
 
-`summary` is the human-readable roll-up the top-bar badge renders: `"all-changes-synced"` when clean, otherwise the non-zero segments of `"{n}-new, {m}-updated, {k}-deleted"` (untracked + added → *new*, modified + renamed → *updated*, deleted → *deleted*).
+`summary` is the human-readable roll-up the top-bar badge renders: `"all-changes-synced"` when clean, otherwise the non-zero segments of `"{n}-new, {m}-updated, {k}-deleted"` (untracked + added → *new*, modified + renamed → *updated*, deleted → *deleted*). Status is read with `--porcelain -uall`: untracked **directories** must be expanded to their files, or a folder of five new scenes reads as one — and the count would then change on staging, which expands it anyway. The number must mean the same thing before and after staging.
+
+`branch` is the current branch (short sha if HEAD is detached) — read-only orientation so the author knows what they're committing to. Branch *management* stays out of scope (doc 07 §6). `ahead`/`behind` reflect the last **fetched** state of the remote, exactly as they would in the author's own git.
 
 **CheckItem** (compile) `{ "type": "scene-no-chapter", "message": "human text", "subjects": [ { "kind": "scene", "id": "scn-..", "title": "..." } ] }` — `type` is a stable machine key (full list §13); `subjects` enable deep-linking.
 

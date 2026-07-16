@@ -4,6 +4,7 @@ The deliberate-commit ritual: review, stage, describe, save. Two columns — lef
 
 ## Controls
 
+- **Branch line** beside the page title: `⎇ {branch}` + "in sync with origin" / "2 to push · 1 to pull" / "no remote". Read-only orientation, never guessing which branch a commit lands on.
 - **Changes list** rows: ☑ + path (mono) + status letter → `POST /git/stage|unstage {paths}`; row click → `GET /git/diff?path=` into the right panel. **[Stage all]** → `stage {all:true}`.
 - **Diff panel:** read-only unified diff, mono, additions `--ok`, deletions `--danger`; binary → "Binary file".
 - **Commit message textarea** + **✨ Suggest message** → `POST /git/suggest-message` (spinner; no utility model → stats fallback with faint note "Written from file stats").

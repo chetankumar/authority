@@ -6,7 +6,7 @@ The deliberate-commit ritual: status, stage/unstage, diff, suggest-message, comm
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/books/{b}/git/status` | `GitStatus { dirty, files:[GitFile], ahead, behind, hasRemote, summary }`. Also serves the client's 10s safety-net poll |
+| GET | `/api/books/{b}/git/status` | `GitStatus { dirty, files:[GitFile], ahead, behind, hasRemote, branch, summary }`. Also serves the client's 10s safety-net poll |
 | POST | `/api/books/{b}/git/stage` · `/unstage` | `{ paths?, all? }` (one required). Real `git add` / `git reset`. Returns refreshed status; emits `git-status` |
 | GET | `/api/books/{b}/git/diff?path=` | `{ path, diff }` (staged+unstaged vs HEAD); binary → `{ binary:true }` |
 | POST | `/api/books/{b}/git/suggest-message` | Staged diff (422 `nothing-staged`) → truncate ~20k → utility model single-line commit message; no utility model → deterministic stats fallback. `{ message }` |
@@ -14,7 +14,9 @@ The deliberate-commit ritual: status, stage/unstage, diff, suggest-message, comm
 | POST | `/api/books/{b}/git/push` · `/pull` | 422 `no-remote`. Errors verbatim (`detail.gitError`); pull halts on conflicts ("resolve with your git tooling" — Authority never resolves conflicts). Emits `git-status` |
 | GET | `/api/books/{b}/git/log?limit=20` | `[CommitInfo]` |
 
-`summary` is the badge's human roll-up, built by `GitService.status()`: `"all-changes-synced"` when clean, else the non-zero segments of `"{n}-new, {m}-updated, {k}-deleted"`.
+`summary` is the badge's human roll-up, built by `GitService.status()`: `"all-changes-synced"` when clean, else the non-zero segments of `"{n}-new, {m}-updated, {k}-deleted"`. `branch` is read-only orientation (short sha when detached) — branch management stays CLI territory (doc 07 §6).
+
+**Read status with `--porcelain -uall`.** Plain `--porcelain` collapses an untracked *directory* into a single line, so a folder of five new scenes counts as one — and the number then jumps when staged, because staging expands it. The count must mean the same thing before and after staging.
 
 ## Emission rule (doc 07 §27)
 
