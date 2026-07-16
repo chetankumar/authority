@@ -75,7 +75,7 @@ class ModelFactory:
         if cfg.provider == Provider.gemini:
             from langchain_google_genai import ChatGoogleGenerativeAI
 
-            return ChatGoogleGenerativeAI(model=cfg.modelName, google_api_key=key, max_retries=0)
+            return ChatGoogleGenerativeAI(model=cfg.modelName, api_key=key, max_retries=0)
 
         if cfg.provider == Provider.openai_compatible:
             from langchain_openai import ChatOpenAI

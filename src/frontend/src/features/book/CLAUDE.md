@@ -7,10 +7,10 @@ The book home: the landing when an author clicks into a book (doc 08 J7). Parent
 - Fetches the full context via `useBook(bookId)` → `GET /api/books/{id}` (cached under `keys.book(id)`).
 - **States:** loading ("Opening the book…"), 404 → "That book couldn't be found." + back link, other error → generic message.
 - **Header:** cover thumbnail (or title placeholder), title (Literata), story summary, part/chapter counts.
-- **Workspace:** a grid of the book's sections (Scenes, Metadata, Characters, Tasks, Notes, Version control, Compile). Rendered as upcoming entry points ("soon") until each section phase lands.
+- **Workspace:** a grid of the book's sections. Live links: Scene Graph, Scene Table, Metadata, Characters, Version control. Still "soon": Tasks, Notes, Compile.
 - **Back:** "← All books" → `/`.
 
 ## Status
 
-- **Built:** the book context load + home shell + navigation (shelf card → here; create-book navigates in).
-- **Not yet:** the section pages themselves (Scenes graph/table, Metadata, Tasks, Notes, Git, Compile), the per-book SSE event channel (`GET /api/books/{id}/events`), and switching the global left nav to book context. These arrive with their respective build phases.
+- **Built:** the book context load + home shell + navigation into live section pages.
+- **Not yet:** Tasks, Notes, Compile entry points; switching those from "soon" when their phases land.

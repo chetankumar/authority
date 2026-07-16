@@ -1,7 +1,7 @@
 // Book home (doc 08 J7): the landing when you enter a book. This first
 // increment renders the book context (cover, title, summary, structure counts)
-// and the workspace sections. Section pages (Scenes/Metadata/Tasks/Git/Compile)
-// arrive in their own phases; they show here as upcoming entry points.
+// and the workspace sections. Live sections link through; Tasks/Notes/Compile
+// still show as upcoming entry points.
 import { Link, useParams } from "react-router-dom";
 
 import { coverUrl } from "../../api/books";
@@ -21,10 +21,10 @@ const SECTIONS: Section[] = [
   { key: "graph", label: "Scene Graph", description: "See the story's shape", icon: "◇", path: "graph" },
   { key: "table", label: "Scene Table", description: "The working ledger of scenes", icon: "▤", path: "table" },
   { key: "metadata", label: "Metadata", description: "Parts, chapters, plotlines & summary", icon: "❏", path: "metadata" },
-  { key: "characters", label: "Characters", description: "The cast and their details", icon: "☺" },
+  { key: "characters", label: "Characters", description: "The cast and their details", icon: "☺", path: "characters" },
   { key: "tasks", label: "Tasks", description: "To-dos across the book", icon: "✓" },
   { key: "notes", label: "Notes", description: "Conversations & AI chats", icon: "✎" },
-  { key: "git", label: "Version control", description: "Stage, diff & commit changes", icon: "⎇" },
+  { key: "git", label: "Version control", description: "Stage, diff & commit changes", icon: "⎇", path: "git" },
   { key: "compile", label: "Compile", description: "Readiness check & build", icon: "⇩" },
 ];
 
