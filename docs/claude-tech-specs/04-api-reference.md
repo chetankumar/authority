@@ -165,7 +165,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
   "payload": { "sceneId": "scn-..", "find": "exact current text",
                "replace": "replacement text", "rationale": "why" } }
 ```
-Payload variants — `metadata-update`: `{ "targetType": "scene", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, …, "sceneId"? }` — Accept dedupes case-insensitively against existing name/aliases (reuses the existing character instead of erroring) and, if `sceneId` is set, tags the character onto that scene's `characters` with empty involvement. `character-relationship-create`: `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"?, "rationale"? }`.
+Payload variants — `metadata-update`: `{ "targetType": "scene"|"character", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene or character metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, …, "sceneId"? }` — Accept dedupes case-insensitively against existing name/aliases (reuses the existing character instead of erroring) and, if `sceneId` is set, tags the character onto that scene's `characters` with empty involvement. `character-relationship-create`: `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"?, "rationale"? }`.
 
 **Job**
 ```json
@@ -458,7 +458,7 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 ### POST /api/books/{b}/proposals/{id}/accept
 **Logic (ProposalService, under book lock):** locate the proposal via the conversation index (404 unknown; 409 `already-resolved` if not pending). By type:
 - **edit:** read the target scene's .md; find the *first exact occurrence* of `payload.find` (byte-exact, no normalization). Absent → status `not-found`, nothing changes, response reports it. Present → replace **one** occurrence, save through the standard content path (**PUT semantics: hash recompute → dependency fanout → settle timer** — an applied edit is a content change like any other). This is the sole prose-mutation path besides the editor, and it is author-triggered.
-- **metadata-update:** apply `payload.newValue` to `payload.field` via SceneService PATCH logic (full validation; XOR rules etc. — validation failure → 422, proposal stays pending).
+- **metadata-update:** apply `payload.newValue` to `payload.field` on `targetType` `scene` (via SceneService PATCH) or `character` (via StructureService character PATCH). Validation failure → 422, proposal stays pending. `oldValue` filled from current state on accept when missing.
 - **todo-create:** create the Todo, origin `ai`.
 - **character-create:** create the Character via StructureService uniqueness rules; optionally tag `sceneId` on the scene. 422 if Characters layer not loaded.
 Stamp status `applied` (or `not-found`) + resolvedAt; persist conversation; emit `scene-updated`/`todos-created` as applicable.

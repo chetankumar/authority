@@ -12,7 +12,7 @@ from app.core.atomic import atomic_write_text
 from app.core.errors import ApiError, not_found, validation
 from app.core.event_hub import EventHub
 from app.core.ids import new_id
-from app.models.character import CharacterCreate
+from app.models.character import CharacterCreate, CharacterUpdate
 from app.models.enums import ProposalStatus, ProposalType
 from app.models.proposal import CharacterCreatePayload, CharacterRelationshipCreatePayload, Proposal, ProposalAcceptResult
 from app.models.scene import SceneUpdate
@@ -21,6 +21,37 @@ from app.services.scene_service import SceneService, _content_metrics, _now as s
 from app.services.structure_service import StructureService
 
 log = logging.getLogger("authority.proposals")
+
+_SCENE_META_FIELDS = frozenset(
+    {
+        "title",
+        "description",
+        "location",
+        "dateTime",
+        "mood",
+        "emotionalArc",
+        "summary",
+        "characters",
+    }
+)
+_CHARACTER_META_FIELDS = frozenset(
+    {
+        "name",
+        "aliases",
+        "age",
+        "gender",
+        "nationality",
+        "ethnicity",
+        "occupation",
+        "want",
+        "need",
+        "flaw",
+        "arc",
+        "personality",
+        "history",
+        "notes",
+    }
+)
 
 
 def _now() -> str:
@@ -125,29 +156,40 @@ class ProposalService:
 
     async def _apply_metadata(self, book_id: str, prop: Proposal) -> dict:
         payload = prop.payload
-        target_type = payload.get("targetType", "scene")
+        target_type = str(payload.get("targetType") or "scene").strip().lower()
         target_id = payload.get("targetId")
         field = payload.get("field")
         new_value = payload.get("newValue")
-        if target_type != "scene" or not target_id or not field:
+        if not target_id or not field:
             raise validation({"payload": "Metadata proposal is incomplete."})
-        allowed = {
-            "title",
-            "description",
-            "location",
-            "dateTime",
-            "mood",
-            "emotionalArc",
-            "summary",
-            "characters",
-        }
-        if field not in allowed:
-            raise validation({"field": f"Cannot update field '{field}' via proposal."})
-        body = SceneUpdate.model_construct(**{field: new_value})
-        object.__setattr__(body, "__pydantic_fields_set__", {field})
-        await self._scenes.update_scene(book_id, target_id, body)
-        self._hub.emit(book_id, "scene-updated", {"id": target_id, "changed": [field]})
-        return {"field": field, "newValue": new_value}
+
+        if target_type in ("scene", "scn"):
+            if field not in _SCENE_META_FIELDS:
+                raise validation({"field": f"Cannot update scene field '{field}' via proposal."})
+            body = SceneUpdate.model_construct(**{field: new_value})
+            object.__setattr__(body, "__pydantic_fields_set__", {field})
+            if payload.get("oldValue") is None:
+                scene = self._scenes.get_scene(book_id, target_id)
+                prop.payload["oldValue"] = getattr(scene, field, None)
+            await self._scenes.update_scene(book_id, target_id, body)
+            self._hub.emit(book_id, "scene-updated", {"id": target_id, "changed": [field]})
+            return {"targetType": "scene", "targetId": target_id, "field": field, "newValue": new_value}
+
+        if target_type in ("character", "chr"):
+            if field not in _CHARACTER_META_FIELDS:
+                raise validation({"field": f"Cannot update character field '{field}' via proposal."})
+            mgr = self._registry.get(book_id)
+            existing = next((c for c in mgr.get_characters() if c.id == target_id), None)
+            if existing is None:
+                raise not_found("character", target_id)
+            if payload.get("oldValue") is None:
+                prop.payload["oldValue"] = getattr(existing, field, None)
+            body = CharacterUpdate.model_construct(**{field: new_value})
+            object.__setattr__(body, "__pydantic_fields_set__", {field})
+            await self._structure.update_character(book_id, target_id, body)
+            return {"targetType": "character", "targetId": target_id, "field": field, "newValue": new_value}
+
+        raise validation({"targetType": f"Unsupported metadata target: {target_type}"})
 
     def _apply_todo(self, book_id: str, prop: Proposal) -> dict:
         raise ApiError(

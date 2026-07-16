@@ -22,9 +22,19 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
         rationale: str = Field(default="", description="Why this edit")
 
     class MetaArgs(BaseModel):
-        targetType: str = Field(default="scene", description="Usually 'scene'")
-        targetId: str
-        field: str = Field(description="Metadata field name (never prose)")
+        targetType: str = Field(
+            default="scene",
+            description="What to update: 'scene' or 'character'",
+        )
+        targetId: str = Field(description="Scene id (scn-…) or character id (chr-…)")
+        field: str = Field(
+            description=(
+                "Metadata field name (never prose). For scene: title, description, "
+                "location, dateTime, mood, emotionalArc, summary. For character: name, "
+                "aliases, age, gender, nationality, ethnicity, occupation, want, need, "
+                "flaw, arc, personality, history, notes."
+            )
+        )
         newValue: Any = None
         rationale: str = ""
 
@@ -194,7 +204,11 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
         StructuredTool.from_function(
             func=propose_metadata_update,
             name="propose_metadata_update",
-            description="Propose updating a metadata field. Does not apply it.",
+            description=(
+                "Propose updating a metadata field on a scene or character. "
+                "Use targetType 'character' for cast-sheet fields like occupation. "
+                "Does not apply it — author must accept."
+            ),
             args_schema=MetaArgs,
         ),
         StructuredTool.from_function(

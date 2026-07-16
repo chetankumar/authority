@@ -144,8 +144,11 @@ class EnrichmentService:
         chars_model = self._settings.get_character_parsing_model() if want_chars else None
         if want_chars:
             if chars_model is not None:
+                existing_refs = mgr.get_scene_bookkeeping(scene.id).characters
+                existing_block = self._format_existing_scene_characters(existing_refs, chars)
                 messages = self._assembler.for_structured(
-                    self._characters_prompt(scene, prose, directory), book.systemPrompt
+                    self._characters_prompt(scene, prose, directory, existing_block),
+                    book.systemPrompt,
                 )
                 raw = await self._orch.invoke_structured(chars_model, messages, timeout=120.0)
                 parsed.update(parse_enrichment_result(raw))
@@ -279,7 +282,20 @@ class EnrichmentService:
         )
 
     @staticmethod
-    def _characters_prompt(scene: Any, prose: str, directory: str) -> str:
+    def _format_existing_scene_characters(refs: list[SceneCharacterRef], chars: list[Any]) -> str:
+        if not refs:
+            return "(none tagged yet)"
+        by_id = {c.id: c for c in chars}
+        lines: list[str] = []
+        for ref in refs:
+            c = by_id.get(ref.characterId)
+            name = c.name if c is not None else "(unknown)"
+            involvement = ref.involvement.strip() or "(empty — author tagged but left involvement blank)"
+            lines.append(f"- characterId={ref.characterId} name={name} involvement={involvement}")
+        return "\n".join(lines) if lines else "(none tagged yet)"
+
+    @staticmethod
+    def _characters_prompt(scene: Any, prose: str, directory: str, existing: str) -> str:
         return "\n".join(
             [
                 "You maintain per-scene character involvement for a novel.",
@@ -287,11 +303,18 @@ class EnrichmentService:
                 '  "matched": [{"characterId": "id from the directory", "involvement": "one-line what they do/undergo in THIS scene"}],',
                 '  "unrecognizedNames": [proper names in prose not in the directory],',
                 '  "ambiguous": [{"name": "...", "candidates": ["id:...", ...], "question": "..."}]',
+                "Use BOTH the existing scene_characters entries and the scene_prose.",
+                "Treat existing involvement as author-reviewed draft: keep wording that still fits the prose;",
+                "refine or rewrite only when prose clearly contradicts or adds detail; fill empty involvement from prose.",
+                "Keep tagged characters who still appear or are clearly implied; drop only when prose no longer supports them.",
+                "Add newly clear matches from prose that are not already tagged.",
                 "Only exact/clear matches go in matched. When unsure, use ambiguous.",
                 "involvement must be specific to this scene's prose — not a general character bio.",
                 "Never invent character ids.",
                 "",
                 f"Character directory:\n{directory}",
+                "",
+                f"Existing scene_characters:\n{existing}",
                 "",
                 f"Scene title: {scene.title}",
                 f"Scene prose:\n{prose[:20000]}",
