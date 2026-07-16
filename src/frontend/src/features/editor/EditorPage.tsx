@@ -11,6 +11,7 @@ import { Markdown } from "tiptap-markdown";
 import { getBookUi, patchBookUi } from "../../api/books";
 import { END_ID, START_ID } from "../../api/scenes";
 import { createConversation, runAiJob } from "../../api/conversations";
+import { getAI, listModels } from "../../api/settings";
 import { Button } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { useScene, useUpdateScene } from "../../queries/scenes";
@@ -205,10 +206,17 @@ export default function EditorPage() {
   const startChat = async () => {
     try {
       const excerpt = getSelectionExcerpt();
+      const [ai, models] = await Promise.all([getAI(), listModels()]);
+      const modelId = ai.utilityModelId ?? models[0]?.id ?? null;
+      if (!modelId) {
+        toast.error("Add a model in Settings before chatting.");
+        return;
+      }
       const conv = await createConversation(bookId, {
         kind: "chat",
         parentType: "scene",
         parentId: sceneId,
+        aiParticipant: { enabled: true, modelId },
       });
       setChatContext(excerpt ? { sceneId, excerpt } : null);
       setConversationId(conv.id);
