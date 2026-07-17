@@ -29,7 +29,9 @@ from typing import Any
 
 from app.core.atomic import atomic_write_text
 from app.core.errors import ApiError, validation
-from app.models.enums import Placement, SceneStatus
+from app.core.event_hub import EventHub
+from app.core.ids import new_id
+from app.models.enums import ParentType, Placement, SceneStatus, TodoOrigin, TodoStatus
 from app.models.scene import (
     ContentSaveResult,
     RelationshipCreate,
@@ -44,6 +46,7 @@ from app.models.scene import (
     SoftRelationship,
     ScenesResponse,
 )
+from app.models.todo import TodoRecord
 from app.services import chain_service as chain
 from app.services.book_registry import BookRegistry
 from app.services.book_service import slugify
@@ -65,9 +68,10 @@ def _reject_same_neighbors(previous: str | None, next_: str | None) -> None:
 
 
 class SceneService:
-    def __init__(self, registry: BookRegistry, enrichment: Any | None = None) -> None:
+    def __init__(self, registry: BookRegistry, enrichment: Any | None = None, hub: EventHub | None = None) -> None:
         self._registry = registry
         self._enrichment = enrichment
+        self._hub = hub
 
     def set_enrichment(self, enrichment: Any) -> None:
         self._enrichment = enrichment
@@ -277,6 +281,7 @@ class SceneService:
             atomic_write_text(mgr.scene_file_path(record.file), content)
             word_count, content_hash = _content_metrics(content)
             bookkeeping = mgr.get_scene_bookkeeping(scene_id).model_copy()
+            hash_changed = bookkeeping.contentHash != content_hash
             bookkeeping.wordCount = word_count
             bookkeeping.contentHash = content_hash
             bookkeeping.updatedAt = _now()
@@ -286,8 +291,50 @@ class SceneService:
             mgr.save_scene_bookkeeping(scene_id, bookkeeping)
 
             # Enrichment is leave-scene / on-demand only — content saves never
-            # schedule AI work (doc 05). Dependency-todo fanout lands with Phase 6c.
-            return ContentSaveResult(wordCount=word_count, contentHash=content_hash, todosCreated=[])
+            # schedule AI work (doc 05).
+            todos_created: list[dict] = []
+            if hash_changed:
+                todos_created = self._fanout_dependency_todos(mgr, book_id, record)
+
+            return ContentSaveResult(wordCount=word_count, contentHash=content_hash, todosCreated=todos_created)
+
+    def _fanout_dependency_todos(self, mgr, book_id: str, record: SceneRecord) -> list[dict]:
+        """A scene's content just changed — create a todo on every scene that
+        declared a dependency on it, unless one's already open for that same
+        dependency (dedup, doc 08 J16). Todos land in the *dependent* scene's
+        own ``todos.json``, same as any other scene-parented todo."""
+        dependents = mgr.get_dependents(record.id)
+        if not dependents:
+            return []
+        now = _now()
+        created: list[TodoRecord] = []
+        for dep in dependents:
+            existing = mgr.get_scene_todos(dep.sceneId)
+            if any(t.sourceDependencyId == dep.id and t.status == TodoStatus.open for t in existing):
+                continue
+            todo = TodoRecord(
+                id=new_id("tdo"),
+                parentType=ParentType.scene,
+                parentId=dep.sceneId,
+                action=f"'{record.title}' changed — verify dependency: {dep.reason}",
+                status=TodoStatus.open,
+                origin=TodoOrigin.dependency,
+                sourceDependencyId=dep.id,
+                createdAt=now,
+                updatedAt=now,
+            )
+            mgr.save_scene_todos(dep.sceneId, [*existing, todo])
+            created.append(todo)
+        if created:
+            titles = {r.id: r.title for r in mgr.get_scenes()}
+            if self._hub is not None:
+                self._hub.emit(book_id, "todos-created", {
+                    "todos": [
+                        {**t.model_dump(mode="json"), "parentTitle": titles.get(t.parentId, "")}
+                        for t in created
+                    ],
+                })
+        return [t.model_dump(mode="json") for t in created]
 
     # ---- soft relationships (doc 04 §6) -------------------------------------
 
@@ -332,10 +379,8 @@ class SceneService:
             if dep_hits:
                 blocked["dependencies"] = [{"id": d.id, "reason": d.reason} for d in dep_hits]
 
-            todos = self._load_json(mgr, "todos.json")
-            todo_hits = [t for t in todos if t.get("parentType") == "scene" and t.get("parentId") == scene_id]
-            if todo_hits:
-                blocked["todos"] = [{"id": t["id"], "action": t.get("action", "")} for t in todo_hits]
+            # Open todos no longer block deletion — they're silently discarded
+            # with the rest of the scene folder when it moves to .trash/.
 
             convos_index = self._load_json(mgr, "conversations/index.json")
             convo_hits = [c for c in convos_index if c.get("parentType") == "scene" and c.get("parentId") == scene_id]

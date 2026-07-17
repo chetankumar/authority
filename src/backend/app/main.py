@@ -32,6 +32,7 @@ from app.api.relationships.router import router as relationships_router
 from app.api.scenes.router import router as scenes_router
 from app.api.settings.router import router as settings_router
 from app.api.structure.router import router as structure_router
+from app.api.todos.router import router as todos_router
 from app.core.config import load_config
 from app.core.errors import ApiError
 from app.core.logging import setup_logging
@@ -98,6 +99,7 @@ app.include_router(structure_router, prefix="/api")
 app.include_router(plotlines_router, prefix="/api")
 app.include_router(characters_router, prefix="/api")
 app.include_router(character_relationships_router, prefix="/api")
+app.include_router(todos_router, prefix="/api")
 app.include_router(conversations_router, prefix="/api")
 app.include_router(proposals_router, prefix="/api")
 app.include_router(jobs_router, prefix="/api")

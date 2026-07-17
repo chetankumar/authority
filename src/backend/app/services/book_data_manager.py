@@ -31,6 +31,7 @@ from app.models.enums import ProposalStatus
 from app.models.job import Job
 from app.models.plotline import PlotlineRecord
 from app.models.scene import Dependency, SceneBookkeeping, SceneCharacterRef, SceneMeta, SceneRecord, SoftRelationship
+from app.models.todo import TodoRecord
 from app.services.book_scanner import _find_cover
 
 log = logging.getLogger("authority.books")
@@ -49,6 +50,8 @@ class BookDataManager:
         self._scene_relationships: dict[str, list[SoftRelationship]] | None = None
         self._scene_dependencies: dict[str, list[Dependency]] | None = None
         self._dependents_index: dict[str, list[Dependency]] | None = None
+        self._scene_todos: dict[str, list[TodoRecord]] | None = None
+        self._book_todos: list[TodoRecord] | None = None
         self._parts: list[Part] | None = None
         self._chapters: list[Chapter] | None = None
         self._plotlines: list[PlotlineRecord] | None = None
@@ -154,11 +157,12 @@ class BookDataManager:
 
     # ---- per-scene folder (scenes/{id}/) ------------------------------------
     #
-    # meta.json / bookkeeping.json / dependencies.json / relationships.json hold
-    # everything that isn't identity/hard-chain/structure (which stays on the
-    # master SceneRecord above). A parse failure in any one of these degrades
-    # only that scene — quarantined + defaulted, never raised — unlike the
-    # whole-collection quarantine used for db/*.json (doc 03 §Data safety):
+    # meta.json / bookkeeping.json / dependencies.json / relationships.json /
+    # todos.json hold everything that isn't identity/hard-chain/structure
+    # (which stays on the master SceneRecord above). A parse failure in any one
+    # of these degrades only that scene — quarantined + defaulted, never raised
+    # — unlike the whole-collection quarantine used for db/*.json (doc 03 §Data
+    # safety):
     # smaller blast radius is the whole point of this split.
 
     def _scenes_dir(self) -> Path:
@@ -335,6 +339,73 @@ class BookDataManager:
             self._dependents_index.setdefault(d.dependsOnSceneId, []).append(d)
         self._changed()
 
+    # -- todos (scene-scoped) -----------------------------------------------------
+    #
+    # Unlike dependencies, there's no maintained reverse index here: the only
+    # aggregate reader is the Tasks-page "include scene todos" toggle, a rare
+    # human-paced request rather than a hot path like autosave (that's what
+    # justifies dependencies' incrementally-patched index — get_dependents
+    # answers on every content save). get_all_scene_todos() just reads every
+    # scene fresh each call — simpler, one fewer structure that could drift.
+
+    def _ensure_scene_todos_loaded(self) -> dict[str, list[TodoRecord]]:
+        if self._scene_todos is None:
+            self._scene_todos = {}
+            for rec in self.get_scenes():
+                todos = self._read_scene_list(self._scene_folder(rec.id) / "todos.json", TodoRecord)
+                if todos:
+                    self._scene_todos[rec.id] = todos
+        return self._scene_todos
+
+    def get_scene_todos(self, scene_id: str) -> list[TodoRecord]:
+        return list(self._ensure_scene_todos_loaded().get(scene_id, []))
+
+    def get_all_scene_todos(self) -> list[TodoRecord]:
+        """Flattened aggregate across every scene's todos.json, read fresh —
+        see class-level note above."""
+        return [
+            t
+            for rec in self.get_scenes()
+            for t in self._read_scene_list(self._scene_folder(rec.id) / "todos.json", TodoRecord)
+        ]
+
+    def save_scene_todos(self, scene_id: str, todos: list[TodoRecord]) -> None:
+        atomic_write_json(
+            self._scene_folder(scene_id) / "todos.json",
+            [t.model_dump(mode="json") for t in todos],
+        )
+        cache = self._ensure_scene_todos_loaded()
+        if todos:
+            cache[scene_id] = todos
+        else:
+            cache.pop(scene_id, None)
+        self._changed()
+
+    # -- todos (book/chapter/part-scoped, db/todos.json) --------------------------
+
+    def get_book_todos(self) -> list[TodoRecord]:
+        if self._book_todos is None:
+            self._book_todos = self._load_collection("todos.json", TodoRecord)
+        return self._book_todos
+
+    def save_book_todos(self, todos: list[TodoRecord]) -> None:
+        atomic_write_json(self._dir / "db" / "todos.json", [t.model_dump(mode="json") for t in todos])
+        self._book_todos = todos
+        self._changed()
+
+    def find_todo(self, todo_id: str) -> tuple[str | None, TodoRecord] | None:
+        """Locate a todo across both tiers without the caller knowing which one
+        it lives in — mirrors ``delete_scene_relationship``'s flat-id lookup.
+        Returns ``(sceneId, todo)``; ``sceneId`` is ``None`` for a book-level todo."""
+        for t in self.get_book_todos():
+            if t.id == todo_id:
+                return None, t
+        for scene_id, todos in self._ensure_scene_todos_loaded().items():
+            for t in todos:
+                if t.id == todo_id:
+                    return scene_id, t
+        return None
+
     # -- folder lifecycle ---------------------------------------------------------
 
     def create_scene_folder(self, scene_id: str, meta: SceneMeta, bookkeeping: SceneBookkeeping) -> None:
@@ -346,6 +417,7 @@ class BookDataManager:
         atomic_write_json(folder / "bookkeeping.json", bookkeeping.model_dump(mode="json"))
         atomic_write_json(folder / "dependencies.json", [])
         atomic_write_json(folder / "relationships.json", [])
+        atomic_write_json(folder / "todos.json", [])
         if self._scene_meta is not None:
             self._scene_meta[scene_id] = meta
         if self._scene_bookkeeping is not None:
@@ -372,6 +444,8 @@ class BookDataManager:
             self._scene_relationships.pop(scene_id, None)
         if self._scene_dependencies is not None:
             self._scene_dependencies.pop(scene_id, None)
+        if self._scene_todos is not None:
+            self._scene_todos.pop(scene_id, None)
 
     # -- migration from the old flat (pre-split) scenes.json shape -------------
 
@@ -425,6 +499,8 @@ class BookDataManager:
                 atomic_write_json(folder / "dependencies.json", [])
             if not (folder / "relationships.json").exists():
                 atomic_write_json(folder / "relationships.json", [])
+            if not (folder / "todos.json").exists():
+                atomic_write_json(folder / "todos.json", [])
             trimmed_rows.append({
                 "id": scene_id,
                 "title": row.get("title", ""),

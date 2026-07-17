@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
-from app.api.deps import get_conversation_service, get_enrichment_service, get_scene_service
+from app.api.deps import get_conversation_service, get_enrichment_service, get_scene_service, get_todo_service
 from app.models.conversation import ConversationSummary
+from app.models.enums import ParentType
 from app.models.job import EnrichRequest
 from app.models.scene import (
     ContentSaveResult,
@@ -20,9 +21,11 @@ from app.models.scene import (
     SceneWithContent,
     ScenesResponse,
 )
+from app.models.todo import SceneTodoCreate, Todo
 from app.services.conversation_service import ConversationService
 from app.services.enrichment_service import EnrichmentService
 from app.services.scene_service import SceneService
+from app.services.todo_service import TodoService
 
 router = APIRouter(prefix="/books/{book_id}/scenes", tags=["scenes"])
 
@@ -91,3 +94,22 @@ async def scene_conversations(
     svc: ConversationService = Depends(get_conversation_service),
 ) -> list[ConversationSummary]:
     return svc.list_for_scene(book_id, scene_id)
+
+
+@router.get("/{scene_id}/todos", response_model=list[Todo])
+async def scene_todos(
+    book_id: str,
+    scene_id: str,
+    svc: TodoService = Depends(get_todo_service),
+) -> list[Todo]:
+    return svc.list_scene(book_id, scene_id)
+
+
+@router.post("/{scene_id}/todos", response_model=Todo, status_code=201)
+async def create_scene_todo(
+    book_id: str,
+    scene_id: str,
+    body: SceneTodoCreate,
+    svc: TodoService = Depends(get_todo_service),
+) -> Todo:
+    return await svc.create(book_id, ParentType.scene, scene_id, body.action)

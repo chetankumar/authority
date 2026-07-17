@@ -22,7 +22,7 @@ const SECTIONS: Section[] = [
   { key: "table", label: "Scene Table", description: "The working ledger of scenes", icon: "▤", path: "table" },
   { key: "metadata", label: "Metadata", description: "Parts, chapters, plotlines & summary", icon: "❏", path: "metadata" },
   { key: "characters", label: "Characters", description: "The cast and their details", icon: "☺", path: "characters" },
-  { key: "tasks", label: "Tasks", description: "To-dos across the book", icon: "✓" },
+  { key: "tasks", label: "Tasks", description: "To-dos across the book", icon: "✓", path: "tasks" },
   { key: "notes", label: "Notes", description: "Conversations & AI chats", icon: "✎" },
   { key: "git", label: "Version control", description: "Stage, diff & commit changes", icon: "⎇", path: "git" },
   { key: "compile", label: "Compile", description: "Readiness check & build", icon: "⇩" },

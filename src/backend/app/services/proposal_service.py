@@ -14,11 +14,18 @@ from app.core.event_hub import EventHub
 from app.core.ids import new_id
 from app.models.character import CharacterCreate, CharacterUpdate
 from app.models.enums import ProposalStatus, ProposalType
-from app.models.proposal import CharacterCreatePayload, CharacterRelationshipCreatePayload, Proposal, ProposalAcceptResult
+from app.models.proposal import (
+    CharacterCreatePayload,
+    CharacterRelationshipCreatePayload,
+    Proposal,
+    ProposalAcceptResult,
+    TodoCreatePayload,
+)
 from app.models.scene import SceneUpdate
 from app.services.book_registry import BookRegistry
 from app.services.scene_service import SceneService, _content_metrics, _now as scene_now
 from app.services.structure_service import StructureService
+from app.services.todo_service import TodoService
 
 log = logging.getLogger("authority.proposals")
 
@@ -65,11 +72,13 @@ class ProposalService:
         scene_service: SceneService,
         hub: EventHub,
         structure_service: StructureService,
+        todo_service: TodoService,
     ) -> None:
         self._registry = registry
         self._scenes = scene_service
         self._hub = hub
         self._structure = structure_service
+        self._todos = todo_service
 
     def reject(self, book_id: str, proposal_id: str) -> Proposal:
         mgr = self._registry.get(book_id)
@@ -107,7 +116,7 @@ class ProposalService:
         elif prop.type == ProposalType.metadata_update:
             result = await self._apply_metadata(book_id, prop)
         elif prop.type == ProposalType.todo_create:
-            result = self._apply_todo(book_id, prop)
+            result = await self._apply_todo(book_id, prop, conv.id)
         elif prop.type == ProposalType.character_create:
             result = await self._apply_character(book_id, prop)
         elif prop.type == ProposalType.character_relationship_create:
@@ -191,12 +200,15 @@ class ProposalService:
 
         raise validation({"targetType": f"Unsupported metadata target: {target_type}"})
 
-    def _apply_todo(self, book_id: str, prop: Proposal) -> dict:
-        raise ApiError(
-            422,
-            "Todos aren't available yet — the Tasks layer hasn't landed.",
-            {"code": "todos-unavailable"},
+    async def _apply_todo(self, book_id: str, prop: Proposal, conversation_id: str) -> dict:
+        # Link the new todo back to the conversation it was proposed in, so its
+        # 💬 opens straight into the discussion that raised it (doc 04 §8).
+        payload = TodoCreatePayload.model_validate(prop.payload)
+        todo = await self._todos.create(
+            book_id, payload.parentType, payload.parentId, payload.action, conversation_id=conversation_id
         )
+        self._hub.emit(book_id, "todos-created", {"todos": [todo.model_dump(mode="json")]})
+        return {"todo": todo.model_dump(mode="json")}
 
     async def _apply_character(self, book_id: str, prop: Proposal) -> dict:
         payload = CharacterCreatePayload.model_validate(prop.payload)

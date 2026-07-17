@@ -12,6 +12,9 @@ import { getBookUi, patchBookUi } from "../../api/books";
 import { enrichSceneAuto, END_ID, START_ID, saveContent } from "../../api/scenes";
 import { createConversation, runAiJob } from "../../api/conversations";
 import { getAI, listModels } from "../../api/settings";
+import type { Todo } from "../../api/todos";
+import { ApiError } from "../../api/client";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Button } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { useBook } from "../../queries/books";
@@ -19,6 +22,7 @@ import { useScene, useUpdateScene } from "../../queries/scenes";
 import { useSceneConversations, useSceneJobs } from "../../queries/conversations";
 import { useJobs as useAiJobDefinitions } from "../../queries/settings";
 import { usePatchBook } from "../../queries/structure";
+import { useCreateSceneTodo, useDeleteTodo, useSceneTodos, useUpdateTodo } from "../../queries/todos";
 import { SceneModal } from "../sceneModal/SceneModal";
 import { ConversationModal } from "../conversation/ConversationModal";
 
@@ -39,6 +43,10 @@ export default function EditorPage() {
   const aiJobs = useAiJobDefinitions();
   const notes = useSceneConversations(bookId, sceneId);
   const sceneJobs = useSceneJobs(bookId, sceneId);
+  const sceneTodos = useSceneTodos(bookId, sceneId);
+  const createSceneTodo = useCreateSceneTodo(bookId, sceneId);
+  const updateTodo = useUpdateTodo(bookId);
+  const deleteTodo = useDeleteTodo(bookId);
 
   const [words, setWords] = useState(0);
   const [save, setSave] = useState<SaveState>({ kind: "idle" });
@@ -52,6 +60,8 @@ export default function EditorPage() {
   const [bookkeepingOpen, setBookkeepingOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [chatContext, setChatContext] = useState<{ sceneId: string; excerpt: string } | null>(null);
+  const [newTodoText, setNewTodoText] = useState("");
+  const [confirmDeleteTodo, setConfirmDeleteTodo] = useState<Todo | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
 
   const loadedScene = useRef<string | null>(null);
@@ -265,6 +275,33 @@ export default function EditorPage() {
     }
   };
 
+  const openTodoConversation = async (t: Todo) => {
+    if (t.conversationId) {
+      setChatContext(null);
+      setConversationId(t.conversationId);
+      return;
+    }
+    try {
+      const conv = await createConversation(bookId, { kind: "task-discussion", parentType: "scene", parentId: sceneId });
+      await updateTodo.mutateAsync({ todoId: t.id, body: { conversationId: conv.id } });
+      setChatContext(null);
+      setConversationId(conv.id);
+    } catch {
+      toast.error("Couldn't start a conversation.");
+    }
+  };
+
+  const addTodo = async () => {
+    const action = newTodoText.trim();
+    if (!action) return;
+    try {
+      await createSceneTodo.mutateAsync(action);
+      setNewTodoText("");
+    } catch {
+      toast.error("Couldn't add that task.");
+    }
+  };
+
   const runJob = async (aiJobId: string) => {
     setJobsMenuOpen(false);
     try {
@@ -290,6 +327,7 @@ export default function EditorPage() {
   const jobDefs = aiJobs.data ?? [];
   const noteRows = notes.data ?? [];
   const jobRows = sceneJobs.data ?? [];
+  const todoRows = sceneTodos.data ?? [];
 
   return (
     <div className="flex h-full min-h-0">
@@ -466,8 +504,68 @@ export default function EditorPage() {
               </ul>
             )}
           </PaneSection>
-          <PaneSection title="To-dos">
-            <p className="text-[0.75rem] text-ink-faint">Tasks arrive with the structure phase.</p>
+          <PaneSection title="To-dos" count={todoRows.filter((t) => t.status === "open").length}>
+            <div className="mb-2 flex items-center gap-1">
+              <input
+                value={newTodoText}
+                onChange={(e) => setNewTodoText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void addTodo()}
+                placeholder="Add a task for this scene…"
+                className="h-7 min-w-0 flex-1 rounded-control border border-line bg-paper px-2 text-[0.75rem] text-ink outline-none focus:border-accent"
+              />
+              <button
+                onClick={() => void addTodo()}
+                disabled={!newTodoText.trim()}
+                className="h-7 rounded-control px-2 text-[0.75rem] text-ink-soft hover:bg-accent-wash disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+            {todoRows.length === 0 ? (
+              <p className="text-[0.75rem] text-ink-faint">No tasks yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {todoRows.map((t) => {
+                  const dependency = t.origin === "dependency";
+                  return (
+                    <li
+                      key={t.id}
+                      className={`flex items-center gap-1.5 rounded-control px-1.5 py-1 text-[0.8125rem] ${dependency ? "bg-attn-wash" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="accent-accent"
+                        checked={t.status === "done"}
+                        title={t.status === "done" ? "Mark open" : "Mark done"}
+                        onChange={(e) => updateTodo.mutate({ todoId: t.id, body: { status: e.target.checked ? "done" : "open" } })}
+                      />
+                      {dependency && <span title="From a dependency" className="text-attn">⛓</span>}
+                      <span
+                        className={`min-w-0 flex-1 truncate ${t.status !== "open" ? "text-ink-faint line-through" : "text-ink"}`}
+                        title={t.action}
+                      >
+                        {t.action}
+                      </span>
+                      <button title="Open conversation" onClick={() => void openTodoConversation(t)} className="shrink-0 rounded px-1 text-ink-soft hover:bg-accent-wash">
+                        💬
+                      </button>
+                      {t.status === "open" && (
+                        <button
+                          title="Close (not applicable)"
+                          onClick={() => updateTodo.mutate({ todoId: t.id, body: { status: "closed" } })}
+                          className="shrink-0 rounded px-1 text-ink-soft hover:bg-accent-wash"
+                        >
+                          ✕
+                        </button>
+                      )}
+                      <button title="Delete" onClick={() => setConfirmDeleteTodo(t)} className="shrink-0 rounded px-1 text-danger hover:bg-danger-wash">
+                        🗑
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </PaneSection>
           <PaneSection title="AI Jobs" count={jobRows.filter((j) => j.status === "queued" || j.status === "running").length}>
             {jobRows.length === 0 ? (
@@ -530,6 +628,22 @@ export default function EditorPage() {
             void notes.refetch();
             void sceneJobs.refetch();
           }}
+        />
+      )}
+      {confirmDeleteTodo && (
+        <ConfirmDialog
+          title="Delete this task?"
+          message="This removes the task permanently. If it's just no longer applicable, Close it instead — that keeps a record."
+          confirmLabel="Delete task"
+          onConfirm={async () => {
+            try {
+              await deleteTodo.mutateAsync(confirmDeleteTodo.id);
+            } catch (e) {
+              toast.error(e instanceof ApiError ? e.message : "Couldn't delete the task.");
+            }
+            setConfirmDeleteTodo(null);
+          }}
+          onCancel={() => setConfirmDeleteTodo(null)}
         />
       )}
     </div>

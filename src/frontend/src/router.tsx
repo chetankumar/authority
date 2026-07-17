@@ -8,6 +8,7 @@ import ScenesTablePage from "./features/table/ScenesTablePage";
 import EditorPage from "./features/editor/EditorPage";
 import MetadataPage from "./features/metadata/MetadataPage";
 import CharactersPage from "./features/characters/CharactersPage";
+import TasksPage from "./features/tasks/TasksPage";
 import GitPage from "./features/git/GitPage";
 import NotFound from "./features/NotFound";
 import SettingsLayout from "./features/settings/SettingsLayout";
@@ -26,6 +27,7 @@ export const router = createBrowserRouter([
       { path: "book/:bookId/table", element: <ScenesTablePage /> },
       { path: "book/:bookId/metadata", element: <MetadataPage /> },
       { path: "book/:bookId/characters", element: <CharactersPage /> },
+      { path: "book/:bookId/tasks", element: <TasksPage /> },
       { path: "book/:bookId/git", element: <GitPage /> },
       { path: "book/:bookId/scene/:sceneId", element: <EditorPage /> },
       {

@@ -35,6 +35,11 @@ export function useBookEvents(bookId: string | null): void {
             if (data.id) void qc.invalidateQueries({ queryKey: keys.scene(bookId, data.id) });
             break;
           }
+          case "todos-created": {
+            void qc.invalidateQueries({ queryKey: ["todos", bookId] });
+            void qc.invalidateQueries({ queryKey: ["sceneTodos", bookId] });
+            break;
+          }
           case "job": {
             const data = event.data as { sceneId?: string };
             if (data.sceneId) {
@@ -55,6 +60,8 @@ export function useBookEvents(bookId: string | null): void {
         qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
         qc.invalidateQueries({ queryKey: ["jobs", bookId] });
         qc.invalidateQueries({ queryKey: ["conversations", bookId] });
+        qc.invalidateQueries({ queryKey: ["todos", bookId] });
+        qc.invalidateQueries({ queryKey: ["sceneTodos", bookId] });
       },
     });
   }, [bookId, qc]);
