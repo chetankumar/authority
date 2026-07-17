@@ -14,7 +14,8 @@ Scene CRUD, prose content saves, on-demand enrichment, and per-scene sub-lists. 
 | POST | `/api/books/{b}/scenes/{id}/enrich` | `{ scope: summary\|characters\|both }` on-demand AI-redo; **ignores** bookkeeping toggles. 422 `no-utility-model`. Enqueues system job. 202 `{ jobId }` |
 | POST | `/api/books/{b}/scenes/{id}/enrich/auto` | Leave-scene; respects toggles. 202 `{ queued:true, jobId }` or 200 `{ queued:false }` |
 | GET | `/api/books/{b}/scenes/{id}/conversations` | `[ConversationSummary]` from derived index, newest first |
-| GET | `/api/books/{b}/scenes/{id}/todos` | `[Todo]`, open first then createdAt desc |
+| GET | `/api/books/{b}/scenes/{id}/todos` | `[Todo]` for this scene, open first then createdAt desc. Persisted in the scene's own `scenes/{id}/todos.json`, not the book-level `db/todos.json` (doc 03 §Todos storage split — see [api/todos](../todos/CLAUDE.md)) |
+| POST | `/api/books/{b}/scenes/{id}/todos` | `{ action (req) }` — `parentType`/`parentId` implied by the URL. Origin `user`, status `open`. 201 Todo. PATCH/DELETE by id use the shared `/books/{b}/todos/{id}` routes |
 | GET | `/api/books/{b}/scenes/{id}/dependencies` | `{ dependsOn:[...], dependedOnBy:[...] }` with titles resolved server-side |
 
 ## Hard rules & invariants

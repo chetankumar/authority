@@ -136,14 +136,21 @@ class ConversationService:
         if conversation_id in self._generating:
             raise ApiError(409, "Generation already in progress.", {"code": "generation-in-progress"})
         mgr.delete_conversation(conversation_id)
+        # A job only exists to represent this conversation (an AI-Job run or a
+        # bookkeeping run) — deleting the conversation is the only delete
+        # control the UI has, so the orphaned job must go with it rather than
+        # linger in the AI Jobs pane with nothing to open.
         jobs = list(mgr.get_jobs())
-        changed = False
-        for job in jobs:
-            if job.conversationId == conversation_id:
-                job.conversationId = None
-                changed = True
-        if changed:
-            mgr.save_jobs(jobs)
+        remaining = [j for j in jobs if j.conversationId != conversation_id]
+        removed = [j for j in jobs if j.conversationId == conversation_id]
+        if removed:
+            mgr.save_jobs(remaining)
+            for job in removed:
+                self._hub.emit(
+                    book_id,
+                    "job",
+                    {"id": job.id, "type": job.type.value, "sceneId": job.sceneId, "status": "deleted", "result": None},
+                )
 
     async def send_message(
         self, book_id: str, conversation_id: str, body: MessageCreate

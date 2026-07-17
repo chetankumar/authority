@@ -13,7 +13,7 @@ Accept/reject AI-suggested changes. `ProposalService` is the **only** code path 
 
 - **edit** — read the target scene's `.md`; find the *first exact occurrence* of `payload.find` (byte-exact, no normalization). Absent → status `not-found`, nothing changes. Present → replace **one** occurrence, save through the standard content path (hash recompute → dependency fanout → settle timer). The sole AI-into-prose path, author-triggered.
 - **metadata-update** — apply `newValue` to `field` via SceneService PATCH logic (full validation; XOR rules; failure → 422, proposal stays pending).
-- **todo-create** — create the Todo, origin `ai`.
+- **todo-create** — create the Todo via `TodoService.create`, origin `ai`, routed to whichever storage tier `parentType` calls for (doc 03 §Todos storage split — scene-parented → `scenes/{id}/todos.json`, else → `db/todos.json`). `conversationId` is set automatically to the conversation the proposal came from, so the todo's 💬 opens straight back into it.
 
 ## Accept-all
 

@@ -61,7 +61,7 @@ class ContextAssembler:
         When ``mgr`` and ``current_scene`` are set, ``@placeholders`` in *user*
         messages are resolved for the model only — stored conversation text is unchanged.
         """
-        from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+        from langchain_core.messages import AIMessage, HumanMessage
 
         from app.services.placeholder_registry import PlaceholderRegistry
 
@@ -85,11 +85,16 @@ class ContextAssembler:
                     scene_id=scene_ref.id,
                     selection_text=selection,
                 )
-            if msg.author == MessageAuthor.system:
-                messages.append(SystemMessage(content=content))
-            elif msg.author == MessageAuthor.assistant:
+            if msg.author == MessageAuthor.assistant:
                 messages.append(AIMessage(content=content))
             else:
+                # System-authored conversation messages (job prompts, escalation
+                # questions) are content the model must act on, not framing —
+                # the book/framing system prompt is already injected above via
+                # system_messages(). Sending them as SystemMessage instead would
+                # let langchain-anthropic fold them into the top-level `system`
+                # field, leaving an empty `messages` array when nothing else has
+                # spoken yet (Anthropic 400: "at least one message is required").
                 messages.append(HumanMessage(content=content))
         return messages
 
