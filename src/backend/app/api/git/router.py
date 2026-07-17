@@ -1,4 +1,4 @@
-"""Git router (doc 04 §13) — status, staging, diff, suggest-message, commit, remotes, log."""
+"""Git router (doc 04 §13) — status, staging, discard, diff, suggest-message, commit, remotes, log."""
 
 from __future__ import annotations
 
@@ -34,6 +34,11 @@ async def stage(book_id: str, body: StageRequest, svc: GitService = Service) -> 
 @router.post("/unstage", response_model=GitStatus)
 async def unstage(book_id: str, body: StageRequest, svc: GitService = Service) -> GitStatus:
     return await svc.unstage(book_id, body.paths, body.all)
+
+
+@router.post("/discard", response_model=GitStatus)
+async def discard(book_id: str, body: StageRequest, svc: GitService = Service) -> GitStatus:
+    return await svc.discard(book_id, body.paths, body.all)
 
 
 @router.get("/diff", response_model=GitDiff)

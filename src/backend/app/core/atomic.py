@@ -4,6 +4,10 @@ serialize → temp file in the same directory → flush + fsync → os.replace o
 the original (atomic on POSIX and Windows). On POSIX the directory handle is
 fsynced too, so the rename survives power loss. The deprecated ``atomicwrites``
 package is deliberately not used.
+
+``atomic_write_bytes`` is the primitive; text and JSON encode down to it, so the
+fsync/replace sequence exists in exactly one place. Binary matters for uploaded
+book resources, which are arbitrary files rather than serialized documents.
 """
 
 from __future__ import annotations
@@ -15,14 +19,14 @@ from pathlib import Path
 from typing import Any
 
 
-def atomic_write_text(path: Path, text: str) -> None:
+def atomic_write_bytes(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     tmp = Path(tmp_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)
@@ -38,6 +42,10 @@ def atomic_write_text(path: Path, text: str) -> None:
             os.fsync(dir_fd)
         finally:
             os.close(dir_fd)
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    atomic_write_bytes(path, text.encode("utf-8"))
 
 
 def atomic_write_json(path: Path, data: Any) -> None:

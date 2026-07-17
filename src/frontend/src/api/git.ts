@@ -51,6 +51,9 @@ export const stageFiles = (bookId: string, body: { paths?: string[]; all?: boole
 export const unstageFiles = (bookId: string, body: { paths?: string[]; all?: boolean }) =>
   apiSend<GitStatus>("POST", `/books/${bookId}/git/unstage`, body);
 
+export const discardFiles = (bookId: string, body: { paths?: string[]; all?: boolean }) =>
+  apiSend<GitStatus>("POST", `/books/${bookId}/git/discard`, body);
+
 export const getGitDiff = (bookId: string, path: string) =>
   apiGet<GitDiff>(`/books/${bookId}/git/diff?path=${encodeURIComponent(path)}`);
 

@@ -53,9 +53,9 @@ Created with defaults on first run if absent. `appDataRoot` defaults to an OS-st
 
 ## Backend internal architecture
 
-- **Routers** per resource area: settings, books, scenes, relationships, dependencies, structure (parts/chapters), plotlines, characters, todos, conversations, proposals, jobs, git, compile, events, health.
+- **Routers** per resource area: settings, books, scenes, relationships, dependencies, structure (parts/chapters), plotlines, characters, todos, conversations, proposals, git, compile, events, health.
 - **Per-book data manager:** loaded lazily on the first request naming a `bookId`; loads all `db/*.json` + `config/book.json` into memory; every mutation writes through to disk atomically (serialize → `file.json.tmp` → `os.rename`). Conversations load per-file on demand; `conversations/index.json` is derived data, rewritten on any conversation change and rebuildable by folder scan.
-- **Job worker:** a single asyncio background task started at app startup; polls the in-memory job queues of loaded books (concurrency 1 per book, ≤2 global). Executes system jobs (enrichment) and user jobs (AI-Jobs). Persists status transitions to `db/jobs.json`.
+- **Conversation worker:** a single asyncio background task started at app startup; drains conversations at status `queued` in loaded books (concurrency 1 per book, ≤2 global). These are automatic bookkeeping (enrichment) runs — explicit AI-Job runs never queue; they run in-request when the author sends. Running a conversation = `ConversationService.send_message`, which streams the model and sets terminal status on the conversation itself (there is no separate job record — see doc 05).
 - **Git-status worker:** a second, independent asyncio background task started at app startup. Subscribes to the SSE hub's global channel and consumes the internal `book-changed` signal. Per book it holds a **pure 5s debounce** — each new `book-changed` cancels the pending timer and restarts it, so the check only runs once writes go quiet for 5s. On fire: `GitService.status(bookId)` → emit `git-status`. Deliberately off the write path (below).
 - **Settle timers:** per-scene asyncio timers for enrichment coalescing (see 05).
 - **SSE hub:** per-book pub/sub; any service can emit events; `GET /api/books/{id}/events` subscribes a client. A second, global subscription mode (`subscribe_all`) serves internal consumers such as the git-status worker. The hub is generic core infrastructure with no dependency on the AI layer — it exists as soon as anything needs to push.
@@ -76,7 +76,7 @@ Created with defaults on first run if absent. `appDataRoot` defaults to an OS-st
 4. **Scenes core:** scene CRUD, hard-chain splice/heal, soft relationships, sentinels, seq computation; graph view + table view + Add/Edit Scene modal (Basics tab).
 5. **Editor:** TipTap page, autosave, content endpoint, word count/hash, prev/next navigation.
 6. **Structure & metadata:** parts/chapters/plotlines/characters CRUD pages with blocked deletions; Scene Modal full tabs; dependencies + dependency-todo mechanism; Tasks page.
-7. **AI layer:** LangChain factory, placeholder resolution, job worker, SSE hub, enrichment + bookkeeping toggles, conversations + streaming chat, proposals + accept/reject, AI-Jobs end to end.
+7. **AI layer:** LangChain factory, placeholder resolution, conversation worker, SSE hub, enrichment + bookkeeping toggles, conversations + streaming chat, proposals + accept/reject, AI-Jobs end to end.
 8. **Git:** service + page + top-bar badge + suggest-message.
 9. **Compilation:** completeness check, readiness report, compile, standing indicator.
 10. **Polish:** ui.json persistence, empty states, keyboard shortcuts (Ctrl+S), fit-to-view, archived filter.

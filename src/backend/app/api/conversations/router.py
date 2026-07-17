@@ -12,6 +12,7 @@ from app.models.conversation import (
     Conversation,
     ConversationCreate,
     ConversationPatch,
+    ConversationSummary,
     MessageCreate,
 )
 from app.services.ai_job_service import AiJobService
@@ -28,6 +29,14 @@ async def create_conversation(
     book_id: str, body: ConversationCreate, svc: ConversationService = Service
 ) -> Conversation:
     return svc.create(book_id, body)
+
+
+@router.get("/conversations", response_model=list[ConversationSummary])
+async def list_book_conversations(
+    book_id: str, svc: ConversationService = Service
+) -> list[ConversationSummary]:
+    """Book-parented threads. Scene-parented ones list from the scenes router."""
+    return svc.list_for_book(book_id)
 
 
 @router.get("/conversations/{conversation_id}", response_model=Conversation)

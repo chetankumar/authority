@@ -49,7 +49,7 @@ Per doc 02, these launcher files belong at the repository root and are created d
 ## Runtime data (not in the repo)
 
 - `appDataRoot` — holds app-level `app.json` (user, models, AI-Jobs, utility model, API keys). Defaults to an **OS-standard per-user directory outside the repo** (`%LOCALAPPDATA%\Authority` on Windows, `~/Library/Application Support/Authority` on macOS, `~/.local/share/authority` on Linux), computed at runtime — never hardcoded into the committed `launcher.config.json`. This is deliberate: it must not live somewhere a repo-wide `git clean`/`rm -rf`/working-tree operation could delete it as if it were disposable build output. A relative override (e.g. `"./data"`) is still honored for local dev but is opt-in. Created by the app on first write.
-- Book folders live under the author-configured `booksHome` (outside this repo). Each is `{6hex}-{slug}/` with its own `.git`, `config/`, `scenes/`, `db/`, `assets/`, `compiled-book/`.
+- Book folders live under the author-configured `booksHome` (outside this repo). Each is `{6hex}-{slug}/` with its own `.git`, `config/`, `scenes/`, `db/`, `assets/`, `resources/` (files the author keeps beside the book — scanned, not indexed), `compiled-book/`.
 
 ## Build phases (implementation order, doc 02)
 

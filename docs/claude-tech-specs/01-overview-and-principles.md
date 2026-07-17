@@ -20,10 +20,11 @@ A zen writing environment wrapped in a book-management system. The author writes
 | What | Who writes | Gate |
 |---|---|---|
 | Scene prose (`scenes/*.md`) | Author only | AI may only propose exact-match find/replace edits; author applies each or all. HARD RULE. |
-| Scene summary + scene↔character refs, after save | System (enrichment job) | Bookkeeping toggles (book-level). Toggle ON = standing consent, no per-run confirmation. AI-redo buttons in the Scene Modal invoke the same job on demand, toggle state irrelevant. |
+| Scene summary + scene↔character refs, after save | System (enrichment run) | Bookkeeping toggles (book-level). Toggle ON = standing consent, no per-run confirmation. AI-redo buttons in the Scene Modal invoke the same run on demand, toggle state irrelevant. |
 | All other AI-initiated metadata writes (mood, arc, location, dateTime, summary-via-chat, character links via chat, relationships, plotline links) | AI proposes → author confirms | Per-change proposal cards in the conversation (Accept / Reject / Accept all). |
 | Todos created by AI | AI proposes → author confirms | Same proposal gate. |
 | Todos created by the dependency system | System, automatic | No gate — a mechanical consequence of a content change; the todo is itself only a prompt to the author. |
+| Resource files (`resources/`) created by AI | AI proposes → author confirms | Same proposal gate. A resource file is neither prose nor bookkeeping, so it gets no execute tool — only `propose_resource_create`, applied on Accept. |
 | Everything the author does directly in the UI | Author | No gate. |
 
 ## Core domain concepts
@@ -33,9 +34,9 @@ A zen writing environment wrapped in a book-management system. The author writes
 - **Soft relationships** — *definitely before / definitely after / around* another scene. Planning scaffolding; rendered as dotted arrows; checked against the chain at compile time.
 - **Chapter / Part** — structural containers. Chapter belongs to a part; both are ordered linked lists. A scene belongs to a chapter XOR directly to a part (mutually exclusive); for compilation, chapter assignment is mandatory.
 - **Dependency** — "Scene 10 depends on Scene 2 because {reason}". When the depended-on scene's content hash changes, a todo is auto-created on each dependent scene.
-- **Conversation** — the universal primitive for notes, chats, and AI jobs. A titled message thread attached to a scene/chapter/part/book. AI participation is toggleable per conversation at any time; each assistant message records which model produced it. Messages may carry **proposals**.
-- **AI-Job** — a reusable, author-defined prompt template (with `@placeholders`), default model, and output type. Running one creates a conversation + a background job.
-- **Enrichment** — the system job that maintains scene summary and scene↔character mapping (settle-then-run after saves; on-demand via AI-redo).
+- **Conversation** — the universal primitive, and the only run entity: notes, chats, AI-Job runs, and bookkeeping runs are all conversations. A titled message thread attached to a scene/chapter/part/book, with a `status` carrying its run lifecycle. AI participation is toggleable per conversation; each assistant message records which model produced it. Messages may carry **proposals**.
+- **AI-Job** — a reusable, author-defined prompt template (with `@placeholders`), default model, and output type. Running one opens a conversation with the resolved prompt inside, for the author to review and send — there is no separate job record.
+- **Enrichment** — the bookkeeping run that maintains scene summary and scene↔character mapping (leave-scene or on-demand). It runs as a `bookkeeping`-kind conversation whose model writes the fields via execute tools, or asks the author in-thread when unsure.
 - **Compilation** — a gated build: completeness check (errors block, warnings inform), then `compiled-book/` is wiped and regenerated as part folders containing chapter markdown files.
 
 ## Tech stack (locked)

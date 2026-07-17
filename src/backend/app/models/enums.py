@@ -102,6 +102,7 @@ class ProposalType(str, Enum):
     todo_create = "todo-create"
     character_create = "character-create"
     character_relationship_create = "character-relationship-create"
+    resource_create = "resource-create"
 
 
 class ProposalStatus(str, Enum):

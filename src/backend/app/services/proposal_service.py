@@ -19,10 +19,12 @@ from app.models.proposal import (
     CharacterRelationshipCreatePayload,
     Proposal,
     ProposalAcceptResult,
+    ResourceCreatePayload,
     TodoCreatePayload,
 )
 from app.models.scene import SceneUpdate
 from app.services.book_registry import BookRegistry
+from app.services.resource_service import ResourceService
 from app.services.scene_service import SceneService, _content_metrics, _now as scene_now
 from app.services.structure_service import StructureService
 from app.services.todo_service import TodoService
@@ -73,12 +75,14 @@ class ProposalService:
         hub: EventHub,
         structure_service: StructureService,
         todo_service: TodoService,
+        resource_service: ResourceService,
     ) -> None:
         self._registry = registry
         self._scenes = scene_service
         self._hub = hub
         self._structure = structure_service
         self._todos = todo_service
+        self._resources = resource_service
 
     def reject(self, book_id: str, proposal_id: str) -> Proposal:
         mgr = self._registry.get(book_id)
@@ -121,6 +125,8 @@ class ProposalService:
             result = await self._apply_character(book_id, prop)
         elif prop.type == ProposalType.character_relationship_create:
             result = await self._apply_character_relationship(book_id, prop)
+        elif prop.type == ProposalType.resource_create:
+            result = await self._apply_resource_create(book_id, prop)
         else:
             raise validation({"type": f"Unsupported proposal type: {prop.type}"})
 
@@ -209,6 +215,19 @@ class ProposalService:
         )
         self._hub.emit(book_id, "todos-created", {"todos": [todo.model_dump(mode="json")]})
         return {"todo": todo.model_dump(mode="json")}
+
+    async def _apply_resource_create(self, book_id: str, prop: Proposal) -> dict:
+        """Write an AI-drafted file into ``resources/`` — but only from here.
+
+        The AI has no execute tool for resources: doc 01 grants standing consent
+        to bookkeeping alone, and a resource file is neither prose nor
+        bookkeeping. So this accept is the only path, and ``create_text_file``
+        suffixes rather than overwrites — the returned filename may differ from
+        the proposed one.
+        """
+        payload = ResourceCreatePayload.model_validate(prop.payload)
+        resource = await self._resources.create_text_file(book_id, payload.filename, payload.content)
+        return {"resource": resource.model_dump(mode="json")}
 
     async def _apply_character(self, book_id: str, prop: Proposal) -> dict:
         payload = CharacterCreatePayload.model_validate(prop.payload)

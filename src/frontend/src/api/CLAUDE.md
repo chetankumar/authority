@@ -6,9 +6,9 @@ Parent: [src](../CLAUDE.md). Endpoint contracts: [doc 04](../../../../docs/claud
 
 ## Guidelines
 
-- One function per endpoint, grouped by resource area (settings, books, scenes, relationships, dependencies, structure, plotlines, characters, todos, conversations, proposals, jobs, git, compile, events).
+- One function per endpoint, grouped by resource area (settings, books, scenes, relationships, dependencies, structure, plotlines, characters, todos, conversations, proposals, resources, git, compile, events). No `jobs` module — AI runs are conversations.
 - Request/response types mirror the backend Pydantic models ([doc 04 §2](../../../../docs/claude-tech-specs/04-api-reference.md)).
 - Base path `/api`; same-origin in production.
 - **SSE helpers:** the book event channel (`GET /books/{id}/events`) and message streaming (`POST /conversations/{id}/messages`, which returns `token` → `message` → `done` events). Reconnect with exponential backoff.
-- Multipart for `POST/PATCH /books` (title, cover).
+- Multipart for `POST/PATCH /books` (title, cover) and `POST /books/{id}/resources` (file).
 - The frontend never persists — every mutation goes through these functions to the single-writer API.

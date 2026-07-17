@@ -12,7 +12,7 @@
 
 `{prefix}-{6 lowercase hex}` via `secrets.token_hex(3)`, collision-checked against the collection, regenerate on hit.
 
-Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` character · `crl` character relationship · `plt` plotline · `cnv` conversation · `msg` message · `tdo` todo · `dep` dependency · `rel` soft relationship · `job` job · `prp` proposal · `mdl` model config · `aij` AI-Job definition.
+Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` character · `crl` character relationship · `plt` plotline · `cnv` conversation · `msg` message · `tdo` todo · `dep` dependency · `rel` soft relationship · `prp` proposal · `mdl` model config · `aij` AI-Job definition. (No run-record prefix — a run is a conversation `cnv`.)
 
 **Sentinels:** `scn-START` and `scn-END` are reserved IDs recognized as valid relationship endpoints. They have no record in `scenes.json`, no file, cannot be edited/deleted. Rules: Start has no previous; The End has no next; nothing may be *before Start* or *after The End*. They appear in every scene dropdown (pinned top/bottom) and are implicit members of every scenes response.
 
@@ -68,12 +68,15 @@ a3f9c2-my-great-novel/
       todos.json                 # this scene's own todos — see "Todos storage split" below
   db/
     scenes.json  parts.json  chapters.json
-    characters.json  character_relationships.json  plotlines.json  todos.json  jobs.json  ui.json
+    characters.json  character_relationships.json  plotlines.json  todos.json  ui.json
     conversations/
       index.json
       cnv-9f2c1a.json
   assets/
     cover.jpg                    # committed; travels with the book
+  resources/                     # files the author keeps beside the book — see "Resources" below
+    magic-system.md
+    reference-map.png
   compiled-book/                 # build artifact; committed; wiped each compile
     part-1-beginnings/chapter-1-the-arrival.md
   .gitignore                     # *.tmp
@@ -340,19 +343,17 @@ Proposal payloads:
 
 Rewritten on any conversation change; rebuildable by scanning the folder.
 
-## db/jobs.json
+## resources/ — no index
 
-```json
-{ "id": "job-x", "type": "user" | "system",
-  "aiJobId": null, "conversationId": null, "sceneId": null,
-  "scope": "full" | "selection" | "summary" | "characters" | "both",
-  "modelId": "mdl-...",
-  "status": "queued" | "running" | "done" | "failed", "error": null,
-  "result": { "unrecognizedNames": [], "conversationIds": [], "modelsUsed": {} },
-  "createdAt": "...", "startedAt": null, "finishedAt": null }
-```
+Files the author keeps beside the manuscript: research PDFs, reference images, worldbuilding notes. There is **no `db/resources.json` and no id** — `resources/` is scanned fresh on every list request, and the filename is the key. This follows the bookshelf itself: `BookScanner` discovers every book by folder scan for the same reason (doc 01 hard rule 4, portability) — a book folder must survive being zipped, cloned, or hand-edited outside the app. An index would be a second source of truth with nothing to reconcile it against; a file dropped into `resources/` by hand simply appears on the next scan.
 
-User jobs = AI-Job runs (scope full/selection, linked conversation, `modelId` = the job's resolved model). System jobs = enrichment (scope summary/characters/both). Enrichment resolves its model(s) at run time rather than at enqueue — `modelId` is left `null` for system jobs; `scope: both` runs the scene-summary and character-parsing passes as **two independent calls**, each against its own configured model (doc 05), and `result.modelsUsed` records which model served each (`{"sceneSummary": "mdl-..", "characterParsing": "mdl-.."}`, only the keys that actually ran).
+Any file type is accepted, up to 25 MB. A name collision on upload or on an accepted `resource-create` proposal never overwrites — the incoming file is suffixed (`notes.md` → `notes-2.md`) instead. Deletion moves the file to `.trash/`, matching scene deletion — never a physical unlink.
+
+The AI can read resources (`list_resources`, `get_resource` — ordinary, ungated read tools; text-ish extensions only, capped at ~100k characters) but cannot write one directly. `propose_resource_create` emits a proposal; only an accepted proposal calls the write path, per doc 01's write-permission table.
+
+## No jobs.json
+
+There is no job file. A *run* — an AI-Job the author triggers, or an automatic bookkeeping pass — is a **conversation** (`db/conversations/`), distinguished by `kind` (`ai-job` / `bookkeeping`) and carrying its lifecycle in `status` (`open · queued · running · waiting · done · failed`, see [doc 04 §2.1](04-api-reference.md)). A `Conversation` already holds everything a job record used to: the scene (`parentId`), the model (`aiParticipant.modelId`), the definition (`aiJobId`), and timestamps. The [conversation worker](05-ai-system.md) drives automatic runs by draining conversations at `status: queued`. Books created before this change carry a legacy `db/jobs.json`; it is deleted on first load (nothing to migrate — the conversation it shadowed already exists).
 
 ## db/ui.json
 

@@ -5,10 +5,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.core.errors import ApiError
 from app.models.scene import SceneBookkeeping
 from app.services.book_data_manager import BookDataManager
 from app.services.book_registry import BookRegistry
 from app.services import chain_service as chain
+from app.services.resource_service import (
+    MAX_TEXT_READ_CHARS,
+    is_text_resource,
+    safe_resource_path,
+    scan_resources,
+)
 
 
 def build_read_tools(book_id: str, registry: BookRegistry) -> list[Any]:
@@ -26,6 +33,9 @@ def build_read_tools(book_id: str, registry: BookRegistry) -> list[Any]:
 
     class TodosArgs(BaseModel):
         sceneId: str | None = None
+
+    class ResourceNameArgs(BaseModel):
+        filename: str = Field(description="Resource file name, e.g. 'magic-system.md'")
 
     class CharacterArgs(BaseModel):
         id: str | None = Field(default=None, description="Character id, or omit for all")
@@ -132,6 +142,29 @@ def build_read_tools(book_id: str, registry: BookRegistry) -> list[Any]:
             todos = [t for t in todos if t.parentId == sceneId]
         return json.dumps([t.model_dump(mode="json") for t in todos], ensure_ascii=False)
 
+    def list_resources() -> str:
+        files = scan_resources(_mgr().book_dir)
+        return json.dumps(
+            [{**f.model_dump(mode="json"), "readable": is_text_resource(f.filename)} for f in files],
+            ensure_ascii=False,
+        )
+
+    def get_resource(filename: str) -> str:
+        try:
+            path = safe_resource_path(_mgr().book_dir, filename)
+        except ApiError as exc:
+            fields = (exc.detail or {}).get("fields", {})
+            return f"Rejected: {fields.get('filename', exc.error)}"
+        if not path.is_file():
+            return f"No resource named {filename}. Call list_resources to see what is there."
+        if not is_text_resource(filename):
+            # Listed but opaque: the author can see it, the model can't read it.
+            return f"{filename} is a binary file — not readable as text."
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if len(text) > MAX_TEXT_READ_CHARS:
+            return text[:MAX_TEXT_READ_CHARS] + "\n\n[truncated]"
+        return text
+
     return [
         StructuredTool.from_function(
             func=get_scene, name="get_scene", description="Get scene prose + metadata by id.", args_schema=SceneIdArgs
@@ -162,5 +195,20 @@ def build_read_tools(book_id: str, registry: BookRegistry) -> list[Any]:
         ),
         StructuredTool.from_function(
             func=get_todos, name="get_todos", description="Todos, optionally filtered by sceneId.", args_schema=TodosArgs
+        ),
+        StructuredTool.from_function(
+            func=list_resources,
+            name="list_resources",
+            description=(
+                "List the book's resource files — research, notes, references the "
+                "author keeps beside the manuscript. `readable` marks the ones "
+                "get_resource can open."
+            ),
+        ),
+        StructuredTool.from_function(
+            func=get_resource,
+            name="get_resource",
+            description="Read a text or markdown resource file by name.",
+            args_schema=ResourceNameArgs,
         ),
     ]

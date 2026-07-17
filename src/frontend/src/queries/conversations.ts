@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listSceneConversations, getConversation } from "../api/conversations";
+import { listBookConversations, listSceneConversations, getConversation } from "../api/conversations";
 import { keys } from "./keys";
 
 // One query per scene. Both the Notes and AI Jobs panes are just different
@@ -11,6 +11,15 @@ export function useSceneConversations(bookId: string, sceneId: string) {
     queryKey: keys.conversations(bookId, sceneId),
     queryFn: () => listSceneConversations(bookId, sceneId),
     enabled: !!bookId && !!sceneId,
+  });
+}
+
+// Threads about the whole book rather than any one scene (Resources page).
+export function useBookConversations(bookId: string) {
+  return useQuery({
+    queryKey: keys.bookConversations(bookId),
+    queryFn: () => listBookConversations(bookId),
+    enabled: !!bookId,
   });
 }
 

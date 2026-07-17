@@ -78,6 +78,16 @@ class BookDataManager:
         if self._hub is not None and self._book_id is not None:
             self._hub.emit(self._book_id, "book-changed", {})
 
+    def notify_changed(self) -> None:
+        """``_changed()`` for writes this class does not itself own.
+
+        Book resources are files in the book folder, not state this manager
+        loads or persists, so they have no ``save_*`` to ride in on. Routing
+        their signal through here anyway keeps the invariant intact: everything
+        that dirties the working tree announces it from one place.
+        """
+        self._changed()
+
     def _config_path(self) -> Path:
         return self._dir / "config" / "book.json"
 

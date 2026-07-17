@@ -6,7 +6,7 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06 §2](../../../../docs/claude-tech-spe
 
 ## Query keys (single factory)
 
-`['book', id]` · `['scenes', bookId]` · `['todos', bookId, includeScenes]` · `['sceneTodos', bookId, sceneId]` · `['conversations', bookId, sceneId]` · `['jobs', bookId, sceneId]` · `['git', bookId]` · `['compileCheck', bookId]` · `['settings', section]`. Todos are two keys because storage is split by `parentType` (doc 03): `todos` is the book-level list (Tasks page), `sceneTodos` is one scene's own list (editor accordion).
+`['book', id]` · `['scenes', bookId]` · `['todos', bookId, includeScenes]` · `['sceneTodos', bookId, sceneId]` · `['conversations', bookId, sceneId]` · `['conversations', bookId, "book"]` · `['resources', bookId]` · `['git', bookId]` · `['compileCheck', bookId]` · `['settings', section]`. Todos are two keys because storage is split by `parentType` (doc 03): `todos` is the book-level list (Tasks page), `sceneTodos` is one scene's own list (editor accordion). No `jobs` key — AI runs *are* conversations, so the AI Jobs pane filters `['conversations']`. `keys.bookConversations(bookId)` deliberately returns `['conversations', bookId, "book"]` rather than a differently-named key, so it falls inside the `['conversations', bookId]` prefix `useBookEvents` already invalidates for non-scene events.
 
 ## Guidelines
 

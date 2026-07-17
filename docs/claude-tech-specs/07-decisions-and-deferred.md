@@ -44,7 +44,7 @@ These closed remaining open threads with reasonable defaults; each is a one-line
 7. **Standing readiness indicator** on the Metadata page (same check API as compile).
 8. **Archive surfacing:** Basics tab button + table row action.
 9. **Reverse-dependency read-only list** shown in the Dependencies tab.
-10. **Chat model default:** last model used; job runs use the job's default.
+10. **Chat model default:** last model used; AI-Job/bookkeeping runs use the run's own model.
 11. **API keys:** plaintext in app-level app.json with `${ENV_VAR}` alternative; never inside book folders.
 12. **Row click in table** opens the editor (Edit-metadata is the smaller affordance).
 13. Log file truncated per launch (no rotation history).
@@ -57,10 +57,10 @@ These closed remaining open threads with reasonable defaults; each is a one-line
 3. Export beyond markdown (docx/epub/pdf).
 4. Concurrent external editing of scene files while the app runs.
 5. Auth / multi-user / remote hosting.
-6. Git beyond stage-commit-push-pull (branches, revert, rebase — CLI territory).
+6. Git beyond stage-commit-push-pull-**discard** (branches, revert, rebase — CLI territory). Working-tree discard (restore to HEAD / delete untracked) is in-app; rewriting history is not.
 7. AI auto-titling of conversations; AI dependency-impact analysis; plotline auto-detection (natural future bookkeeping toggles).
 8. Book-level utility-model override (app-level only in v1).
 
 ## Glossary
 
-**Trunk** — the hard chain connected to Start. **Unanchored** — a hard chain not yet connected to Start. **Floating** — a scene with only soft relationships. **Orphan** — a scene with no relationships. **Archived** — set aside, out of the book, nothing deleted. **Settle** — the quiet period after saves before enrichment runs. **Proposal** — an AI-suggested change awaiting author accept/reject. **Sentinels** — the virtual Start/The End nodes. **Utility model** — the configured model for system tasks. **Enrichment** — the system job maintaining summary + character refs.
+**Trunk** — the hard chain connected to Start. **Unanchored** — a hard chain not yet connected to Start. **Floating** — a scene with only soft relationships. **Orphan** — a scene with no relationships. **Archived** — set aside, out of the book, nothing deleted. **Settle** — the quiet period after saves before enrichment runs. **Proposal** — an AI-suggested change awaiting author accept/reject. **Sentinels** — the virtual Start/The End nodes. **Utility model** — the configured model for system tasks. **Enrichment** — the bookkeeping run (a `bookkeeping`-kind conversation) maintaining summary + character refs.

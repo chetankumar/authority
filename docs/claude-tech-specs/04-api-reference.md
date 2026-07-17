@@ -44,14 +44,15 @@ Routers hold no logic. Every router validates via Pydantic, then delegates:
 | **BookService** | Book creation (scaffold, git init, initial commit), rename/cover updates, folder rename |
 | **BookDataManager** (one per open book) | Loads `db/*.json` + `config/book.json` into memory; owns the book's **asyncio mutation lock**; atomic write-through persistence; conversation files + derived index; ui.json |
 | **ChainService** | Hard-chain algebra: splice, heal, walk, seq/placement computation, contiguity + completeness checks |
-| **SceneService** | Scene CRUD orchestration; content saves (hash, word count); dependency-todo fanout; enrichment settle timers; file naming/renames |
+| **SceneService** | Scene CRUD orchestration; content saves (hash, word count); dependency-todo fanout; file naming/renames. `update_scene` is also the path the bookkeeping execute tools write through |
 | **StructureService** | Parts/chapters linked lists; move-before/after rewiring; blocked deletions; plotlines; characters (uniqueness) + character relationships (directional, category + free text) |
-| **ConversationService** | Conversation lifecycle; message append; passes parent scene into ContextAssembler; streams via AIOrchestrator |
-| **ProposalService** | Locates a proposal by id (via conversation index); applies/rejects; the only code path that mutates on behalf of AI output |
-| **JobService + Worker** | `jobs.json` queue; resolves AI-Job placeholders then ContextAssembler → AIOrchestrator; per-book FIFO, ≤2 global |
-| **EnrichmentService** | The system bookkeeping job (summary, character mapping) |
+| **ConversationService** | The single run entity: conversation lifecycle + `status` (open→queued→running→waiting/done/failed); message append; streams via AIOrchestrator; binds execute tools for bookkeeping kinds; emits `conversation` SSE |
+| **AiJobService** | Prepares an AI-Job run: resolve the definition's prompt, open an `ai-job` conversation with it inside at `open`. No model call, no run record |
+| **ProposalService** | Locates a proposal by id (via conversation index); applies/rejects; a code path that mutates on behalf of AI output (after author acceptance) |
+| **ConversationWorker** | Standing task draining conversations at `status: queued` (automatic bookkeeping); per-book FIFO, ≤2 global; runs each via `ConversationService.send_message` |
+| **EnrichmentService** | Creator only: opens `queued` bookkeeping conversations (summary / characters, `both` → two). Runs no model and writes no fields — the conversation does, via execute tools |
 | **AIOrchestrator / ModelFactory** | `ModelConfig → LangChain BaseChatModel`; invoke_once / structured / stream + tool loop; `${ENV}` key resolution |
-| **GitService** | GitPython wrapper: status/stage/unstage/diff/commit/push/pull/log; post-write status checks |
+| **GitService** | GitPython wrapper: status/stage/unstage/discard/diff/commit/push/pull/log; post-write status checks |
 | **CompileService** | Completeness check (errors/warnings); build to `compiled-book/` |
 | **EventHub** | Per-book SSE pub/sub; all services emit through it |
 
@@ -80,9 +81,10 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 **`sceneStatus`**: `active` · `archived`.
 **`relationshipType`** (soft): `before` · `after` · `around` — read as *fromScene is definitely-{type} toScene*.
 **`todoStatus`**: `open` · `done` · `closed`. **`todoOrigin`**: `user` · `dependency` · `ai`.
-**`conversationKind`**: `note` · `chat` · `ai-job` · `task-discussion`.
-**`proposalType`**: `edit` · `metadata-update` · `todo-create` · `character-create` · `character-relationship-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`. **`characterRelationshipCategory`**: `family` · `romantic` · `friendship` · `rivalry` · `professional` · `mentorship` · `other`.
-**`jobType`**: `user` (AI-Job run) · `system` (enrichment). **`jobStatus`**: `queued` · `running` · `done` · `failed`. **`jobScope`**: `full` · `selection` (user jobs) · `summary` · `characters` · `both` (system jobs).
+**`conversationKind`**: `note` · `chat` · `ai-job` · `bookkeeping` · `task-discussion`.
+**`conversationStatus`**: `open` · `queued` · `running` · `waiting` · `done` · `failed` · `archived`. This *is* the run lifecycle — there is no separate Job. `open` = idle (a note/chat, or an AI-Job whose prompt awaits the author's Send); `queued` = the worker will run it unattended (automatic bookkeeping); `running` = model in flight; `waiting` = a bookkeeping run asked the author something and stopped; `done`/`failed` terminal.
+**`enrichScope`** (POST /scenes/{id}/enrich): `summary` · `characters` · `both`. `both` is resolved at creation into two conversations (one per field), never a persisted state.
+**`proposalType`**: `edit` · `metadata-update` · `todo-create` · `character-create` · `character-relationship-create` · `resource-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`. **`characterRelationshipCategory`**: `family` · `romantic` · `friendship` · `rivalry` · `professional` · `mentorship` · `other`.
 **`parentType`** (conversations, todos): `scene` · `chapter` · `part` · `book`.
 **`gitFileStatus`**: `modified` · `added` · `deleted` · `untracked` · `renamed`.
 
@@ -149,7 +151,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 
 **ConversationSummary** (index rows) `{ "id", "kind", "title", "parentType", "parentId", "status", "updatedAt", "messageCount", "pendingProposals" }`
 
-**Conversation** = ConversationSummary + `{ "aiParticipant": { "enabled": bool, "modelId": "mdl-..|null" }, "aiJobId": "aij-..|null", "createdAt", "messages": [Message] }`
+**Conversation** = ConversationSummary + `{ "aiParticipant": { "enabled": bool, "modelId": "mdl-..|null" }, "aiJobId": "aij-..|null", "aiJobName": "…|null", "createdAt", "messages": [Message] }`. The conversation *is* the run: `status` (from `conversationStatus` above) is its lifecycle, `aiJobId` links an AI-Job run back to its definition, `parentId` is its scene. There is no separate Job object.
 
 **Message**
 ```json
@@ -166,14 +168,6 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
                "replace": "replacement text", "rationale": "why" } }
 ```
 Payload variants — `metadata-update`: `{ "targetType": "scene"|"character", "targetId", "field", "oldValue", "newValue", "rationale" }` (`field` any PATCHable scene or character metadata field; never prose). `todo-create`: `{ "parentType", "parentId", "action" }`. `character-create`: `{ "name", "aliases"?, …, "sceneId"? }` — Accept dedupes case-insensitively against existing name/aliases (reuses the existing character instead of erroring) and, if `sceneId` is set, tags the character onto that scene's `characters` with empty involvement. `character-relationship-create`: `{ "characterAId", "characterBId", "category", "aToB", "bToA", "description"?, "rationale"? }`.
-
-**Job**
-```json
-{ "id": "job-x", "type": "user", "aiJobId": "aij-..", "conversationId": "cnv-..",
-  "sceneId": "scn-..", "scope": "full", "modelId": "mdl-..",
-  "status": "queued", "error": null, "result": { "unrecognizedNames": [] },
-  "createdAt": "...", "startedAt": null, "finishedAt": null }
-```
 
 **GitFile** `{ "path", "status": gitFileStatus, "staged": bool }`
 **GitStatus** `{ "dirty": bool, "files": [GitFile], "ahead": 0, "behind": 0, "hasRemote": bool, "branch": "main", "summary": "7-new, 1-updated, 3-deleted" }`
@@ -318,10 +312,10 @@ GET returns `db/ui.json` verbatim (client-defined shape: AG Grid column state, r
 
 ### POST /api/books/{b}/scenes/{id}/enrich
 **Request** `{ "scope": "summary" | "characters" | "both" }` — the on-demand AI-redo; **ignores** bookkeeping toggles (an explicit request is its own consent).
-**Logic:** 422 `no-utility-model` if *neither* task-specific model needed for the requested scope resolves (own slot or its utility-model fallback). JobService enqueues a system Job (scope as given, `modelId` left unset — the model for each sub-task is resolved at run time, not enqueue time); replaces any queued (not running) enrichment for this scene. **Response 202** `{ "jobId": "job-.." }`; results arrive as `job` + `scene-updated` SSE events.
+**Logic:** 422 `no-utility-model` if *neither* task-specific model needed for the requested scope resolves (own slot or its utility-model fallback). EnrichmentService opens one `queued` **bookkeeping conversation** per field in scope (`both` → two, each on its own configured model), each seeded with a resolved prompt; the [conversation worker](05-ai-system.md) runs them. **Response 202** `{ "conversationIds": ["cnv-..", …] }`; results arrive as `conversation` + `scene-updated` SSE events.
 
 ### POST /api/books/{b}/scenes/{id}/enrich/auto
-Leave-scene path. **No body.** Reads the book's `bookkeeping` toggles and enqueues a system job only for enabled halves with a resolvable model. **Response 202** `{ "queued": true, "jobId" }` when a job was queued; **200** `{ "queued": false }` when toggles/models skip.
+Leave-scene path. **No body.** Reads the book's `bookkeeping` toggles and opens a bookkeeping conversation only for enabled halves with a resolvable model. **Response 202** `{ "queued": true, "conversationIds": [...] }` when at least one was created; **200** `{ "queued": false, "conversationIds": [] }` when toggles/models skip.
 
 ### GET /api/books/{b}/scenes/{id}/conversations
 **Response** `[ConversationSummary]` for `parentType=scene, parentId=id`, from the derived index (no conversation files opened). Newest first.
@@ -430,6 +424,9 @@ its 💬 opens straight back into that discussion.
 
 ## 9. Conversations, Messages, AI-Job runs
 
+### GET /api/books/{b}/conversations
+Book-parented threads only (`parentType: "book"`) — the Resources page's chat list. Scene-parented threads still list from `GET /books/{b}/scenes/{scene_id}/conversations` (§5). **Response** `ConversationSummary[]`.
+
 ### POST /api/books/{b}/conversations
 **Request**
 ```json
@@ -437,7 +434,7 @@ its 💬 opens straight back into that discussion.
   "aiParticipant"?: { "enabled": bool, "modelId": "mdl-..|null" },
   "title"?: "optional initial title" }
 ```
-Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:** ConversationService creates `cnv-{hex}.json` with empty messages; title is the optional `title` or `"Untitled"`. Index updated. **201** Conversation. *(AI-Job runs don't call this — see §9.4. Escalations pass a caller-supplied short title — see EscalationService.)*
+Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:** ConversationService creates `cnv-{hex}.json` with empty messages; title is the optional `title` or `"Untitled"`. Index updated. **201** Conversation. *(AI-Job runs use §9.4; automatic bookkeeping runs are created by EnrichmentService — see [doc 05](05-ai-system.md).)*
 
 ### GET /api/books/{b}/conversations/{id}
 **Response** full Conversation with messages + proposals (per-file load on demand).
@@ -446,7 +443,7 @@ Default aiParticipant: `{enabled:false, modelId:null}` (note-stacking). **Logic:
 **Request** `{ "title"?, "status"?: "open"|"archived", "aiParticipant"?: { "enabled"?, "modelId"? } }` — the mid-thread AI toggle and model switch live here. Enabling with no modelId and none previously set → 422 `model-required`.
 
 ### DELETE /api/books/{b}/conversations/{id}
-Hard delete for mistakes. Removes `cnv-*.json` and the index entry; any jobs pointing at this conversation get `conversationId` cleared. **204**. Rejected **409** `generation-in-progress` if a stream is active.
+Hard delete for mistakes. Removes `cnv-*.json` and the index entry; emits `conversation {status:"deleted"}`. **204**. Rejected **409** `generation-in-progress` if a stream is active.
 
 ### 9.3 POST /api/books/{b}/conversations/{id}/messages — **SSE response**
 **Request**
@@ -458,9 +455,10 @@ Hard delete for mistakes. Removes `cnv-*.json` and the index entry; any jobs poi
 1. Append the user Message (id, timestamp; excerpts stored verbatim). Persist + index update.
 2. If title is still `"Untitled"`: call the **utility model** with a dedicated naming prompt (ask for 3–5 words; **not** chat-assistant framing). Persist the model’s reply as returned (trim whitespace only — no sanitizer / word clipping); on missing utility model / failure → first ~5 words of the user message. Emit SSE `title` `{ "title": ".." }`.
 3. Emit SSE `message` for the user turn. **aiParticipant.enabled == false:** then `done`. Done (pure note).
-4. **enabled == true:** resolve ModelConfig (422 `model-missing`/`model-deleted` if unresolvable). Build the LangChain call: system = book systemPrompt + Authority's assistant framing + CURRENT SCENE + tool schemas; history = conversation messages mapped to roles (context excerpts injected as quoted blocks inside user turns; `@placeholders` in user text resolved for the model); bind read + propose tools (doc 05).
-5. Respond as **SSE**: `token` events (`{ "text": ".." }`) as the model streams; tool calls execute server-side mid-stream (read tools answer from BookDataManager; propose tools accumulate Proposal objects); on completion, persist the assistant Message (content, modelId, proposals) and send a final `message` event carrying it, then `done`.
-6. Model/tool failure mid-stream → `error` event `{ "error": ".." }`; user message stays persisted; no assistant message written.
+4. **enabled == true:** resolve ModelConfig (422 `model-missing`/`model-deleted` if unresolvable). Build the LangChain call: system = book systemPrompt + Authority's assistant framing + CURRENT SCENE (omitted entirely for a `parentType: "book"` conversation — there is no current scene) + tool schemas; history = conversation messages mapped to roles (context excerpts injected as quoted blocks inside user turns; `@placeholders` in user text resolved for the model when a scene is in context); bind read + propose tools (doc 05) — every read tool, including `list_resources`/`get_resource`, is already book-scoped, so a book-level chat has the same read surface as a scene one.
+5. Respond as **SSE**: `token` events (`{ "text": ".." }`) as the model streams; tool calls execute server-side mid-stream (read tools answer from BookDataManager; propose tools accumulate Proposal objects; **execute** tools — bound only for `bookkeeping`-kind conversations — write scene bookkeeping via SceneService); on completion, persist the assistant Message (content, modelId, proposals) and send a final `message` event carrying it, then `done`. For run kinds (`ai-job`/`bookkeeping`), also transition `status` (`running` → `done`, or `waiting` when a bookkeeping reply called no tool, i.e. asked a question) and emit `conversation`.
+6. Model/tool failure mid-stream → `error` event `{ "error": ".." }`; user message stays persisted; no assistant message written. For run kinds this also sets `status: failed` and appends the error as a visible system message.
+- `body` may be omitted (worker path): generate against the thread as it stands, with no new user message.
 Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 
 ### 9.4 POST /api/books/{b}/ai-jobs/run
@@ -469,8 +467,7 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 { "aiJobId": "aij-..", "sceneId": "scn-..",
   "scope": "full" | "selection", "selectionText"?: "required when scope=selection" }
 ```
-**Logic:** 1) 422: unknown job/scene; scope `selection` without selectionText. 2) ConversationService creates a Conversation: kind `ai-job`, parent = the scene, title = **job definition name** (no clock suffix), aiParticipant `{enabled:true, modelId: job.defaultModelId}`, aiJobId set (+ name snapshot). 3) JobService enqueues a Job (type `user`, status `queued`, links to both). **Response 202** `{ "jobId", "conversationId" }` — the client opens the conversation modal immediately and watches.
-**Worker execution:** status `running` (SSE `job`) → PlaceholderRegistry resolves the prompt template against the scene (selectionText feeds `@selection`) → outputType `edit-proposals`/`metadata-proposals` appends format instructions (§2.1) → the resolved prompt is posted as a **system-authored** first message in the conversation → model invoked with tools, streamed into the conversation (same §9.3 mechanics; clients subscribed to the modal see it live) → fenced JSON parsed into Proposals on the assistant message (parse failure → degrade to chat + `result.warning`) → status `done`/`failed` (SSE). The author then continues the conversation normally — follow-ups are plain §9.3 sends.
+**Logic (AiJobService.prepare, synchronous — no model call):** 1) 422: unknown job/scene; scope `selection` without selectionText. 2) Resolve the definition's prompt template against the scene (`@placeholders`; selectionText feeds `@selection`), appending format instructions (§2.1) for `edit-proposals`/`metadata-proposals`. 3) Create a Conversation: kind `ai-job`, parent = the scene, title = **definition name**, aiParticipant `{enabled:true, modelId: definition.defaultModelId}`, `aiJobId` + name snapshot, status `open`, with the resolved prompt as its first (system-authored) message. **Response 201** `{ "conversationId" }`. The client opens the modal on it; the prompt is already there to review and **nothing runs** until the author sends. That send is an ordinary §9.3 message; the definition's `outputType` (looked up via `conv.aiJobId`) drives fenced-JSON → proposal parsing (parse failure → plain chat). Follow-ups are plain §9.3 sends.
 
 ---
 
@@ -480,20 +477,20 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 **Logic (ProposalService, under book lock):** locate the proposal via the conversation index (404 unknown; 409 `already-resolved` if not pending). By type:
 - **edit:** read the target scene's .md; find the *first exact occurrence* of `payload.find` (byte-exact, no normalization). Absent → status `not-found`, nothing changes, response reports it. Present → replace **one** occurrence, save through the standard content path (**PUT semantics: hash recompute → dependency fanout → settle timer** — an applied edit is a content change like any other). This is the sole prose-mutation path besides the editor, and it is author-triggered.
 - **metadata-update:** apply `payload.newValue` to `payload.field` on `targetType` `scene` (via SceneService PATCH) or `character` (via StructureService character PATCH). Validation failure → 422, proposal stays pending. `oldValue` filled from current state on accept when missing.
-- **todo-create:** create the Todo, origin `ai`.
+- **todo-create:** create the Todo via `TodoService.create`, origin `ai`, routed to whichever storage tier `parentType` calls for (§8). `conversationId` is set automatically to the proposing conversation, so the todo's 💬 opens straight back into it.
 - **character-create:** create the Character via StructureService uniqueness rules; optionally tag `sceneId` on the scene. 422 if Characters layer not loaded.
+- **resource-create:** write `payload.content` into `resources/{payload.filename}` via `ResourceService.create_text_file` (§15). Name collision → suffixed, never overwritten; the response's filename may differ from the proposed one. This is the *only* write path for an AI-drafted resource file — there is no execute tool for it (doc 01 write-permission table).
 Stamp status `applied` (or `not-found`) + resolvedAt; persist conversation; emit `scene-updated`/`todos-created` as applicable.
-**Response** `{ "proposal": Proposal, "result": { "wordCount"?, "contentHash"?, "todo"?: Todo } }`.
+**Response** `{ "proposal": Proposal, "result": { "wordCount"?, "contentHash"?, "todo"?: Todo, "resource"?: ResourceFile } }`.
 
 ### POST /api/books/{b}/proposals/{id}/reject
 Marks `rejected` + resolvedAt; touches nothing else. **Response** the Proposal. *(Accept-all = client loops accept sequentially, stopping to display any `not-found`s; deliberately no batch endpoint — no batch atomicity.)*
 
 ---
 
-## 11. Jobs
+## 11. Runs are conversations
 
-### GET /api/books/{b}/jobs?scene={id}&status={jobStatus}&type={jobType}
-**Response** `[Job]` newest first, filters optional. Powers the AI Jobs accordion (live transitions via SSE; this is the load/reload read).
+There is no jobs endpoint. An AI run — an AI-Job the author triggers (§9.4) or an automatic bookkeeping pass ([doc 05](05-ai-system.md)) — is a Conversation with `kind` `ai-job`/`bookkeeping` and a lifecycle `status`. The editor's **AI Jobs** accordion is `GET /scenes/{id}/conversations` (§5) filtered to those two kinds; live transitions arrive via the `conversation` SSE event (§12).
 
 ---
 
@@ -503,8 +500,8 @@ One connection per open book. Event types and payloads:
 
 | event | data | emitted when |
 |---|---|---|
-| `job` | `{ id, type, sceneId, status, result? }` | any job status transition |
-| `scene-updated` | `{ id, changed: ["summary","characters"] }` | any scene metadata write (author, enrichment, accepted proposal) |
+| `conversation` | `{ id, kind, parentType, parentId, status }`, or `{ id, status: "deleted" }` | a conversation is created or changes status (an AI run starting, finishing, landing in `waiting`), or is deleted |
+| `scene-updated` | `{ id, changed: ["summary","characters"] }` | any scene metadata write (author, enrichment via execute tools, accepted proposal) |
 | `todos-created` | `{ todos: [Todo] }` | dependency fanout or accepted todo-create |
 | `git-status` | `GitStatus` (§2.2, includes `summary`) | **(a)** the git-status worker's 5s debounce fired after a `book-changed`; **(b)** immediately, in-request, after an explicit stage/unstage/commit/push/pull |
 | `compile-done` | `{ report: CompileReport }` | successful compile |
@@ -521,10 +518,11 @@ Clients patch TanStack Query caches from these; on reconnect, refetch active que
 
 All endpoints: GitService (GitPython over the system git; the user's credentials/SSH config apply). 404 if the book folder lost its `.git`.
 
-**Emission rule:** every *mutating* endpoint here (stage, unstage, commit, push, pull) recomputes status and emits `git-status` **immediately, in-request** — the author is on the Git page waiting, so these never go through the git-status worker's 5s debounce. The worker exists only for *incidental* dirtying from unrelated writes (scene autosave, structure edits), where nobody is watching. Reads (`status`, `diff`, `log`) emit nothing.
+**Emission rule:** every *mutating* endpoint here (stage, unstage, discard, commit, push, pull) recomputes status and emits `git-status` **immediately, in-request** — the author is on the Git page waiting, so these never go through the git-status worker's 5s debounce. The worker exists only for *incidental* dirtying from unrelated writes (scene autosave, structure edits), where nobody is watching. Reads (`status`, `diff`, `log`) emit nothing.
 
 ### GET /api/books/{b}/git/status → GitStatus (§2.2). Page load + badge initial state; also the 10s client poll (§12).
 ### POST /api/books/{b}/git/stage · /unstage — **Request** `{ "paths"?: ["scenes/x.md"], "all"?: true }` (one required). Real `git add` / `git reset` on those paths. **Response** refreshed GitStatus; emits `git-status`.
+### POST /api/books/{b}/git/discard — **Request** `{ "paths"?: ["scenes/x.md"], "all"?: true }` (one required). VS Code-style: tracked paths → `git restore --source=HEAD --staged --worktree`; untracked → `git clean -f`. Drops the book's in-memory `BookDataManager` so the next API read reloads from disk (discarded JSON/prose must not keep serving from cache). **Response** refreshed GitStatus; emits `git-status`.
 ### GET /api/books/{b}/git/diff?path= — **Response** `{ "path", "diff": "unified diff text (staged+unstaged vs HEAD)" }`; binary files → `{ "binary": true }`.
 ### POST /api/books/{b}/git/suggest-message
 **Logic:** staged diff (422 `nothing-staged` if empty) → truncate to a size cap (~20k chars, largest hunks first) → **commit-message model** (`ai.commitMessageModelId`, falling back to the utility model): *"Summarize these changes to a novel manuscript as a single-line git commit message."* No commit-message model resolvable → deterministic fallback from stats (`"3 scenes updated, 1 added"`). **Response** `{ "message": "..." }` — fills the textarea, author edits freely.
@@ -544,3 +542,24 @@ All endpoints: GitService (GitPython over the system git; the user's credentials
 
 ### POST /api/books/{b}/compile
 **Logic (CompileService, under lock):** 1) Run the check; errors → **409** `{ "errors": [CheckItem] }`, nothing written. 2) Delete `compiled-book/` contents entirely (stale artifacts must not survive renames). 3) For each part in chain order → `part-{n}-{slug}/`; for each of its chapters in chain order → `chapter-{n}-{slug}.md` = `# {chapter title}\n\n` + its scenes' prose in chain order joined by `\n\n***\n\n`; empty chapters emit heading-only (warning). 4) Emit `compile-done` + `git-status` (output lands uncommitted; the badge lights; committing is the author's deliberate act — compile never auto-commits). **Response** CompileReport.
+
+---
+
+## 15. Resources
+
+Files the author keeps beside the manuscript — research, references, worldbuilding notes. Handled by `ResourceService`. No id, no index: `resources/` is scanned fresh on every list (doc 03 §resources/ — no index), so the filename is the key everywhere below.
+
+### GET /api/books/{b}/resources
+**Response** `ResourceFile[]` — `{ "filename", "mimeType", "sizeBytes", "updatedAt" }`, newest first.
+
+### POST /api/books/{b}/resources — **multipart** `file` (required)
+Any file type. **422** over 25 MB. Filename collision → suffixed (`notes.md` → `notes-2.md`), never overwritten. **201** `ResourceFile` — `filename` may differ from the uploaded name.
+
+### GET /api/books/{b}/resources/{filename}/content
+Streams the file as an attachment download. **404** if absent. `{filename}` (not a path parameter) — a name containing `/` fails to match the route at all, on top of the service's own traversal guard.
+
+### DELETE /api/books/{b}/resources/{filename}
+Moves the file to `.trash/`, never unlinks — same rule as scene deletion. **204**.
+
+### AI access
+Read tools `list_resources()` / `get_resource(filename)` are ordinary, ungated read tools (§9.3 step 4) available in every conversation, scene-parented or book-parented alike. Text-ish extensions only (`.md .markdown .txt .csv .json .yml .yaml`); anything else reports as binary. Writes never happen directly — `propose_resource_create` (a propose tool) only emits a proposal; §10's `resource-create` accept branch is the sole write path.

@@ -145,6 +145,16 @@ class ConversationService:
         mgr = self._registry.get(book_id)
         return mgr.list_conversations_for_parent(ParentType.scene.value, scene_id)
 
+    def list_for_book(self, book_id: str) -> list[ConversationSummary]:
+        """Threads parented to the book itself, not to any scene.
+
+        These are the Resources page's chats: the author asking about the whole
+        manuscript with no scene in context. The parent id is the book id, so
+        there is exactly one such parent per book.
+        """
+        mgr = self._registry.get(book_id)
+        return mgr.list_conversations_for_parent(ParentType.book.value, book_id)
+
     def patch(self, book_id: str, conversation_id: str, body: ConversationPatch) -> Conversation:
         mgr = self._registry.get(book_id)
         conv = self.get(book_id, conversation_id)

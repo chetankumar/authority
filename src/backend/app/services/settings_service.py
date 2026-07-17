@@ -173,9 +173,9 @@ class SettingsService:
 
     def get_utility_model(self) -> ModelConfig | None:
         """The general-purpose fallback for sundry system tasks (chat-title
-        naming, escalation seeding when nothing more specific applies) — and
-        the fallback every task-specific slot below degrades to when its own
-        slot is unset or dangling.
+        naming, and anything with no more specific slot) — and the fallback
+        every task-specific slot below degrades to when its own slot is unset
+        or dangling.
 
         ``None`` when unset or dangling — callers degrade to a non-AI fallback
         rather than failing, since no utility model is a valid configuration.
@@ -201,8 +201,8 @@ class SettingsService:
         return self._resolve_ai_slot(self._load().ai.commitMessageModelId)
 
     def get_character_parsing_model(self) -> ModelConfig | None:
-        """Model for enrichment's character-matching pass (and the escalation
-        chats it seeds when a match is ambiguous or unrecognized)."""
+        """Model for enrichment's character-matching run — the same model that
+        asks the author in-thread when a match is ambiguous or unrecognized."""
         return self._resolve_ai_slot(self._load().ai.characterParsingModelId)
 
     def get_scene_summary_model(self) -> ModelConfig | None:

@@ -40,7 +40,7 @@ Two producers: the **book event channel** ([events](events/CLAUDE.md), §12) and
 | [`todos/`](todos/CLAUDE.md) | Todos | §8 |
 | [`conversations/`](conversations/CLAUDE.md) | Conversations, messages (SSE), AI-Job runs | §9 |
 | [`proposals/`](proposals/CLAUDE.md) | Accept/reject proposals | §10 |
-| [`jobs/`](jobs/CLAUDE.md) | Job list | §11 |
 | [`events/`](events/CLAUDE.md) | Book SSE channel | §12 |
 | [`git/`](git/CLAUDE.md) | Git operations | §13 |
 | [`compile/`](compile/CLAUDE.md) | Completeness check + compile | §14 |
+| [`resources/`](resources/CLAUDE.md) | Files beside the book (upload/list/download/delete) | §15 |

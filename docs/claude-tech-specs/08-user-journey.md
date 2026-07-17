@@ -28,7 +28,7 @@ Files are relative to the book folder unless prefixed `app:` (app data root). "L
 → SERVER  startup: acquire filelock on app:.lock (second instance would exit:
           "Authority is already running") · read app:launcher.config.json ·
           SettingsService loads app:app.json into memory · logging → console + logs/api.log ·
-          JobService worker task starts (idle) · static mount of frontend/dist with
+          conversation-worker task starts (idle) · static mount of frontend/dist with
           SPA index-fallback
 → SCRIPT  polls GET /api/health → 200 {"status":"ok"} → xdg-open http://localhost:8700
 → UI      browser opens; SPA boots; router lands on /
@@ -107,7 +107,7 @@ CLICK     [Create this folder]
           2. id bok-a3f9c2 · slug my-great-novel · mkdir a3f9c2-my-great-novel/
           3. scaffold  [config/book.json (bookkeeping both true, empty parts/chapters),
              scenes/.gitkeep, db/{scenes,relationships,dependencies,characters,
-             plotlines,todos,jobs,ui}.json seeded empty, db/conversations/index.json,
+             plotlines,todos,ui}.json seeded empty, db/conversations/index.json,
              assets/cover.jpg (stored as-is), compiled-book/.gitkeep, .gitignore "*.tmp"]
           4. GitService: git init · add -A · commit "initialized"
           5. BookScanner cache add
@@ -209,22 +209,26 @@ Author finishes writing and navigates away (Prev/Next or leaves the editor).
 
 ```
 → HTTP    POST /scenes/scn-1f2e9b/enrich/auto   (only if prose changed this visit)
-→ SERVER  EnrichmentService reads book.json.bookkeeping
-          {summaryOnSave:true, charactersOnSave:true} → JobService enqueues
-          Job job-c2d4e6 {type:"system", scope:"both", sceneId, modelId: null}
-          [db/jobs.json] · EventHub: job {status:"queued"}
-→ WORKER  picks it up → job "running" (SSE) →
-          reads scene prose [scenes/….md] + character directory (memory)
-          → two independent calls: scene summary → summary text;
-             character parsing → matched [{characterId, involvement}] for existing cast only
-          → unmatched names escalate (never silently creates)
-→ SERVER  (lock) scene.summary = generated text · characters with involvement ·
-          persist [scenes/…/bookkeeping.json, db/jobs.json] ·
-          SSE: scene-updated {changed:["summary","characters"]} · job {status:"done"}
-→ UI      Right pane → Notes/AI Jobs: escalation chat appears when needed.
+→ SERVER  EnrichmentService reads book.json.bookkeeping {summaryOnSave:true,
+          charactersOnSave:true} → opens TWO bookkeeping conversations, each
+          status:"queued", each seeded with a resolved prompt as its first
+          (system-authored) message: cnv-a "Scene summarization" (summary model),
+          cnv-b "Character enrichment" (character model)
+          [db/conversations/…] · SSE: conversation {status:"queued"} ×2
+→ REPLY   202 { queued:true, conversationIds:[cnv-a, cnv-b] }
+→ WORKER  ConversationWorker drains each: send_message(no body) → status
+          "running" → model streamed against the prompt already in the thread,
+          WITH the execute tools bound to scn-1f2e9b →
+          cnv-a: model calls set_scene_summary("…") → update_scene writes summary
+          cnv-b: model calls set_scene_characters([{characterId, involvement}]) →
+                 update_scene writes characters (existing cast only)
+→ SERVER  update_scene (lock) persists [scenes/…/bookkeeping.json] ·
+          SSE scene-updated {changed:[…]} · conversation {status:"done"} ×2
+→ UI      Right pane → AI Jobs: "Scene summarization" and "Character enrichment"
+          appear, tick queued → running → done. Not in Notes.
 ```
 
-**CLICK** in the escalation chat → author decides → proposal Accept → later enrichment matches him → `scene-updated {changed:["characters"]}`.
+If character parsing is unsure about a name, cnv-b's model doesn't call the tool — it asks in the thread and the run ends `status:"waiting"` ("needs you" in the AI Jobs pane). **CLICK** it → the author answers in that same conversation → the model replies and calls `set_scene_characters` → `conversation {status:"done"}` · `scene-updated {changed:["characters"]}`.
 
 ## J13 — Stuck: chat from a selection
 
@@ -262,27 +266,27 @@ Author selects a paragraph, **CLICK** [Chat] in the tool panel.
 
 ```
 → HTTP    POST /ai-jobs/run { aiJobId:"aij-77d0be", sceneId:"scn-1f2e9b", scope:"full" }
-→ SERVER  1. ConversationService: cnv-b8d1f0 {kind:"ai-job", title:"Editorial Review",
-             aiParticipant:{enabled:true, modelId: job default}, aiJobId + name snapshot}
-          2. JobService: Job job-e91a2b {type:"user", status:"queued"}  [jobs.json]
-→ REPLY   202 { jobId, conversationId }
-→ UI      Conversation Modal opens on the empty thread; AI Jobs pane shows
-          "Editorial Review · queued".
-→ WORKER  status "running" (SSE) →
-          1. PlaceholderRegistry resolves the prompt: @current_scene ← the .md prose;
+→ SERVER  AiJobService.prepare (synchronous, NO model call):
+          1. resolve the prompt: @current_scene ← the .md prose;
              @previous_scenes_summary ← ChainService walks prev-chain to Start,
-             emits "Title — summary" lines (summaries only); @character_sheet ←
-             db/characters.json entries
+             emits "Title — summary" lines; @character_sheet ← db/characters.json
           2. outputType edit-proposals → format instructions appended (reply must
              end with a fenced JSON array of {find, replace, rationale})
-          3. resolved prompt posted as a system-authored first message (collapsed
-             in the UI to "Job prompt · show")
-          4. model streamed into the conversation (same J13 mechanics, live in the
-             open modal)
-          5. fenced JSON parsed → three edit Proposals attached to the assistant
-             message (block stripped from displayed content); parse failure would
-             degrade to chat + result.warning
-          6. job "done" (SSE)  [cnv file, jobs.json]
+          3. ConversationService: cnv-b8d1f0 {kind:"ai-job", status:"open",
+             title:"Editorial Review", aiParticipant:{enabled:true, modelId: job
+             default}, aiJobId + name snapshot}, with the resolved prompt as its
+             first (system-authored) message  [db/conversations/…]
+→ REPLY   201 { conversationId }
+→ UI      Conversation Modal opens; the prompt is right there to review, collapsed
+          to "Job prompt · show"; composer prefilled "start". AI Jobs pane:
+          "Editorial Review · open". NOTHING has run yet.
+CLICK     [Send]  ("start", or edited with extra instructions)
+→ HTTP    POST /conversations/cnv-b8d1f0/messages { content:"start" }   (SSE)
+→ SERVER  status "running" (SSE conversation) → model streamed into the thread
+          (same J13 mechanics, live) → reply's fenced JSON parsed (outputType via
+          conv.aiJobId) → three edit Proposals attached to the assistant message
+          (block stripped from displayed content; parse failure → chat) →
+          status "done" (SSE)  [cnv file]
 → UI      The reply's prose commentary, then three amber proposal cards:
           strikethrough find / replacement / rationale, each [Reject] [Accept],
           footer [Accept all (3)].

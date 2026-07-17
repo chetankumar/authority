@@ -90,8 +90,8 @@ frontend/src/
   App.tsx, router.tsx
 ```
 
-- **Query keys:** `['book', id]`, `['scenes', bookId]`, `['todos', bookId, includeScenes]`, `['sceneTodos', bookId, sceneId]`, `['conversations', bookId, sceneId]`, `['jobs', bookId, sceneId]`, `['git', bookId]`, `['compileCheck', bookId]`, `['settings', section]`. Todos carry two key shapes because storage is split by `parentType` (doc 03 §Todos storage split): `todos` is the book-level Tasks-page list (keyed by the includeScenes toggle, since that changes what's fetched), `sceneTodos` is one scene's own list (the editor's To-dos accordion).
-- **SSE integration:** `useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `job` patches `['jobs']` + streaming modal state; `todos-created` invalidates both `['todos', bookId]` and `['sceneTodos', bookId]` (prefix match — a dependency fanout or an accepted `todo-create` proposal could land in either tier); `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`. On reconnect: refetch active queries.
+- **Query keys:** `['book', id]`, `['scenes', bookId]`, `['todos', bookId, includeScenes]`, `['sceneTodos', bookId, sceneId]`, `['conversations', bookId, sceneId]`, `['git', bookId]`, `['compileCheck', bookId]`, `['settings', section]`. Todos carry two key shapes because storage is split by `parentType` (doc 03 §Todos storage split): `todos` is the book-level Tasks-page list (keyed by the includeScenes toggle, since that changes what's fetched), `sceneTodos` is one scene's own list (the editor's To-dos accordion). There is no `jobs` key — an AI run is a conversation, so the editor's AI Jobs pane filters the `conversations` list.
+- **SSE integration:** `useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `conversation` invalidates `['conversations', bookId, sceneId]` (an AI run created or changed status); `todos-created` invalidates both `['todos', bookId]` and `['sceneTodos', bookId]` (prefix match — a dependency fanout or an accepted `todo-create` proposal could land in either tier); `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`. On reconnect: refetch active queries.
 - **Editor autosave:** local dirty buffer → debounce 2s → `PUT content`; never blocks typing; failures show a persistent "Not saved — retrying" state, retry with backoff.
 - **Routing:** as listed below per page; unknown ids → friendly 404 panel with "Back to bookshelf".
 
@@ -117,7 +117,7 @@ frontend/src/
 | "Welcome, {name}" | Top bar, right | Static; from `GET /settings/user`; "Welcome" if unset | Confirms whose studio this is; motivates User Settings on first run |
 | **Theme toggle** | Top bar, right (before the greeting) | Sun/moon control cycling `light → dark → system`; writes the choice via `PATCH /settings/appearance` (doc 04 §3) and sets `data-theme` on `<html>` immediately; `system` tracks `prefers-color-scheme` live. Icon reflects the resolved theme | One instant, always-visible switch; theme is app-wide, so it lives in the global chrome rather than a settings page |
 | Left nav (outside book) | Home · Settings ▸ (User / AI / AI-Jobs, expands inline) | Route links; active item `--accent-wash` + accent text | |
-| Left nav (inside book) | Scene Graph · Scene Table · Character Sheet · Metadata · Tasks · Git — icons + labels | Route links | Fixed order = muscle memory; Graph first because it's the book's home |
+| Left nav (inside book) | Scene Graph · Scene Table · Character Sheet · Metadata · Tasks · Resources · Git — icons + labels | Route links | Fixed order = muscle memory; Graph first because it's the book's home |
 | Nav collapse chevron | Nav bottom | Toggles 208px ↔ 56px icon rail (tooltips on rail). Auto-rails on the editor page | Zen: reclaim width for prose; still one click from anywhere |
 | Disconnected banner | Below top bar, full-width, danger wash | Appears when `/health` polling fails: "Backend not responding — check the terminal window." Auto-clears on recovery | The backend is a local process the author can kill by accident; name the fix, don't mystify |
 
@@ -287,25 +287,25 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 | Save indicator | Bottom bar | "Saving…" → "Saved · 2:41pm"; failure → persistent amber "Not saved — retrying" | Trust: an author must never wonder whether words are on disk |
 | Word count | Bottom bar, mono | Live local count; server value reconciles on save | The writer's odometer |
 | **← Previous / Next →** | Bottom bar, right | Save current, then: neighbor exists → navigate + **scroll to top**; Next with no neighbor → Scene Modal (create) with Previous prefilled to this scene → on save, navigate into the new scene. Prev with no neighbor → disabled with tooltip "This is the first scene" | Drafting momentum: write, next, write. The prefilled-create turns "what comes next?" into one gesture; scroll-to-top starts each scene at its beginning |
-| Right pane accordion | Right, 320px | **Notes** (`GET /scenes/{id}/conversations`, kinds note/chat): rows = title (CSS ellipsis; full title on hover) · relative time · snippet; click → Conversation Modal. **To-dos** (`GET /scenes/{id}/todos`, persisted in this scene's own `scenes/{id}/todos.json` — doc 03): an inline "Add a task for this scene…" field (`POST /scenes/{id}/todos`) above the list; rows = checkbox = done (`PATCH`), 💬 opens/creates the linked conversation, ✕ = closed, 🗑 = delete (confirm); dependency-origin rows carry a ⛓ icon + amber tint. **AI Jobs** (`GET /jobs?scene=`): rows = job/conversation name (ellipsis + hover) · status chip (queued/running spinner/done/failed, live via SSE) · unrecognized-names note; click → its conversation. Amber count badges on headers = open/pending items | The scene's memory: everything ever discussed, owed, or run against this scene, adjacent to the prose but collapsed by default — present, not loud |
+| Right pane accordion | Right, 320px | **Notes** (`GET /scenes/{id}/conversations`, kinds note/chat): rows = title (CSS ellipsis; full title on hover) · relative time · snippet; click → Conversation Modal. **To-dos** (`GET /scenes/{id}/todos`, persisted in this scene's own `scenes/{id}/todos.json` — doc 03): an inline "Add a task for this scene…" field (`POST /scenes/{id}/todos`) above the list; rows = checkbox = done (`PATCH`), 💬 opens/creates the linked conversation, ✕ = closed, 🗑 = delete (confirm); dependency-origin rows carry a ⛓ icon + amber tint. **AI Jobs** (the same `GET /scenes/{id}/conversations` list, filtered to kinds `ai-job`/`bookkeeping`): rows = conversation title (ellipsis + hover) · status chip (queued/running spinner/done/failed, and `waiting` shown as amber "needs you", live via the `conversation` SSE event); click → its conversation. Amber count badges on headers = open/pending items | The scene's memory: everything ever discussed, owed, or run against this scene, adjacent to the prose but collapsed by default — present, not loud |
 
-**Leaving with a running stream/job:** navigation allowed; jobs are server-side; the AI Jobs pane and SSE keep truth. A toast on completion ("Editorial review finished") links back to the conversation.
+**Leaving with a running run:** navigation allowed; automatic bookkeeping runs on the server worker regardless; the AI Jobs pane and SSE keep truth. (An AI-Job run only streams while its modal is open — it's the author's own send — so leaving mid-stream aborts it, and it can be re-sent.)
 
 ---
 
 ## 10. Conversation Modal — component
 
-**Purpose:** the universal thread — note-stacking, chat, and AI-job runs are all this one surface. 800px × 80vh.
+**Purpose:** the universal thread — notes, chats, AI-Job runs, and bookkeeping runs are all this one surface. 800px × 80vh.
 
 **Header:** editable title (controlled; blur → `PATCH /conversations/{id}`; full title stored — list UIs truncate with hover; auto-filled from utility-model **3–5 word** semantic title when still Untitled after first send — SSE `title`) · relative timestamp · right cluster: **model select** + **"AI participant" switch** · **Delete** · ×.
-**Body:** message list. User messages right-aligned wash; context excerpts render as bordered quote blocks above the text, labeled "From {scene title}". Assistant messages left, model label in `--ink-faint` above, streaming text with a blinking cursor. System messages (job prompts) collapsed to one line — "Job prompt · show" — expandable.
+**Body:** message list. User messages right-aligned wash; context excerpts render as bordered quote blocks above the text, labeled "From {scene title}". Assistant messages left, model label in `--ink-faint` above, streaming text with a blinking cursor. Only a run's **first** system message (the resolved prompt) collapses to one line — "Job prompt · show" — expandable; other system messages (an escalation question, an error) render plainly, since the author needs to read them.
 **Proposal cards** inside assistant messages: bordered `--attn-wash` cards. Edit: side-by-side find (strikethrough) / replace + rationale line. Metadata: "Mood: ~~tense~~ → **elegiac**" + rationale. Todo: "☐ {action}". Buttons per card [Reject] [Accept]; message footer [Accept all ({n})] when >1 pending. Applied → `--ok-wash` + ✓; rejected → faded; not-found → amber "This text is no longer in the scene."
 **Composer:** textarea (Enter sends, Shift+Enter newline) · [Send].
 
 | Control | Behavior | Why it exists |
 |---|---|---|
 | **AI participant switch** | `PATCH {aiParticipant.enabled}`; on-with-no-model → the model select pulses its focus ring and the send stays enabled but returns the 422 inline: "Pick a model to bring the AI in" | The stack-notes-to-myself feature: one thread can be private scratchpad, then a consultation, then private again — the switch is that boundary, visible and instant |
-| Model select | `PATCH {aiParticipant.modelId}`; defaults: job's default model on job runs, else last-used | Different questions deserve different (or local) models; per-message attribution in the transcript keeps the history honest |
+| Model select | `PATCH {aiParticipant.modelId}`; defaults: the run's model on AI-Job/bookkeeping runs, else last-used | Different questions deserve different (or local) models; per-message attribution in the transcript keeps the history honest |
 | Send | `POST /messages` — switch off: plain append (the note path). Switch on: SSE stream renders tokens live; final `message` event replaces the streaming buffer with the persisted message + proposal cards; `error` event → inline danger row + composer re-enabled. First send while Untitled → utility model names the thread (dedicated prompt; full reply stored); header updates via `title` event | |
 | **Delete** | Confirm → `DELETE /conversations/{id}` → close modal; Notes/AI Jobs lists refresh | Hard delete for mistakes; confirm because irreversible |
 | Accept / Reject / Accept all | `POST /proposals/{id}/accept|reject`; Accept-all loops sequentially, halting to surface any not-found | The approval gate made tactile: every AI-initiated change is a card the author physically dismisses or applies; not-found is shown, never silently skipped |
@@ -368,11 +368,31 @@ Storage is split by `parentType` (doc 03 §Todos storage split): this page's bas
 
 | Control | Behavior | Why it exists |
 |---|---|---|
-| Changes list rows: ☑ + path (mono) + status letter | ☑/☐ → `POST /git/stage|unstage {paths}`; row click → `GET /git/diff?path=` into the right panel | Per-file staging keeps unrelated work out of a commit; the diff answers "what did I actually change?" before it's history |
-| [Stage all] | `stage {all:true}` | The common case in a single-author repo |
+| Changes list rows: ☑ + path (mono) + status letter + **Discard** | ☑/☐ → `POST /git/stage|unstage {paths}`; row click → `GET /git/diff?path=` into the right panel; **Discard** → confirm → `POST /git/discard {paths}` (staged + unstaged thrown away; untracked deleted) | Per-file staging keeps unrelated work out of a commit; the diff answers "what did I actually change?" before it's history; discard is the escape hatch when the change was a mistake |
+| [Stage all] / [Discard all] | `stage {all:true}` / confirm → `discard {all:true}` | The common cases in a single-author repo; discard all needs a stronger confirm because it cannot be undone |
 | Diff panel | Read-only unified diff, mono, additions `--ok`, deletions `--danger`; binary → "Binary file" | Review without a terminal; deliberately not an editor — fixing happens in the editor |
 | Commit message textarea | | |
 | **✨ Suggest message** | `POST /git/suggest-message` → fills the textarea (spinner in-button); no commit-message model (or utility fallback) resolves → stats fallback arrives with a faint note "Written from file stats" | Lowers the cost of good history; the message is *always* editable — the author owns the record |
 | [Commit staged files] | Enabled iff ≥1 staged ∧ message non-empty; `POST /git/commit` → toast "Committed {shorthash}" → badge clears via SSE | The button's precondition *is* the ritual: something chosen, something said |
 | History strip | `GET /git/log` — shorthash (mono) · message · relative time; read-only | Recent memory + restore points; anything deeper is CLI territory by design |
 | [Push ↑2] / [Pull ↓0] | Only when `hasRemote`; `POST /git/push|pull`; errors verbatim in a danger panel + "Resolve with your git tooling" | Backup without pretending to be a git client; honest hand-off at the edge of scope |
+
+---
+
+## 15. Resources — `/book/{id}/resources`
+
+**Purpose:** the material around the book that isn't the book — research, reference images, worldbuilding notes — plus a chat about the *whole* manuscript with no scene in context. **Layout:** header (title + [Chat] + [Upload file]) → drag-and-drop dropzone → file list (name/link, size, modified date, 🗑) → a **Chats** list of past book-level threads below.
+
+There is no id and no index for a resource: the filename is the key, and `resources/` is scanned fresh on every list — the same discovery model as the bookshelf itself (doc 01 hard rule 4, doc 03 §resources/ — no index). A file dropped in by hand outside the app simply appears next reload.
+
+| Control | Behavior | Why |
+|---|---|---|
+| Upload file / drag-drop | Any file type, up to 25 MB (422 above that); `POST /resources` (multipart) | Research isn't always markdown — a reference PDF or map image belongs here too |
+| File row | Filename links to `GET /resources/{filename}/content` (download); 🗑 → `ConfirmDialog` ("moves to `.trash/`, recoverable from there or from git") → `DELETE` | Consistent with every other delete in the app: reversible, never a silent unlink |
+| Name collision | Never overwrites — server suffixes (`notes.md` → `notes-2.md`); toast names the saved filename when it differs from what was picked | Losing data to a same-named upload would be the one way this page could hurt the author |
+| **[Chat]** | `POST /conversations {kind:"chat", parentType:"book", parentId:bookId}` → Conversation Modal, **no `sceneId`** | The modal needed no changes for this — `sceneId` was already optional, every scene-keyed branch already guarded |
+| Chats list | `GET /conversations` (book-parented only); row click → Conversation Modal by id | Mirrors the editor's Notes accordion, but for the one parent that is the book itself |
+
+### Why the AI can read but not write these files directly
+
+`list_resources()` / `get_resource(filename)` are ordinary, ungated read tools — available in every conversation, scene- or book-parented alike. Creating a file goes through a **proposal** instead: `propose_resource_create` → an amber card in the Conversation Modal (filename + a scrollable content preview + rationale) → author [Accept] → `POST /proposals/{id}/accept` writes it. A resource file is neither prose nor bookkeeping, so doc 01's write-permission model gives it no execute tool — the proposal gate is the only path, same discipline as every other AI-initiated write that isn't prose or enrichment.

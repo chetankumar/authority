@@ -27,6 +27,7 @@ from app.api.git.router import router as git_router
 from app.api.health.router import router as health_router
 from app.api.plotlines.router import router as plotlines_router
 from app.api.proposals.router import router as proposals_router
+from app.api.resources.router import router as resources_router
 from app.api.relationships.router import router as relationships_router
 from app.api.scenes.router import router as scenes_router
 from app.api.settings.router import router as settings_router
@@ -101,6 +102,7 @@ app.include_router(character_relationships_router, prefix="/api")
 app.include_router(todos_router, prefix="/api")
 app.include_router(conversations_router, prefix="/api")
 app.include_router(proposals_router, prefix="/api")
+app.include_router(resources_router, prefix="/api")
 app.include_router(git_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 

@@ -66,6 +66,12 @@ class CharacterRelationshipCreatePayload(BaseModel):
     rationale: str = ""
 
 
+class ResourceCreatePayload(BaseModel):
+    filename: str
+    content: str
+    rationale: str = ""
+
+
 class Proposal(BaseModel):
     id: str
     type: ProposalType

@@ -132,6 +132,7 @@ class BookService:
         (book_dir / "scenes").mkdir()
         (book_dir / "db" / "conversations").mkdir(parents=True)
         (book_dir / "assets").mkdir()
+        (book_dir / "resources").mkdir()
         (book_dir / "compiled-book").mkdir()
 
         config = BookConfig(id=book_id, title=title)
@@ -143,6 +144,7 @@ class BookService:
         atomic_write_json(book_dir / "db" / "conversations" / "index.json", [])
 
         atomic_write_text(book_dir / "scenes" / ".gitkeep", "")
+        atomic_write_text(book_dir / "resources" / ".gitkeep", "")
         atomic_write_text(book_dir / "compiled-book" / ".gitkeep", "")
         atomic_write_text(book_dir / ".gitignore", "*.tmp\n")
 

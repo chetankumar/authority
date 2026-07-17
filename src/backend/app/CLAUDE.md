@@ -13,7 +13,7 @@ Parent: [backend](../CLAUDE.md). Specs: [04 API §1.3](../../../docs/claude-tech
 | Directory | Responsibility |
 |---|---|
 | [`api/`](api/CLAUDE.md) | Routers per resource area + shared API conventions (error envelope, SSE, mutation lifecycle) |
-| [`services/`](services/CLAUDE.md) | Business logic: SettingsService, BookScanner, BookService, BookDataManager, ChainService, SceneService, StructureService, ConversationService, ProposalService, JobService, EnrichmentService, AIService/ModelFactory, GitService, CompileService, PlaceholderRegistry |
+| [`services/`](services/CLAUDE.md) | Business logic: SettingsService, BookScanner, BookService, BookDataManager, ChainService, SceneService, StructureService, ConversationService, AiJobService, ProposalService, ResourceService, EnrichmentService, AIOrchestrator/ModelFactory, GitService, CompileService, PlaceholderRegistry |
 | [`models/`](models/CLAUDE.md) | Pydantic shared objects + enums (doc 04 §2) and on-disk schemas (doc 03) |
 | [`core/`](core/CLAUDE.md) | Config, logging, single-instance lock, atomic write helper, per-book asyncio locks, EventHub (SSE pub/sub) |
 | [`worker/`](worker/CLAUDE.md) | The single asyncio job worker; per-scene settle timers; enrichment run |

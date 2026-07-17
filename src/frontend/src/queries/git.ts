@@ -55,6 +55,30 @@ export const useStageFiles = (bookId: string) =>
 export const useUnstageFiles = (bookId: string) =>
   useGitMutation(bookId, (body: { paths?: string[]; all?: boolean }) => gitApi.unstageFiles(bookId, body));
 
+/** Discard restores HEAD / deletes untracked — book memory is reloaded server-side. */
+export function useDiscardFiles(bookId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { paths?: string[]; all?: boolean }) => gitApi.discardFiles(bookId, body),
+    onSuccess: (status) => {
+      qc.setQueryData(keys.git(bookId), status);
+      // BookDataManager was forgotten; refetch anything that may have been on disk.
+      qc.invalidateQueries({ queryKey: keys.book(bookId) });
+      qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
+      qc.invalidateQueries({ queryKey: ["scene", bookId] });
+      qc.invalidateQueries({ queryKey: keys.parts(bookId) });
+      qc.invalidateQueries({ queryKey: keys.chapters(bookId) });
+      qc.invalidateQueries({ queryKey: keys.characters(bookId) });
+      qc.invalidateQueries({ queryKey: keys.plotlines(bookId) });
+      qc.invalidateQueries({ queryKey: ["todos", bookId] });
+      qc.invalidateQueries({ queryKey: ["sceneTodos", bookId] });
+      qc.invalidateQueries({ queryKey: ["conversations", bookId] });
+      qc.invalidateQueries({ queryKey: keys.resources(bookId) });
+      qc.invalidateQueries({ queryKey: keys.compileCheck(bookId) });
+    },
+  });
+}
+
 export function useCommitStaged(bookId: string) {
   const qc = useQueryClient();
   return useMutation({

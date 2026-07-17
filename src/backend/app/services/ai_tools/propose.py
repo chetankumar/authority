@@ -61,6 +61,13 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
         rationale: str = ""
         sceneId: str | None = Field(default=None, description="Optional scene to tag after create")
 
+    class ResourceArgs(BaseModel):
+        filename: str = Field(
+            description="File name with extension, e.g. 'magic-system.md'. No folders."
+        )
+        content: str = Field(description="Full file content")
+        rationale: str = Field(default="", description="Why this file is worth keeping")
+
     class CharacterRelationshipArgs(BaseModel):
         characterAId: str
         characterBId: str
@@ -167,6 +174,17 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
         )
         return "Character-create proposal recorded for author review."
 
+    def propose_resource_create(filename: str, content: str, rationale: str = "") -> str:
+        accumulator.add(
+            Proposal(
+                id=new_id("prp"),
+                type=ProposalType.resource_create,
+                status=ProposalStatus.pending,
+                payload={"filename": filename, "content": content, "rationale": rationale},
+            )
+        )
+        return "Resource-create proposal recorded for author review."
+
     def propose_character_relationship(
         characterAId: str,
         characterBId: str,
@@ -228,6 +246,18 @@ def build_propose_tools(accumulator: ProposalAccumulator) -> list[Any]:
                 "history) — not just the name."
             ),
             args_schema=CharacterArgs,
+        ),
+        StructuredTool.from_function(
+            func=propose_resource_create,
+            name="propose_resource_create",
+            description=(
+                "Propose creating a markdown or text file in the book's resources "
+                "folder — worldbuilding notes, timelines, research summaries. "
+                "Author must accept; nothing is written until they do. Use this "
+                "for reference material that belongs to the book but is not part "
+                "of the manuscript. Never for prose."
+            ),
+            args_schema=ResourceArgs,
         ),
         StructuredTool.from_function(
             func=propose_character_relationship,

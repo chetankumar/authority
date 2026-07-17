@@ -12,8 +12,8 @@ One SSE connection per open book. Any service emits through the [EventHub](../..
 
 | event | data | emitted when |
 |---|---|---|
-| `job` | `{ id, type, sceneId, status, result? }` | any job status transition |
-| `scene-updated` | `{ id, changed:[...] }` | any scene metadata write (author, enrichment, accepted proposal) |
+| `conversation` | `{ id, kind, parentType, parentId, status }` (or `{ id, status:"deleted" }`) | a conversation is created or changes status (an AI run starting, finishing, or landing in `waiting`), or is deleted. `parentType` is whatever the conversation's parent is — `scene` for the editor's notes/chats, `book` for the Resources page's chats — clients branch on it to invalidate the right cache slice |
+| `scene-updated` | `{ id, changed:[...] }` | any scene metadata write (author, enrichment via execute tools, accepted proposal) |
 | `todos-created` | `{ todos:[Todo] }` | dependency fanout or accepted todo-create |
 | `git-status` | `GitStatus` (incl. `summary`) | the [git-status worker](../../worker/CLAUDE.md)'s 5s debounce fired, **or** an explicit stage/unstage/commit/push/pull emitted in-request |
 | `compile-done` | `{ report: CompileReport }` | successful compile |

@@ -4,10 +4,14 @@
 payload-free ``book-changed`` signal; the git-status worker re-checks after a
 debounce. The endpoints here are the exception: stage/unstage/commit/push/pull
 are explicit author actions with someone watching the Git page, so they recompute
-and emit ``git-status`` immediately, in-request (doc 07 §27).
+and emit ``git-status`` immediately, in-request (doc 07 §27). Same for discard.
 
 ``status()`` itself never emits — it is pure computation, so the request path and
 the worker can both call it and decide separately whether to broadcast.
+
+``discard`` restores tracked paths to HEAD (index + worktree) and deletes
+untracked paths — VS Code-style. Afterward the cached ``BookDataManager`` is
+dropped so the next API read reloads from disk.
 
 ``git`` is imported lazily throughout: GitPython raises at import time when the
 system ``git`` binary is missing, and that must degrade this one feature rather
@@ -122,6 +126,54 @@ class GitService:
 
     async def unstage(self, book_id: str, paths: list[str] | None, all_: bool | None) -> GitStatus:
         return await self._stage_op(book_id, paths, all_, unstage=True)
+
+    async def discard(self, book_id: str, paths: list[str] | None, all_: bool | None) -> GitStatus:
+        """Throw away uncommitted changes (staged + unstaged). Untracked → delete."""
+        if not paths and not all_:
+            raise ApiError(422, "Validation failed", {"fields": {"paths": "Give paths, or set all."}})
+
+        mgr = self._registry.get(book_id)
+        book_dir = mgr.book_dir
+        async with mgr.lock:
+            repo = self._open(book_id)
+            try:
+                current = self._read_status(repo)
+                by_path = {f.path: f for f in current.files}
+                if all_:
+                    targets = list(current.files)
+                else:
+                    safe = _validate_repo_paths(book_dir, paths or [])
+                    missing = [p for p in safe if p not in by_path]
+                    if missing:
+                        raise ApiError(
+                            422,
+                            "Nothing to discard for those paths.",
+                            {"fields": {"paths": f"Not dirty: {', '.join(missing)}"}},
+                        )
+                    targets = [by_path[p] for p in safe]
+
+                to_restore = [f.path for f in targets if f.status != "untracked"]
+                to_clean = [f.path for f in targets if f.status == "untracked"]
+
+                if to_restore:
+                    repo.git.restore("--source=HEAD", "--staged", "--worktree", "--", *to_restore)
+                if to_clean:
+                    repo.git.clean("-f", "--", *to_clean)
+
+                status = self._read_status(repo)
+            except ApiError:
+                raise
+            except _git().GitCommandError as exc:
+                raise self._git_error("Couldn't discard those changes.", exc) from exc
+            finally:
+                repo.close()
+
+        # Disk is now HEAD (or missing for cleaned files). Drop the in-memory
+        # book so the next request reloads — otherwise discarded JSON/prose
+        # would keep serving from the stale BookDataManager.
+        self._registry.forget(book_id)
+        self._hub.emit(book_id, "git-status", status.model_dump())
+        return status
 
     async def _stage_op(
         self, book_id: str, paths: list[str] | None, all_: bool | None, *, unstage: bool
@@ -273,6 +325,23 @@ class GitService:
 
 
 # ---- module helpers ---------------------------------------------------------
+
+
+def _validate_repo_paths(book_dir: Path, paths: list[str]) -> list[str]:
+    """Resolve paths under the book root; reject ``..`` / absolute escapes."""
+    root = book_dir.resolve()
+    safe: list[str] = []
+    for raw in paths:
+        p = (raw or "").strip().replace("\\", "/")
+        if not p or p.startswith("/") or p.startswith("../") or "/../" in f"/{p}/":
+            raise ApiError(422, "Validation failed", {"fields": {"paths": f"Invalid path: {raw}"}})
+        candidate = (root / p).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise ApiError(422, "Validation failed", {"fields": {"paths": f"Invalid path: {raw}"}}) from exc
+        safe.append(candidate.relative_to(root).as_posix())
+    return safe
 
 
 def _commit_info(commit: Any) -> CommitInfo:

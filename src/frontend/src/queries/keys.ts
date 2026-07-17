@@ -16,7 +16,13 @@ export const keys = {
   todos: (bookId: string, includeScenes: boolean) => ["todos", bookId, includeScenes] as const,
   sceneTodos: (bookId: string, sceneId: string) => ["sceneTodos", bookId, sceneId] as const,
   conversations: (bookId: string, sceneId: string) => ["conversations", bookId, sceneId] as const,
+  // Book-parented threads (Resources page). Deliberately under the same
+  // ["conversations", bookId] prefix as the per-scene lists: useBookEvents
+  // invalidates that prefix for any non-scene `conversation` event, so this key
+  // gets live updates without a new case in the event switch.
+  bookConversations: (bookId: string) => ["conversations", bookId, "book"] as const,
   conversation: (bookId: string, conversationId: string) => ["conversation", bookId, conversationId] as const,
+  resources: (bookId: string) => ["resources", bookId] as const,
   git: (bookId: string) => ["git", bookId] as const,
   compileCheck: (bookId: string) => ["compileCheck", bookId] as const,
 };

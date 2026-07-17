@@ -23,7 +23,9 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | doc 07 | `docs/claude-tech-specs/07-decisions-and-deferred.md` |
 | doc 08 | `docs/claude-tech-specs/08-user-journey.md` |
 
-**Last audited:** 2026-07-17 (Todos vertical slice landed — `TDO-API-*`, `TDO-SVC-01`, `SCN-API-08`, `TSK-FE-*`, `EDT-FE-23` — with a storage split that **deviates from doc 03/04's single flat `db/todos.json`**: scene-parented todos now live in `scenes/{id}/todos.json`, joining meta/bookkeeping/dependencies/relationships in the per-scene folder split, while chapter/part/book-parented todos stay in the book-level file; `TodoService` resolves either tier from a flat id, same pattern as soft relationships. The book-level `GET /todos` also takes `?includeScenes=true` to aggregate every scene's todos for the Tasks page's toggle — a plain per-request scan, not a maintained index, since it's a rare human-paced read rather than a hot path. Dependency-todo fanout is implemented (previously stubbed); open todos no longer block scene deletion (previously did). `docs/claude-tech-specs/03-data-storage.md` and `04-api-reference.md` still describe the old single-file design and have not yet been updated to match — flagged here, not fixed, since editing the tech spec wasn't requested.)
+**Last audited:** 2026-07-18 (**Phase 11 — Book Resources & book-level AI chat added.** New `resources/` book-folder area (files kept beside the manuscript — no id, no index, scanned like the bookshelf itself) plus a book-parented (`parentType: "book"`) AI chat, reusing `ConversationModal` unchanged (`sceneId` was already optional there). The only real gap closed was a listing endpoint: `GET /books/{b}/conversations` for book-parented threads — every other part of the conversation stack (enums, `ContextAssembler`, read tools, the modal) was already parent-agnostic. AI can read resources freely (`list_resources`/`get_resource`, ordinary ungated read tools) but creates one only via a proposal (`propose_resource_create` → `resource-create` proposal type → author Accept → `ProposalService._apply_resource_create`) — a resource file is neither prose nor bookkeeping, so it gets no execute tool, per doc 01's write-permission table (a new row was added there). See Phase 11 below.)
+
+**Previously:** 2026-07-18 (**`Job` entity collapsed into `Conversation`.** There is no more `Job`/`jobs.json`/`JobService`/`JobWorker`/`EscalationService`/`api/jobs`/frontend `api/jobs.ts` — a *run* (an AI-Job the author triggers, or an automatic bookkeeping pass) is now just a conversation, distinguished by `kind` (`ai-job`/`bookkeeping`) with its lifecycle in `ConversationStatus` (`open·queued·running·waiting·done·failed·archived`). AI-Job runs are *prepared* synchronously by the new `AiJobService` (resolve prompt → open conversation at `open`) and run when the author sends; automatic bookkeeping conversations are created `queued` by `EnrichmentService` and drained by the new `ConversationWorker`. Enrichment writes fields via new **execute tools** (`ai_tools/execute.py`: `set_scene_summary`/`set_scene_characters` through `SceneService.update_scene`), and asks the author in-thread (status `waiting`) instead of escalating to a separate chat. SSE `job` event → `conversation`. Legacy `db/jobs.json` is deleted on load. Rows below mentioning `JobService`/`job_service.py`/`api/jobs.ts`/`GET /jobs`/`EscalationService` are historical — the feature they describe now lives in the conversation surface. Docs 01–08 updated to match. Earlier note follows:) (Todos vertical slice landed — `TDO-API-*`, `TDO-SVC-01`, `SCN-API-08`, `TSK-FE-*`, `EDT-FE-23` — with a storage split that **deviates from doc 03/04's single flat `db/todos.json`**: scene-parented todos now live in `scenes/{id}/todos.json`, joining meta/bookkeeping/dependencies/relationships in the per-scene folder split, while chapter/part/book-parented todos stay in the book-level file; `TodoService` resolves either tier from a flat id, same pattern as soft relationships. The book-level `GET /todos` also takes `?includeScenes=true` to aggregate every scene's todos for the Tasks page's toggle — a plain per-request scan, not a maintained index, since it's a rare human-paced read rather than a hot path. Dependency-todo fanout is implemented (previously stubbed); open todos no longer block scene deletion (previously did). `docs/claude-tech-specs/03-data-storage.md` and `04-api-reference.md` still describe the old single-file design and have not yet been updated to match — flagged here, not fixed, since editing the tech spec wasn't requested.)
 
 **Previously:** 2026-07-16 (`db/scenes.json` split into a lean master table — identity/hard-chain/structure — plus a per-scene `scenes/{id}/` folder — meta.json, bookkeeping.json, dependencies.json, relationships.json — so AI-bookkeeping churn and low-churn structure no longer share a file, a write, or a corruption blast radius; transparent migration for old-shape books; API `Scene` response shape and frontend unchanged. AI task models split: `ai.utilityModelId` fallback + 4 independent slots — commit message, scene summarization, character parsing, chat default; enrichment's `both` scope now runs as two independent model calls instead of one combined call)
 
@@ -575,6 +577,33 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | POL-10 | ⬜ | `prefers-reduced-motion` respect | Reduced animation when OS requests. | **Modify:** `src/frontend/src/styles/index.css` |
 | POL-11 | ⬜ | Book home section links fully live | All workspace cards link to real pages. | **Modify:** `src/frontend/src/features/book/BookPage.tsx` |
 | POL-12 | 🔄 | Graph route alignment | Graph as book home per spec. | **Modify:** `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx` (optional) |
+
+---
+
+## Phase 11 — Book Resources & book-level AI chat
+
+> **Read:** doc 01 §write-permission model, doc 03 §resources/ — no index, doc 04 §15
+
+### API — ResourceService, book-level conversations
+
+| ID | Status | Endpoint / item | User story | Files |
+|---|---|---|---|---|
+| RES-API-01 | ✅ | `GET /books/{b}/resources` | List files kept beside the book. | `src/backend/app/api/resources/router.py`, `src/backend/app/services/resource_service.py` |
+| RES-API-02 | ✅ | `POST /books/{b}/resources` (multipart) | Upload any file type, up to 25 MB; collision suffixes rather than overwrites. | Same files |
+| RES-API-03 | ✅ | `GET /books/{b}/resources/{filename}/content` | Download a resource. | Same files |
+| RES-API-04 | ✅ | `DELETE /books/{b}/resources/{filename}` | Remove a resource — moves to `.trash/`, never unlinks. | Same files |
+| RES-API-05 | ✅ | `GET /books/{b}/conversations` | List book-parented chat threads (the gap that made a book-level chat possible — everything else in the conversation stack was already parent-agnostic). | `src/backend/app/api/conversations/router.py`, `src/backend/app/services/conversation_service.py` (`list_for_book`) |
+| RES-SVC-01 | ✅ | `ResourceService` | CRUD for `resources/`; module-level helpers (`safe_resource_path`, `scan_resources`, `is_text_resource`) reused by the AI read tools with no new tool-registry dependency. | `src/backend/app/services/resource_service.py` |
+| RES-SVC-02 | ✅ | `propose_resource_create` + `list_resources`/`get_resource` tools | AI can read resources freely; creating one requires an author-accepted proposal — a resource file is neither prose nor bookkeeping, so no execute tool exists for it. | `src/backend/app/services/ai_tools/propose.py`, `src/backend/app/services/ai_tools/read.py`, `src/backend/app/services/proposal_service.py` (`_apply_resource_create`) |
+
+### Frontend — Resources page
+
+| ID | Status | Control | User story | Files |
+|---|---|---|---|---|
+| RES-FE-01 | ✅ | Resources route + nav live | A home for research/reference files and the book-level chat. | `src/frontend/src/features/resources/ResourcesPage.tsx`, `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx`, `src/frontend/src/features/book/BookPage.tsx` |
+| RES-FE-02 | ✅ | File list + upload dropzone + delete | Upload, browse, download, delete files beside the book. | `src/frontend/src/features/resources/ResourcesPage.tsx`, `src/frontend/src/api/resources.ts`, `src/frontend/src/queries/resources.ts` |
+| RES-FE-03 | ✅ | [Chat] → book-level `ConversationModal` | Ask the AI about the whole book, no scene in context — reuses the existing modal unchanged (`sceneId` was already optional). | Same + `src/frontend/src/api/conversations.ts` (`listBookConversations`), `src/frontend/src/queries/conversations.ts` (`useBookConversations`) |
+| RES-FE-04 | ✅ | `resource-create` proposal card | See the AI's drafted file (name + full content preview) before it's written. | `src/frontend/src/features/conversation/ConversationModal.tsx` |
 
 ---
 

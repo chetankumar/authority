@@ -9,7 +9,7 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06 §2](../../../../docs/claude-tech-spe
 | event | action |
 |---|---|
 | `scene-updated` | patch `['scenes', bookId]` (live summary/characters updates) |
-| `job` | patch `['jobs', bookId, sceneId]` + streaming modal state |
+| `conversation` | scene-parented → invalidate `['conversations', bookId, sceneId]`; anything else (book-parented — the Resources page's chats) → invalidate the whole `['conversations', bookId]` prefix, which is why `keys.bookConversations` deliberately sits under that prefix rather than its own key (an AI run created or changed status) |
 | `todos-created` | invalidate `['todos', bookId]` **and** `['sceneTodos', bookId]` (prefix match — dependency fanout and accepted `todo-create` proposals can land in either storage tier, doc 03 §Todos storage split) |
 | `git-status` | patch `['git', bookId]` (drives the top-bar amber badge) |
 | `compile-done` | invalidate `['compileCheck', bookId]` |

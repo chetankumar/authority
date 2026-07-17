@@ -193,6 +193,7 @@ export function ConversationModal({
       await refresh();
       if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
       void qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
+      void qc.invalidateQueries({ queryKey: keys.resources(bookId) });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't accept.");
     }
@@ -213,6 +214,7 @@ export function ConversationModal({
     }
     await refresh();
     if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
+    void qc.invalidateQueries({ queryKey: keys.resources(bookId) });
   }
 
   if (!conv) {
@@ -461,6 +463,19 @@ function ProposalCard({
       {proposal.type === "character-create" && (
         <div>
           Add character <strong>{String(p.name ?? "")}</strong>
+          {p.rationale ? <p className="mt-1 text-ink-faint">{String(p.rationale)}</p> : null}
+        </div>
+      )}
+      {proposal.type === "resource-create" && (
+        <div>
+          <div>
+            New resource file <span className="font-mono font-medium">{String(p.filename ?? "")}</span>
+          </div>
+          {/* The whole file, scrollable: nothing is written until Accept, so this
+              preview is the author's only look at it before it lands. */}
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-control border border-line bg-surface p-2 font-mono text-[0.75rem] text-ink-soft">
+            {String(p.content ?? "")}
+          </pre>
           {p.rationale ? <p className="mt-1 text-ink-faint">{String(p.rationale)}</p> : null}
         </div>
       )}

@@ -17,6 +17,7 @@ from app.services.conversation_service import ConversationService
 from app.services.enrichment_service import EnrichmentService
 from app.services.git_service import GitService
 from app.services.proposal_service import ProposalService
+from app.services.resource_service import ResourceService
 from app.services.scene_service import SceneService
 from app.services.settings_service import SettingsService
 from app.services.structure_service import StructureService
@@ -66,6 +67,11 @@ def get_todo_service() -> TodoService:
 
 
 @lru_cache(maxsize=1)
+def get_resource_service() -> ResourceService:
+    return ResourceService(get_book_registry())
+
+
+@lru_cache(maxsize=1)
 def get_git_service() -> GitService:
     return GitService(get_book_registry(), get_settings_service(), get_event_hub())
 
@@ -106,7 +112,12 @@ def get_conversation_service() -> ConversationService:
 @lru_cache(maxsize=1)
 def get_proposal_service() -> ProposalService:
     return ProposalService(
-        get_book_registry(), get_scene_service(), get_event_hub(), get_structure_service(), get_todo_service()
+        get_book_registry(),
+        get_scene_service(),
+        get_event_hub(),
+        get_structure_service(),
+        get_todo_service(),
+        get_resource_service(),
     )
 
 

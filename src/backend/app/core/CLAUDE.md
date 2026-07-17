@@ -9,7 +9,7 @@ Parent: [app](../CLAUDE.md). Specs: [02 Architecture](../../../../docs/claude-te
 - **Config** — read/write `launcher.config.json` (`port`, `appDataRoot`, `envName`); create defaults on first run.
 - **Logging** — two handlers (console + `logs/api.log`); log file truncated at each launch.
 - **Single-instance lock** — `filelock` exclusive lock on `{appDataRoot}/.lock` at startup; second instance exits "Authority is already running".
-- **Atomic write** — the hardened helper (~15 lines, stdlib): serialize → `tempfile` in same dir → `flush()` + `os.fsync()` → `os.replace()`; on POSIX also fsync the directory handle. `.tmp` gitignored. **Do not** use the deprecated `atomicwrites` package.
+- **Atomic write** — the hardened helper (~15 lines, stdlib): serialize → `tempfile` in same dir → `flush()` + `os.fsync()` → `os.replace()`; on POSIX also fsync the directory handle. `.tmp` gitignored. **Do not** use the deprecated `atomicwrites` package. `atomic_write_bytes` is the primitive; `atomic_write_text`/`atomic_write_json` encode down to it — one fsync/replace sequence for text, JSON, and arbitrary binary (book resource uploads) alike.
 - **Locks** — a registry of per-book `asyncio.Lock`s (plus one for `app.json`). Every mutation acquires its book's lock; reads take none.
 - **EventHub** (`event_hub.py`) — per-book SSE pub/sub. Generic infrastructure: **no dependency on the AI layer** (doc 07 §24 — the build-phase list groups it under "AI layer" only because streaming was the first consumer). Any service emits; whichever phase first needs to push builds it.
   - `subscribe(book_id) -> asyncio.Queue` — one per connected browser tab, via `GET /api/books/{id}/events`.

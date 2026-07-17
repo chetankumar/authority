@@ -10,7 +10,13 @@ export type ConversationStatus =
   | "failed"
   | "archived";
 export type ParentType = "scene" | "chapter" | "part" | "book";
-export type ProposalType = "edit" | "metadata-update" | "todo-create" | "character-create";
+export type ProposalType =
+  | "edit"
+  | "metadata-update"
+  | "todo-create"
+  | "character-create"
+  | "character-relationship-create"
+  | "resource-create";
 export type ProposalStatus = "pending" | "applied" | "rejected" | "not-found";
 
 export interface AiParticipant {
@@ -91,6 +97,11 @@ export function deleteConversation(bookId: string, conversationId: string) {
 
 export function listSceneConversations(bookId: string, sceneId: string) {
   return apiGet<ConversationSummary[]>(`/books/${bookId}/scenes/${sceneId}/conversations`);
+}
+
+/** Threads parented to the book itself — the Resources page's chats. */
+export function listBookConversations(bookId: string) {
+  return apiGet<ConversationSummary[]>(`/books/${bookId}/conversations`);
 }
 
 export interface StreamHandlers {

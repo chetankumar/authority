@@ -112,12 +112,16 @@ export default function EditorPage() {
   );
 
   // Load content into the editor once per scene.
+  // emitUpdate: false — TipTap's default setContent fires onUpdate, which would
+  // mark dirty and autosave identical prose, bumping bookkeeping.updatedAt.
   useEffect(() => {
     if (editor && sceneQ.data && loadedScene.current !== sceneId) {
       loadedScene.current = sceneId;
       entryHash.current = sceneQ.data.contentHash;
       contentChangedThisVisit.current = false;
-      editor.commands.setContent(sceneQ.data.content || "");
+      dirty.current = false;
+      if (debounce.current) clearTimeout(debounce.current);
+      editor.commands.setContent(sceneQ.data.content || "", { emitUpdate: false });
       setTitle(sceneQ.data.title);
       setWords(sceneQ.data.wordCount);
       setSave({ kind: "idle" });

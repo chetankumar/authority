@@ -5,6 +5,7 @@ import type { GitFile } from "../../api/git";
 import { ApiError } from "../../api/client";
 import {
   useCommitStaged,
+  useDiscardFiles,
   useGitDiff,
   useGitLog,
   useGitStatus,
@@ -13,6 +14,7 @@ import {
   useSuggestCommitMessage,
   useUnstageFiles,
 } from "../../queries/git";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { Button } from "../../components/ui";
 
@@ -25,6 +27,8 @@ const STATUS_LETTER: Record<GitFile["status"], string> = {
   renamed: "R",
 };
 
+type DiscardTarget = { kind: "all" } | { kind: "path"; path: string };
+
 export default function GitPage() {
   const { bookId = "" } = useParams();
   const toast = useToast();
@@ -35,10 +39,12 @@ export default function GitPage() {
   const [message, setMessage] = useState("");
   const [fromStats, setFromStats] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [discardTarget, setDiscardTarget] = useState<DiscardTarget | null>(null);
 
   const diff = useGitDiff(bookId, selected);
   const stage = useStageFiles(bookId);
   const unstage = useUnstageFiles(bookId);
+  const discard = useDiscardFiles(bookId);
   const commit = useCommitStaged(bookId);
   const suggest = useSuggestCommitMessage(bookId);
   const push = useRemoteOp(bookId, "push");
@@ -52,6 +58,23 @@ export default function GitPage() {
     const body = { paths: [file.path] };
     (file.staged ? unstage : stage).mutate(body, {
       onError: (err) => toast.error(err instanceof ApiError ? err.message : "Couldn't update staging."),
+    });
+  };
+
+  const onConfirmDiscard = () => {
+    if (!discardTarget) return;
+    const body = discardTarget.kind === "all" ? { all: true } : { paths: [discardTarget.path] };
+    const clearedPath = discardTarget.kind === "path" ? discardTarget.path : null;
+    discard.mutate(body, {
+      onSuccess: () => {
+        toast.success(discardTarget.kind === "all" ? "Discarded all changes" : "Discarded changes");
+        if (discardTarget.kind === "all" || selected === clearedPath) setSelected(null);
+        setDiscardTarget(null);
+      },
+      onError: (err) => {
+        toast.error(err instanceof ApiError ? err.message : "Couldn't discard changes.");
+        setDiscardTarget(null);
+      },
     });
   };
 
@@ -148,12 +171,20 @@ export default function GitPage() {
               </>
             )}
             {files.length > 0 && (
-              <Button
-                onClick={() => stage.mutate({ all: true })}
-                disabled={stage.isPending}
-              >
-                Stage all
-              </Button>
+              <>
+                <Button
+                  onClick={() => setDiscardTarget({ kind: "all" })}
+                  disabled={discard.isPending}
+                >
+                  Discard all
+                </Button>
+                <Button
+                  onClick={() => stage.mutate({ all: true })}
+                  disabled={stage.isPending}
+                >
+                  Stage all
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -187,7 +218,18 @@ export default function GitPage() {
                     aria-label={file.staged ? `Unstage ${file.path}` : `Stage ${file.path}`}
                   />
                   <span className="w-4 font-mono text-ink-faint">{STATUS_LETTER[file.status]}</span>
-                  <span className="truncate font-mono text-ink">{file.path}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-ink">{file.path}</span>
+                  <Button
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDiscardTarget({ kind: "path", path: file.path });
+                    }}
+                    disabled={discard.isPending}
+                    aria-label={`Discard ${file.path}`}
+                  >
+                    Discard
+                  </Button>
                 </div>
               </li>
             ))}
@@ -257,6 +299,24 @@ export default function GitPage() {
           </pre>
         )}
       </div>
+
+      {discardTarget && (
+        <ConfirmDialog
+          title={discardTarget.kind === "all" ? "Discard all changes?" : "Discard changes?"}
+          message={
+            discardTarget.kind === "all"
+              ? "Discard all uncommitted changes? Staged and unstaged edits are thrown away, and untracked files are deleted. This cannot be undone."
+              : `Discard changes to ${discardTarget.path}? Staged and unstaged edits are thrown away${
+                  files.find((f) => f.path === discardTarget.path)?.status === "untracked"
+                    ? ", and the file is deleted"
+                    : ""
+                }. This cannot be undone.`
+          }
+          confirmLabel={discard.isPending ? "Discarding…" : "Discard"}
+          onConfirm={onConfirmDiscard}
+          onCancel={() => setDiscardTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -274,10 +274,17 @@ class SceneService:
         async with mgr.lock:
             record = self._find(mgr.get_scenes(), scene_id)
 
-            atomic_write_text(mgr.scene_file_path(record.file), content)
             word_count, content_hash = _content_metrics(content)
             bookkeeping = mgr.get_scene_bookkeeping(scene_id).model_copy()
             hash_changed = bookkeeping.contentHash != content_hash
+            # Identical content: don't rewrite .md or bookkeeping.json (avoids
+            # bumping updatedAt on no-op PUTs, e.g. editor hydrate round-trips).
+            if not hash_changed and bookkeeping.wordCount == word_count:
+                return ContentSaveResult(
+                    wordCount=word_count, contentHash=content_hash, todosCreated=[]
+                )
+
+            atomic_write_text(mgr.scene_file_path(record.file), content)
             bookkeeping.wordCount = word_count
             bookkeeping.contentHash = content_hash
             bookkeeping.updatedAt = _now()
