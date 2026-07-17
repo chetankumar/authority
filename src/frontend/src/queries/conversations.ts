@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listSceneConversations, getConversation } from "../api/conversations";
-import { listJobs } from "../api/jobs";
 import { keys } from "./keys";
 
+// One query per scene. Both the Notes and AI Jobs panes are just different
+// filters over this — there is no separate jobs list any more (the conversation
+// is the run).
 export function useSceneConversations(bookId: string, sceneId: string) {
   return useQuery({
     queryKey: keys.conversations(bookId, sceneId),
@@ -20,19 +22,10 @@ export function useConversation(bookId: string, conversationId: string | null) {
   });
 }
 
-export function useSceneJobs(bookId: string, sceneId: string) {
-  return useQuery({
-    queryKey: keys.jobs(bookId, sceneId),
-    queryFn: () => listJobs(bookId, sceneId),
-    enabled: !!bookId && !!sceneId,
-  });
-}
-
 export function useInvalidateConversation(bookId: string) {
   const qc = useQueryClient();
   return (sceneId?: string, conversationId?: string) => {
     if (sceneId) void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId) });
     if (conversationId) void qc.invalidateQueries({ queryKey: keys.conversation(bookId, conversationId) });
-    void qc.invalidateQueries({ queryKey: keys.jobs(bookId, sceneId ?? "") });
   };
 }

@@ -68,13 +68,9 @@ def _reject_same_neighbors(previous: str | None, next_: str | None) -> None:
 
 
 class SceneService:
-    def __init__(self, registry: BookRegistry, enrichment: Any | None = None, hub: EventHub | None = None) -> None:
+    def __init__(self, registry: BookRegistry, hub: EventHub | None = None) -> None:
         self._registry = registry
-        self._enrichment = enrichment
         self._hub = hub
-
-    def set_enrichment(self, enrichment: Any) -> None:
-        self._enrichment = enrichment
 
     # ---- reads (no lock) ----------------------------------------------------
 
@@ -387,10 +383,9 @@ class SceneService:
             if convo_hits:
                 blocked["conversations"] = [{"id": c["id"], "title": c.get("title", "")} for c in convo_hits]
 
-            jobs = self._load_json(mgr, "jobs.json")
-            job_hits = [j for j in jobs if j.get("sceneId") == scene_id and j.get("jobStatus") in ("queued", "running")]
-            if job_hits:
-                blocked["jobs"] = [{"id": j["id"]} for j in job_hits]
+            # No separate jobs check: a run *is* a conversation now, so the
+            # conversations blocker above already covers it. (The old check read
+            # `jobStatus` where the field was `status`, so it never fired.)
 
             if blocked:
                 raise ApiError(409, "Can't delete this scene yet.", {"blockedBy": blocked})

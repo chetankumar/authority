@@ -40,13 +40,16 @@ export function useBookEvents(bookId: string | null): void {
             void qc.invalidateQueries({ queryKey: ["sceneTodos", bookId] });
             break;
           }
-          case "job": {
-            const data = event.data as { sceneId?: string };
-            if (data.sceneId) {
-              void qc.invalidateQueries({ queryKey: keys.jobs(bookId, data.sceneId) });
-              void qc.invalidateQueries({ queryKey: keys.conversations(bookId, data.sceneId) });
+          case "conversation": {
+            // A conversation was created or changed status (an AI run
+            // starting, finishing, or landing in `waiting`). Refresh the
+            // scene's conversation list so the AI Jobs / Notes panes reflect
+            // it; the open modal polls its own thread separately.
+            const data = event.data as { parentType?: string; parentId?: string };
+            if (data.parentType === "scene" && data.parentId) {
+              void qc.invalidateQueries({ queryKey: keys.conversations(bookId, data.parentId) });
             } else {
-              void qc.invalidateQueries({ queryKey: ["jobs", bookId] });
+              void qc.invalidateQueries({ queryKey: ["conversations", bookId] });
             }
             break;
           }
@@ -58,7 +61,6 @@ export function useBookEvents(bookId: string | null): void {
         // Missed events during the gap are gone for good — re-read the truth.
         qc.invalidateQueries({ queryKey: keys.git(bookId) });
         qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
-        qc.invalidateQueries({ queryKey: ["jobs", bookId] });
         qc.invalidateQueries({ queryKey: ["conversations", bookId] });
         qc.invalidateQueries({ queryKey: ["todos", bookId] });
         qc.invalidateQueries({ queryKey: ["sceneTodos", bookId] });

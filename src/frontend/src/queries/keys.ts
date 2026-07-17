@@ -17,7 +17,6 @@ export const keys = {
   sceneTodos: (bookId: string, sceneId: string) => ["sceneTodos", bookId, sceneId] as const,
   conversations: (bookId: string, sceneId: string) => ["conversations", bookId, sceneId] as const,
   conversation: (bookId: string, conversationId: string) => ["conversation", bookId, conversationId] as const,
-  jobs: (bookId: string, sceneId: string) => ["jobs", bookId, sceneId] as const,
   git: (bookId: string) => ["git", bookId] as const,
   compileCheck: (bookId: string) => ["compileCheck", bookId] as const,
 };

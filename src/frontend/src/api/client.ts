@@ -34,7 +34,6 @@ export class ApiError extends Error {
       todos: "todo",
       conversations: "conversation",
       plotlines: "plotline",
-      jobs: "running job",
       chapters: "chapter",
       scenes: "scene",
     };
@@ -81,7 +80,12 @@ export async function apiUpload<T>(method: string, path: string, form: FormData)
 // ---- SSE (doc 04 §12) -------------------------------------------------------
 
 /** Event types the book channel pushes. Server-internal types are ignored. */
-export type BookEventType = "job" | "scene-updated" | "todos-created" | "git-status" | "compile-done";
+export type BookEventType =
+  | "conversation"
+  | "scene-updated"
+  | "todos-created"
+  | "git-status"
+  | "compile-done";
 
 export interface BookEvent<T = unknown> {
   type: BookEventType;
@@ -89,7 +93,7 @@ export interface BookEvent<T = unknown> {
 }
 
 const SSE_EVENT_TYPES: BookEventType[] = [
-  "job",
+  "conversation",
   "scene-updated",
   "todos-created",
   "git-status",

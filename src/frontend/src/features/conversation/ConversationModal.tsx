@@ -52,6 +52,12 @@ export function ConversationModal({
     void getConversation(bookId, conversationId).then((c) => {
       setConv(c);
       setTitleDraft(c.title);
+      // A fresh AI-Job run arrives at `open` with its prompt already inside
+      // and nothing sent. Prefill "start" so approving it is just hitting
+      // Send — edit the box first if you'd rather add instructions.
+      if (c.kind === "ai-job" && c.status === "open" && !c.messages.some((m) => m.author === "user")) {
+        setDraft("start");
+      }
     });
     void listModels().then(setModels);
     return () => abortRef.current?.();
@@ -60,6 +66,20 @@ export function ConversationModal({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conv?.messages, streaming]);
+
+  // A bookkeeping run is driven by the background worker, not by this modal —
+  // so if the author opens it mid-run, nothing here would notice it finishing.
+  // (The `conversation` SSE event refreshes the pane's list, but the modal
+  // reads its own copy.) Poll only while it's actually in flight; the terminal
+  // statuses need no watching.
+  useEffect(() => {
+    if (!conv || busy) return;
+    const inFlight = conv.status === "queued" || conv.status === "running";
+    if (!inFlight) return;
+    const t = setTimeout(() => void refresh(), 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conv, busy]);
 
   function applyTitle(title: string) {
     if (titleFocused.current) return;
@@ -72,7 +92,6 @@ export function ConversationModal({
     setConv(c);
     if (!titleFocused.current) setTitleDraft(c.title);
     if (sceneId) void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId) });
-    void qc.invalidateQueries({ queryKey: keys.jobs(bookId, sceneId ?? "") });
   }
 
   async function onTitleBlur() {
@@ -155,7 +174,6 @@ export function ConversationModal({
     try {
       await deleteConversation(bookId, conversationId);
       if (sceneId) void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId) });
-      void qc.invalidateQueries({ queryKey: keys.jobs(bookId, sceneId ?? "") });
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't delete conversation.");
@@ -204,6 +222,15 @@ export function ConversationModal({
       </Modal>
     );
   }
+
+  // On a run, the first system message is the resolved prompt — collapse just
+  // that one behind "Job prompt · show". Every other system message (an
+  // escalation question, an error) is content the author needs to read, so it
+  // renders plainly.
+  const isRun = conv.kind === "ai-job" || conv.kind === "bookkeeping";
+  const promptMessageId = isRun
+    ? conv.messages.find((m) => m.author === "system")?.id
+    : undefined;
 
   return (
     <>
@@ -278,6 +305,7 @@ export function ConversationModal({
               <MessageBubble
                 key={m.id}
                 message={m}
+                isPrompt={m.id === promptMessageId}
                 showPrompt={showPrompt}
                 onTogglePrompt={() => setShowPrompt((s) => !s)}
                 onAccept={onAccept}
@@ -311,6 +339,7 @@ export function ConversationModal({
 
 function MessageBubble({
   message,
+  isPrompt,
   showPrompt,
   onTogglePrompt,
   onAccept,
@@ -318,6 +347,7 @@ function MessageBubble({
   onAcceptAll,
 }: {
   message: Message;
+  isPrompt: boolean;
   showPrompt: boolean;
   onTogglePrompt: () => void;
   onAccept: (p: Proposal) => void;
@@ -325,16 +355,26 @@ function MessageBubble({
   onAcceptAll: (ps: Proposal[]) => void;
 }) {
   if (message.author === "system") {
+    // The run's resolved prompt is long and boring — collapse it.
+    if (isPrompt) {
+      return (
+        <div className="text-[0.8125rem] text-ink-faint">
+          <button type="button" onClick={onTogglePrompt} className="underline">
+            Job prompt · {showPrompt ? "hide" : "show"}
+          </button>
+          {showPrompt && (
+            <pre className="mt-2 whitespace-pre-wrap rounded-control border border-line bg-paper p-2 font-mono text-[0.75rem] text-ink-soft">
+              {message.content}
+            </pre>
+          )}
+        </div>
+      );
+    }
+    // An escalation question or an error the AI (or the system) put in the
+    // thread — the author needs to actually see this one.
     return (
-      <div className="text-[0.8125rem] text-ink-faint">
-        <button type="button" onClick={onTogglePrompt} className="underline">
-          Job prompt · {showPrompt ? "hide" : "show"}
-        </button>
-        {showPrompt && (
-          <pre className="mt-2 whitespace-pre-wrap rounded-control border border-line bg-paper p-2 font-mono text-[0.75rem] text-ink-soft">
-            {message.content}
-          </pre>
-        )}
+      <div className="rounded-control border border-line bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
+        <div className="whitespace-pre-wrap">{message.content}</div>
       </div>
     );
   }

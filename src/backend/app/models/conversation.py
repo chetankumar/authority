@@ -87,5 +87,6 @@ class AiJobRunRequest(BaseModel):
 
 
 class AiJobRunResponse(BaseModel):
-    jobId: str
+    """The conversation *is* the run — there's no separate job id to return."""
+
     conversationId: str

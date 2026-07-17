@@ -21,11 +21,12 @@ from app.models.conversation import (
     Message,
     MessageCreate,
 )
-from app.models.enums import ConversationKind, ConversationStatus, MessageAuthor, ParentType
+from app.models.enums import ConversationKind, ConversationStatus, MessageAuthor, OutputType, ParentType
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_tools import ToolRegistry
 from app.services.book_registry import BookRegistry
 from app.services.context_assembler import ContextAssembler, CurrentSceneRef
+from app.services.output_parsers import parse_edit_proposals, parse_metadata_proposals
 from app.services.settings_service import SettingsService
 
 log = logging.getLogger("authority.conversations")
@@ -72,8 +73,24 @@ class ConversationService:
         self._assembler = assembler or ContextAssembler()
         # conversation_id → lock for generation-in-progress
         self._generating: set[str] = set()
+        self._wake: asyncio.Event | None = None  # set by ConversationWorker
 
-    def create(self, book_id: str, body: ConversationCreate) -> Conversation:
+    def set_wake(self, event: asyncio.Event) -> None:
+        self._wake = event
+
+    def _notify(self) -> None:
+        """Nudge the worker so a queued conversation starts now rather than on
+        its next idle poll."""
+        if self._wake is not None:
+            self._wake.set()
+
+    def create(
+        self,
+        book_id: str,
+        body: ConversationCreate,
+        *,
+        status: ConversationStatus = ConversationStatus.open,
+    ) -> Conversation:
         mgr = self._registry.get(book_id)
         existing = {s.id for s in mgr.get_conversation_index()}
         now = _now()
@@ -86,13 +103,36 @@ class ConversationService:
             parentType=body.parentType,
             parentId=body.parentId,
             aiParticipant=ai,
-            status=ConversationStatus.open,
+            status=status,
             createdAt=now,
             updatedAt=now,
             messages=[],
         )
         mgr.save_conversation(conv)
+        self._emit(book_id, conv)
         return conv
+
+    def _emit(self, book_id: str, conv: Conversation) -> None:
+        """Announce a conversation's existence or lifecycle change. Replaces the
+        old `job` event — the conversation is the run now, so there's one signal."""
+        self._hub.emit(
+            book_id,
+            "conversation",
+            {
+                "id": conv.id,
+                "kind": conv.kind.value,
+                "parentType": conv.parentType.value,
+                "parentId": conv.parentId,
+                "status": conv.status.value,
+            },
+        )
+
+    def _set_status(self, book_id: str, conv: Conversation, status: ConversationStatus) -> None:
+        mgr = self._registry.get(book_id)
+        conv.status = status
+        conv.updatedAt = _now()
+        mgr.save_conversation(conv)
+        self._emit(book_id, conv)
 
     def get(self, book_id: str, conversation_id: str) -> Conversation:
         mgr = self._registry.get(book_id)
@@ -136,92 +176,124 @@ class ConversationService:
         if conversation_id in self._generating:
             raise ApiError(409, "Generation already in progress.", {"code": "generation-in-progress"})
         mgr.delete_conversation(conversation_id)
-        # A job only exists to represent this conversation (an AI-Job run or a
-        # bookkeeping run) — deleting the conversation is the only delete
-        # control the UI has, so the orphaned job must go with it rather than
-        # linger in the AI Jobs pane with nothing to open.
-        jobs = list(mgr.get_jobs())
-        remaining = [j for j in jobs if j.conversationId != conversation_id]
-        removed = [j for j in jobs if j.conversationId == conversation_id]
-        if removed:
-            mgr.save_jobs(remaining)
-            for job in removed:
-                self._hub.emit(
-                    book_id,
-                    "job",
-                    {"id": job.id, "type": job.type.value, "sceneId": job.sceneId, "status": "deleted", "result": None},
-                )
+        self._hub.emit(book_id, "conversation", {"id": conversation_id, "status": "deleted"})
 
     async def send_message(
-        self, book_id: str, conversation_id: str, body: MessageCreate
+        self, book_id: str, conversation_id: str, body: MessageCreate | None = None
     ) -> AsyncIterator[dict]:
         """Yield SSE event dicts: {event, data}. AI-off → single message then done as JSON path
         is handled by the router; when AI-on this streams token/message/done/error.
+
+        ``body=None`` generates against the thread as it already stands, with no
+        new message. That's how the worker runs a queued bookkeeping
+        conversation: its prompt is already inside it, and inventing a user
+        message the author never typed would put words in their mouth.
         """
         if conversation_id in self._generating:
             raise ApiError(409, "Generation already in progress.", {"code": "generation-in-progress"})
 
         mgr = self._registry.get(book_id)
         conv = self.get(book_id, conversation_id)
-        if not body.content.strip():
+        if body is not None and not body.content.strip():
             raise validation({"content": "Message can't be empty."})
 
-        now = _now()
-        user_msg = Message(
-            id=new_id("msg"),
-            author=MessageAuthor.user,
-            content=body.content.strip(),
-            context=list(body.context or []),
-            createdAt=now,
-        )
-        needs_title = conv.title == "Untitled"
-        conv.messages.append(user_msg)
-        conv.updatedAt = now
-        mgr.save_conversation(conv)
+        def fail(error_text: str) -> None:
+            """A run that can't proceed: record why in the thread itself, where
+            the author will actually see it, and mark the conversation failed."""
+            latest = self.get(book_id, conversation_id)
+            latest.messages.append(
+                Message(
+                    id=new_id("msg"),
+                    author=MessageAuthor.system,
+                    content=error_text,
+                    createdAt=_now(),
+                )
+            )
+            self._set_status(book_id, latest, ConversationStatus.failed)
 
-        if needs_title:
-            title = await self._semantic_title(user_msg.content)
-            conv = self.get(book_id, conversation_id)
-            conv.title = title
-            conv.updatedAt = _now()
+        if body is not None:
+            now = _now()
+            user_msg = Message(
+                id=new_id("msg"),
+                author=MessageAuthor.user,
+                content=body.content.strip(),
+                context=list(body.context or []),
+                createdAt=now,
+            )
+            needs_title = conv.title == "Untitled"
+            conv.messages.append(user_msg)
+            conv.updatedAt = now
             mgr.save_conversation(conv)
-            yield {"event": "title", "data": {"title": title}}
 
-        yield {"event": "message", "data": {"message": user_msg.model_dump(mode="json"), "ai": False}}
+            if needs_title:
+                title = await self._semantic_title(user_msg.content)
+                conv = self.get(book_id, conversation_id)
+                conv.title = title
+                conv.updatedAt = _now()
+                mgr.save_conversation(conv)
+                yield {"event": "title", "data": {"title": title}}
+
+            yield {"event": "message", "data": {"message": user_msg.model_dump(mode="json"), "ai": False}}
+
+        # Only AI runs carry a lifecycle. A note or a chat just sits at `open`
+        # forever — its status has nothing to say.
+        is_run = conv.kind in (ConversationKind.ai_job, ConversationKind.bookkeeping)
 
         if not conv.aiParticipant.enabled:
+            # Deliberate: the author turned the AI off. Not a failure, even on a
+            # run — they've chosen to use the thread as a notepad.
             yield {"event": "done", "data": {"title": conv.title}}
             return
 
         model_id = conv.aiParticipant.modelId
         if not model_id:
+            if is_run:
+                fail("Pick a model to bring the AI in.")
             yield {"event": "error", "data": {"error": "Pick a model to bring the AI in."}}
             return
 
         cfg = self._settings.get_model(model_id)
         if cfg is None:
+            if is_run:
+                fail("That model no longer exists.")
             yield {"event": "error", "data": {"error": "That model no longer exists."}}
             return
+
+        if is_run:
+            self._set_status(book_id, conv, ConversationStatus.running)
 
         self._generating.add(conversation_id)
         try:
             book = mgr.get_book()
-            tools, acc = self._tools.bind(book_id)
             conv = self.get(book_id, conversation_id)
+            # Bookkeeping runs get the execute tools, bound to their own scene:
+            # this is the one path allowed to write metadata without an author's
+            # click, and only because the Bookkeeping toggles consented to it.
+            bookkeeping_scene = (
+                conv.parentId
+                if conv.kind == ConversationKind.bookkeeping and conv.parentType == ParentType.scene
+                else None
+            )
+            tools, acc = self._tools.bind(book_id, bookkeeping_scene_id=bookkeeping_scene)
             current = self._current_scene_ref(mgr, conv)
             messages = self._assembler.from_conversation(
                 conv, book.systemPrompt, current_scene=current, mgr=mgr
             )
 
             queue: asyncio.Queue[str | None] = asyncio.Queue()
+            tool_calls = 0
 
             async def on_token(text: str) -> None:
                 await queue.put(text)
 
+            async def on_tool(name: str, args: dict, result: str) -> None:
+                nonlocal tool_calls
+                tool_calls += 1
+
             async def run() -> None:
                 try:
                     turn = await self._orch.invoke_stream(
-                        cfg, messages, tools=tools, accumulator=acc, on_token=on_token
+                        cfg, messages, tools=tools, accumulator=acc, on_token=on_token, on_tool=on_tool
                     )
                     await queue.put(None)
                     # Stash turn on the queue sentinel via attribute.
@@ -242,27 +314,59 @@ class ConversationService:
             turn = getattr(queue, "turn", None)
             err = getattr(queue, "error", None)
             if err and turn is None:
+                if is_run:
+                    fail(err)
                 yield {"event": "error", "data": {"error": err}}
                 return
             if turn is None:
+                if is_run:
+                    fail("No response from model.")
                 yield {"event": "error", "data": {"error": "No response from model."}}
                 return
             if turn.error and not turn.content:
+                if is_run:
+                    fail(turn.error)
                 yield {"event": "error", "data": {"error": turn.error}}
                 return
+
+            content = turn.content
+            proposals = turn.proposals
+            # An AI-Job's definition decides whether its reply's trailing JSON
+            # block becomes proposal cards. Keyed off the conversation now —
+            # it carries aiJobId and its scene parent, so the old Job record
+            # had nothing extra to offer here.
+            if conv.aiJobId:
+                definition = self._settings.get_ai_job(conv.aiJobId)
+                scene_id = conv.parentId if conv.parentType == ParentType.scene else ""
+                if definition is not None and definition.outputType == OutputType.edit_proposals:
+                    display, parsed = parse_edit_proposals(content, scene_id)
+                    if parsed:
+                        content, proposals = display, [*parsed, *proposals]
+                elif definition is not None and definition.outputType == OutputType.metadata_proposals:
+                    display, parsed = parse_metadata_proposals(content, scene_id)
+                    if parsed:
+                        content, proposals = display, [*parsed, *proposals]
 
             assistant = Message(
                 id=new_id("msg"),
                 author=MessageAuthor.assistant,
                 modelId=model_id,
-                content=turn.content,
-                proposals=turn.proposals,
+                content=content,
+                proposals=proposals,
                 createdAt=_now(),
             )
             conv = self.get(book_id, conversation_id)
             conv.messages.append(assistant)
             conv.updatedAt = _now()
             mgr.save_conversation(conv)
+            if is_run:
+                # A bookkeeping run that called no tool didn't do the work — it
+                # asked the author something. That absence *is* the escalation;
+                # there's no separate mechanism for it any more.
+                asked = conv.kind == ConversationKind.bookkeeping and tool_calls == 0
+                self._set_status(
+                    book_id, conv, ConversationStatus.waiting if asked else ConversationStatus.done
+                )
             yield {"event": "message", "data": {"message": assistant.model_dump(mode="json")}}
             if turn.error:
                 yield {"event": "error", "data": {"error": turn.error}}
@@ -341,6 +445,45 @@ class ConversationService:
             messages=[],
         )
         mgr.save_conversation(conv)
+        self._emit(book_id, conv)
+        return conv
+
+    def create_bookkeeping_conversation(
+        self,
+        book_id: str,
+        *,
+        scene_id: str,
+        title: str,
+        model_id: str,
+        prompt: str,
+    ) -> Conversation:
+        """A queued bookkeeping run: prompt already inside, nobody watching.
+        The conversation worker picks it up off `queued` and sends it."""
+        mgr = self._registry.get(book_id)
+        existing = {s.id for s in mgr.get_conversation_index()}
+        now = _now()
+        conv = Conversation(
+            id=new_id("cnv", existing),
+            kind=ConversationKind.bookkeeping,
+            title=title,
+            parentType=ParentType.scene,
+            parentId=scene_id,
+            aiParticipant=AiParticipant(enabled=True, modelId=model_id),
+            status=ConversationStatus.queued,
+            createdAt=now,
+            updatedAt=now,
+            messages=[
+                Message(
+                    id=new_id("msg"),
+                    author=MessageAuthor.system,
+                    content=prompt,
+                    createdAt=now,
+                )
+            ],
+        )
+        mgr.save_conversation(conv)
+        self._emit(book_id, conv)
+        self._notify()
         return conv
 
 

@@ -19,7 +19,7 @@ import { Button } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { useBook } from "../../queries/books";
 import { useScene, useUpdateScene } from "../../queries/scenes";
-import { useSceneConversations, useSceneJobs } from "../../queries/conversations";
+import { useSceneConversations } from "../../queries/conversations";
 import { useJobs as useAiJobDefinitions } from "../../queries/settings";
 import { usePatchBook } from "../../queries/structure";
 import { useCreateSceneTodo, useDeleteTodo, useSceneTodos, useUpdateTodo } from "../../queries/todos";
@@ -42,7 +42,6 @@ export default function EditorPage() {
   const toast = useToast();
   const aiJobs = useAiJobDefinitions();
   const notes = useSceneConversations(bookId, sceneId);
-  const sceneJobs = useSceneJobs(bookId, sceneId);
   const sceneTodos = useSceneTodos(bookId, sceneId);
   const createSceneTodo = useCreateSceneTodo(bookId, sceneId);
   const updateTodo = useUpdateTodo(bookId);
@@ -314,7 +313,6 @@ export default function EditorPage() {
       });
       setChatContext(null);
       setConversationId(res.conversationId);
-      toast.success("AI-Job queued");
     } catch {
       toast.error("Couldn't run that job.");
     }
@@ -325,9 +323,11 @@ export default function EditorPage() {
     return <div className="px-6 py-6 text-[0.875rem] text-danger">Couldn't open this scene.</div>;
 
   const jobDefs = aiJobs.data ?? [];
-  const noteRows = notes.data ?? []; // all conversations for this scene — also used by the AI Jobs pane's fromConv lookup below
-  const visibleNotes = noteRows.filter((n) => n.kind === "note" || n.kind === "chat");
-  const jobRows = sceneJobs.data ?? [];
+  // One conversation list, two panes. Notes = the author's own threads;
+  // AI Jobs = the AI runs (an AI-Job's conversation, or a bookkeeping run).
+  const allConvos = notes.data ?? [];
+  const visibleNotes = allConvos.filter((n) => n.kind === "note" || n.kind === "chat");
+  const runRows = allConvos.filter((n) => n.kind === "ai-job" || n.kind === "bookkeeping");
   const todoRows = sceneTodos.data ?? [];
 
   return (
@@ -565,39 +565,34 @@ export default function EditorPage() {
               </ul>
             )}
           </PaneSection>
-          <PaneSection title="AI Jobs" count={jobRows.filter((j) => j.status === "queued" || j.status === "running").length}>
-            {jobRows.length === 0 ? (
+          <PaneSection
+            title="AI Jobs"
+            count={runRows.filter((r) => r.status === "queued" || r.status === "running" || r.status === "waiting").length}
+          >
+            {runRows.length === 0 ? (
               <p className="text-[0.75rem] text-ink-faint">No jobs yet.</p>
             ) : (
               <ul className="space-y-1">
-                {jobRows.slice(0, 20).map((j) => {
-                  const fromConv = j.conversationId
-                    ? noteRows.find((n) => n.id === j.conversationId)?.title
-                    : undefined;
-                  const fromDef = j.aiJobId ? jobDefs.find((d) => d.id === j.aiJobId)?.name : undefined;
-                  const label =
-                    fromConv ??
-                    fromDef ??
-                    (j.type === "system" ? "Bookkeeping" : j.aiJobId ?? j.id);
-                  return (
-                    <li key={j.id}>
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2 rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
-                        title={label}
-                        onClick={() => {
-                          if (j.conversationId) {
-                            setChatContext(null);
-                            setConversationId(j.conversationId);
-                          }
-                        }}
+                {runRows.slice(0, 20).map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
+                      title={r.title}
+                      onClick={() => {
+                        setChatContext(null);
+                        setConversationId(r.id);
+                      }}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-ink">{r.title}</span>
+                      <span
+                        className={`shrink-0 text-[0.6875rem] ${r.status === "waiting" ? "text-attn" : "text-ink-faint"}`}
                       >
-                        <span className="min-w-0 flex-1 truncate text-ink">{label}</span>
-                        <span className="shrink-0 text-[0.6875rem] text-ink-faint">{j.status}</span>
-                      </button>
-                    </li>
-                  );
-                })}
+                        {r.status === "waiting" ? "needs you" : r.status}
+                      </span>
+                    </button>
+                  </li>
+                ))}
               </ul>
             )}
           </PaneSection>
@@ -624,7 +619,6 @@ export default function EditorPage() {
             setConversationId(null);
             setChatContext(null);
             void notes.refetch();
-            void sceneJobs.refetch();
           }}
         />
       )}

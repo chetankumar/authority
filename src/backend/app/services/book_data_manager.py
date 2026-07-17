@@ -27,8 +27,7 @@ from app.core.event_hub import EventHub
 from app.models.book import Book, BookConfig, Chapter, Part
 from app.models.character import CharacterRecord, CharacterRelationship
 from app.models.conversation import Conversation, ConversationSummary
-from app.models.enums import ProposalStatus
-from app.models.job import Job
+from app.models.enums import ConversationStatus, ProposalStatus
 from app.models.plotline import PlotlineRecord
 from app.models.scene import Dependency, SceneBookkeeping, SceneCharacterRef, SceneMeta, SceneRecord, SoftRelationship
 from app.models.todo import TodoRecord
@@ -57,7 +56,6 @@ class BookDataManager:
         self._plotlines: list[PlotlineRecord] | None = None
         self._characters: list[CharacterRecord] | None = None
         self._character_relationships: list[CharacterRelationship] | None = None
-        self._jobs: list[Job] | None = None
         self._conversation_index: list[ConversationSummary] | None = None
 
     @property
@@ -147,6 +145,7 @@ class BookDataManager:
     def get_scenes(self) -> list[SceneRecord]:
         if self._scenes is None:
             self._migrate_scenes_if_needed()
+            self._drop_legacy_jobs_file()
             self._scenes = self._load_collection("scenes.json", SceneRecord)
         return self._scenes
 
@@ -447,6 +446,22 @@ class BookDataManager:
         if self._scene_todos is not None:
             self._scene_todos.pop(scene_id, None)
 
+    # -- migrations ------------------------------------------------------------
+
+    def _drop_legacy_jobs_file(self) -> None:
+        """`db/jobs.json` is gone: the conversation *is* the run now (doc 03).
+        Job records were pure run-history shadowing a conversation that already
+        existed, so there's nothing to migrate — just remove the file rather
+        than leave a dead one in every book folder forever."""
+        path = self._dir / "db" / "jobs.json"
+        if not path.exists():
+            return
+        try:
+            path.unlink()
+            log.info("removed legacy db/jobs.json from %s", self._dir.name)
+        except OSError as exc:
+            log.warning("couldn't remove legacy jobs.json in %s: %s", self._dir.name, exc)
+
     # -- migration from the old flat (pre-split) scenes.json shape -------------
 
     _OLD_SHAPE_KEYS = (
@@ -642,18 +657,6 @@ class BookDataManager:
         self._changed()
         return merged
 
-    # ---- jobs (doc 03 db/jobs.json) ----------------------------------------
-
-    def get_jobs(self) -> list[Job]:
-        if self._jobs is None:
-            self._jobs = self._load_collection("jobs.json", Job)
-        return self._jobs
-
-    def save_jobs(self, jobs: list[Job]) -> None:
-        atomic_write_json(self._dir / "db" / "jobs.json", [j.model_dump(mode="json") for j in jobs])
-        self._jobs = jobs
-        self._changed()
-
     # ---- conversations (doc 03 db/conversations/) --------------------------
 
     def _conversations_dir(self) -> Path:
@@ -762,6 +765,11 @@ class BookDataManager:
             for s in self.get_conversation_index()
             if s.parentType.value == parent_type and s.parentId == parent_id
         ]
+
+    def list_conversations_by_status(self, status: ConversationStatus) -> list[ConversationSummary]:
+        """The index already carries `status`, so the worker's "anything queued?"
+        poll costs an in-memory scan — no conversation files opened."""
+        return [s for s in self.get_conversation_index() if s.status == status]
 
     def find_proposal(self, proposal_id: str) -> tuple[Conversation, int, int] | None:
         """Locate a proposal via the index → conversation files.

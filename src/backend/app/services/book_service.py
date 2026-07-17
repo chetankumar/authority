@@ -35,7 +35,6 @@ _EMPTY_ARRAY_FILES = (
     "character_relationships.json",
     "plotlines.json",
     "todos.json",
-    "jobs.json",
     "parts.json",
     "chapters.json",
 )

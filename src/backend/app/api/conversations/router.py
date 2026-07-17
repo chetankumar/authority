@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from fastapi.responses import Response, StreamingResponse
 
-from app.api.deps import get_conversation_service
+from app.api.deps import get_ai_job_service, get_conversation_service
 from app.models.conversation import (
     AiJobRunRequest,
     AiJobRunResponse,
@@ -14,11 +14,13 @@ from app.models.conversation import (
     ConversationPatch,
     MessageCreate,
 )
+from app.services.ai_job_service import AiJobService
 from app.services.conversation_service import ConversationService, sse_pack
 
 router = APIRouter(prefix="/books/{book_id}", tags=["conversations"])
 
 Service = Depends(get_conversation_service)
+AiJobDep = Depends(get_ai_job_service)
 
 
 @router.post("/conversations", response_model=Conversation, status_code=201)
@@ -67,10 +69,8 @@ async def send_message(
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
-@router.post("/ai-jobs/run", response_model=AiJobRunResponse, status_code=202)
+@router.post("/ai-jobs/run", response_model=AiJobRunResponse, status_code=201)
 async def run_ai_job(
-    book_id: str, body: AiJobRunRequest, svc: ConversationService = Service
+    book_id: str, body: AiJobRunRequest, svc: AiJobService = AiJobDep
 ) -> AiJobRunResponse:
-    from app.api.deps import get_job_service
-
-    return await get_job_service().run_ai_job(book_id, body)
+    return AiJobRunResponse(conversationId=svc.prepare(book_id, body).id)

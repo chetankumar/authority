@@ -1,6 +1,14 @@
 import { apiGet, apiSend } from "./client";
 
-export type ConversationKind = "note" | "chat" | "ai-job" | "task-discussion";
+export type ConversationKind = "note" | "chat" | "ai-job" | "bookkeeping" | "task-discussion";
+export type ConversationStatus =
+  | "open"
+  | "queued"
+  | "running"
+  | "waiting"
+  | "done"
+  | "failed"
+  | "archived";
 export type ParentType = "scene" | "chapter" | "part" | "book";
 export type ProposalType = "edit" | "metadata-update" | "todo-create" | "character-create";
 export type ProposalStatus = "pending" | "applied" | "rejected" | "not-found";
@@ -39,7 +47,7 @@ export interface ConversationSummary {
   title: string;
   parentType: ParentType;
   parentId: string;
-  status: "open" | "archived";
+  status: ConversationStatus;
   updatedAt: string;
   messageCount: number;
   pendingProposals: number;
@@ -157,5 +165,8 @@ export function runAiJob(
   bookId: string,
   body: { aiJobId: string; sceneId: string; scope: "full" | "selection"; selectionText?: string },
 ) {
-  return apiSend<{ jobId: string; conversationId: string }>("POST", `/books/${bookId}/ai-jobs/run`, body);
+  // Prepares the run: resolves the prompt and opens the conversation with it
+  // already inside. Nothing runs until the author sends. No separate job id —
+  // the conversation is the run.
+  return apiSend<{ conversationId: string }>("POST", `/books/${bookId}/ai-jobs/run`, body);
 }

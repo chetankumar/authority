@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import Placement, RelationshipType, SceneStatus
+from app.models.enums import EnrichScope, Placement, RelationshipType, SceneStatus
 
 # Virtual sentinels (doc 03 ID scheme): recordless, valid chain endpoints.
 START_ID = "scn-START"
@@ -236,3 +236,17 @@ class ContentSaveResult(BaseModel):
     wordCount: int
     contentHash: str
     todosCreated: list[dict] = Field(default_factory=list)
+
+
+class EnrichRequest(BaseModel):
+    """POST /scenes/{id}/enrich (doc 04 §5)."""
+
+    scope: EnrichScope = EnrichScope.both
+
+
+class EnrichResponse(BaseModel):
+    """Enrichment creates one conversation per field in scope (``both`` → two),
+    so the response is a list — an empty one when no toggle is on or no model
+    is configured for the ones that are."""
+
+    conversationIds: list[str] = Field(default_factory=list)

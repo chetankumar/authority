@@ -65,14 +65,28 @@ class TodoOrigin(str, Enum):
 
 
 class ConversationKind(str, Enum):
+    """The label on a conversation — what it is, not what it's doing."""
+
     note = "note"
     chat = "chat"
     ai_job = "ai-job"
+    bookkeeping = "bookkeeping"
     task_discussion = "task-discussion"
 
 
 class ConversationStatus(str, Enum):
-    open = "open"
+    """The run lifecycle. A conversation is the only run entity — there is no
+    separate Job record; these are the states that used to live on one.
+
+    Notes and chats simply sit at ``open``; only AI runs traverse the rest.
+    """
+
+    open = "open"  # nothing running (a note, a chat, an AI-Job prompt awaiting Send)
+    queued = "queued"  # the worker will run this with no further input (auto bookkeeping)
+    running = "running"  # model in flight
+    waiting = "waiting"  # the AI asked the author something and stopped
+    done = "done"
+    failed = "failed"
     archived = "archived"
 
 
@@ -97,21 +111,11 @@ class ProposalStatus(str, Enum):
     not_found = "not-found"
 
 
-class JobType(str, Enum):
-    user = "user"
-    system = "system"
+class EnrichScope(str, Enum):
+    """Which bookkeeping a scene enrichment request covers. ``both`` is resolved
+    at creation into two independent conversations, one per field, each on its
+    own configured model — it is never a state anything persists."""
 
-
-class JobStatus(str, Enum):
-    queued = "queued"
-    running = "running"
-    done = "done"
-    failed = "failed"
-
-
-class JobScope(str, Enum):
-    full = "full"
-    selection = "selection"
     summary = "summary"
     characters = "characters"
     both = "both"

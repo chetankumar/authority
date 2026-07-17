@@ -21,11 +21,10 @@ from app.api.books.router import router as books_router
 from app.api.characters.router import rel_router as character_relationships_router
 from app.api.characters.router import router as characters_router
 from app.api.conversations.router import router as conversations_router
-from app.api.deps import get_git_status_worker, get_job_worker
+from app.api.deps import get_conversation_worker, get_git_status_worker
 from app.api.events.router import router as events_router
 from app.api.git.router import router as git_router
 from app.api.health.router import router as health_router
-from app.api.jobs.router import router as jobs_router
 from app.api.plotlines.router import router as plotlines_router
 from app.api.proposals.router import router as proposals_router
 from app.api.relationships.router import router as relationships_router
@@ -54,15 +53,15 @@ async def lifespan(app: FastAPI):
     # Standing background task: keeps the git badge current without ever putting
     # git on a write path (doc 02 §backend-internal-architecture, doc 07 §25).
     git_worker = asyncio.create_task(get_git_status_worker().run())
-    job_worker = asyncio.create_task(get_job_worker().run())
+    conversation_worker = asyncio.create_task(get_conversation_worker().run())
 
     try:
         yield
     finally:
-        job_worker.cancel()
+        conversation_worker.cancel()
         git_worker.cancel()
         try:
-            await job_worker
+            await conversation_worker
         except asyncio.CancelledError:
             pass
         try:
@@ -102,7 +101,6 @@ app.include_router(character_relationships_router, prefix="/api")
 app.include_router(todos_router, prefix="/api")
 app.include_router(conversations_router, prefix="/api")
 app.include_router(proposals_router, prefix="/api")
-app.include_router(jobs_router, prefix="/api")
 app.include_router(git_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 

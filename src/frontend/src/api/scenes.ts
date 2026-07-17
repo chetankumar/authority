@@ -127,14 +127,15 @@ export const saveContent = (bookId: string, sceneId: string, content: string) =>
 export type EnrichScope = "summary" | "characters" | "both";
 
 export const enrichScene = (bookId: string, sceneId: string, scope: EnrichScope) =>
-  apiSend<{ jobId: string }>("POST", `/books/${bookId}/scenes/${sceneId}/enrich`, { scope });
+  apiSend<{ conversationIds: string[] }>("POST", `/books/${bookId}/scenes/${sceneId}/enrich`, { scope });
 
-/** Leave-scene auto-enrich. Respects bookkeeping toggles. */
+/** Leave-scene auto-enrich. Respects bookkeeping toggles. Creates one
+ *  bookkeeping conversation per field in scope (both → two). */
 export async function enrichSceneAuto(
   bookId: string,
   sceneId: string,
   opts?: { keepalive?: boolean },
-): Promise<{ queued: boolean; jobId?: string }> {
+): Promise<{ queued: boolean; conversationIds: string[] }> {
   const res = await fetch(`/api/books/${bookId}/scenes/${sceneId}/enrich/auto`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -145,5 +146,5 @@ export async function enrichSceneAuto(
   if (!res.ok) {
     throw new ApiError(res.status, body);
   }
-  return body as { queued: boolean; jobId?: string };
+  return body as { queued: boolean; conversationIds: string[] };
 }
