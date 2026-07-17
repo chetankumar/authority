@@ -325,7 +325,8 @@ export default function EditorPage() {
     return <div className="px-6 py-6 text-[0.875rem] text-danger">Couldn't open this scene.</div>;
 
   const jobDefs = aiJobs.data ?? [];
-  const noteRows = notes.data ?? [];
+  const noteRows = notes.data ?? []; // all conversations for this scene — also used by the AI Jobs pane's fromConv lookup below
+  const visibleNotes = noteRows.filter((n) => n.kind === "note" || n.kind === "chat");
   const jobRows = sceneJobs.data ?? [];
   const todoRows = sceneTodos.data ?? [];
 
@@ -475,15 +476,12 @@ export default function EditorPage() {
       {/* right pane */}
       {paneOpen && (
         <aside className="w-80 shrink-0 overflow-auto border-l border-line bg-surface p-4">
-          <PaneSection
-            title="Notes"
-            count={noteRows.filter((n) => n.kind === "note" || n.kind === "chat").length}
-          >
-            {noteRows.length === 0 ? (
+          <PaneSection title="Notes" count={visibleNotes.length}>
+            {visibleNotes.length === 0 ? (
               <p className="text-[0.75rem] text-ink-faint">No notes yet.</p>
             ) : (
               <ul className="space-y-1">
-                {noteRows.map((n) => (
+                {visibleNotes.map((n) => (
                   <li key={n.id}>
                     <button
                       type="button"

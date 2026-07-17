@@ -10,7 +10,7 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06 §2](../../../../docs/claude-tech-spe
 |---|---|
 | `scene-updated` | patch `['scenes', bookId]` (live summary/characters updates) |
 | `job` | patch `['jobs', bookId, sceneId]` + streaming modal state |
-| `todos-created` | invalidate `['todos', bookId]` |
+| `todos-created` | invalidate `['todos', bookId]` **and** `['sceneTodos', bookId]` (prefix match — dependency fanout and accepted `todo-create` proposals can land in either storage tier, doc 03 §Todos storage split) |
 | `git-status` | patch `['git', bookId]` (drives the top-bar amber badge) |
 | `compile-done` | invalidate `['compileCheck', bookId]` |
 

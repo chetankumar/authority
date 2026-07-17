@@ -20,11 +20,11 @@ Parent: [frontend](../CLAUDE.md). Spec: [06 Frontend §2](../../../docs/claude-t
 
 ## Query keys (doc 06 §2)
 
-`['book', id]` · `['scenes', bookId]` · `['todos', bookId]` · `['conversations', bookId, sceneId]` · `['jobs', bookId, sceneId]` · `['git', bookId]` · `['compileCheck', bookId]` · `['settings', section]`.
+`['book', id]` · `['scenes', bookId]` · `['todos', bookId, includeScenes]` · `['sceneTodos', bookId, sceneId]` · `['conversations', bookId, sceneId]` · `['jobs', bookId, sceneId]` · `['git', bookId]` · `['compileCheck', bookId]` · `['settings', section]`. Todos are two keys, not one, because storage is split by `parentType` (doc 03): `todos` is the book-level Tasks-page list, `sceneTodos` is one scene's own list (editor accordion).
 
 ## SSE integration
 
-`useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `job` patches `['jobs']` + streaming modal state; `todos-created` invalidates `['todos']`; `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`. On reconnect: refetch active queries.
+`useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `job` patches `['jobs']` + streaming modal state; `todos-created` invalidates both `['todos', bookId]` and `['sceneTodos', bookId]` (prefix match — a dependency fanout or accepted `todo-create` proposal can land in either storage tier); `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`. On reconnect: refetch active queries.
 
 **SSE is the fast path, not the only one.** `useGitStatus` also polls `GET /git/status` every 10s (`refetchInterval`), so a dropped event can't leave the amber badge silently lying (doc 07 §28). Poll and event write identical server truth into the same key — redundant by design.
 

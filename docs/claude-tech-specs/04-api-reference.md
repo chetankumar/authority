@@ -327,7 +327,10 @@ Leave-scene path. **No body.** Reads the book's `bookkeeping` toggles and enqueu
 **Response** `[ConversationSummary]` for `parentType=scene, parentId=id`, from the derived index (no conversation files opened). Newest first.
 
 ### GET /api/books/{b}/scenes/{id}/todos
-**Response** `[Todo]` for this scene, open first then by createdAt desc.
+**Response** `[Todo]` for this scene, open first then by createdAt desc. Persisted in the scene's own `scenes/{id}/todos.json`, not the book-level `db/todos.json` (doc 03 §Todos storage split).
+
+### POST /api/books/{b}/scenes/{id}/todos
+**Request** `{ "action": required }`. `parentType`/`parentId` are implied by the URL (`scene`/`id`) — origin `user`, status `open`. **201** Todo. PATCH/DELETE by id use the shared `/books/{b}/todos/{id}` routes below regardless of which tier a todo lives in.
 
 ### GET /api/books/{b}/scenes/{id}/dependencies
 **Response**
@@ -348,7 +351,9 @@ Leave-scene path. **No body.** Reads the book's `bookkeeping` toggles and enqueu
 Removes the edge. 404 unknown.
 
 ### POST /api/books/{b}/dependencies
-**Request** `{ "sceneId": "the dependent scene", "dependsOnSceneId": "the required scene", "reason": "required non-empty" }`. **Logic:** 422 on self-dependency, unknown/archived/sentinel scenes, empty reason, duplicate pair (same sceneId+dependsOnSceneId). Creating fires **no** todo — todos fire on later content change of the depended-on scene. **Response 201** Dependency.
+**Request** `{ "sceneId": "the dependent scene", "dependsOnSceneId": "the required scene", "reason": "required non-empty" }`. **Logic:** 422 on self-dependency, unknown/archived/sentinel scenes, empty reason, duplicate pair (same sceneId+dependsOnSceneId). Creating fires **no** todo — todos fire on later content change of the depended-on scene (implemented: `SceneService._fanout_dependency_todos`, run on every content save whose hash changed, deduped against any todo already open for the same `sourceDependencyId`). **Response 201** Dependency.
+
+> Note: this endpoint (create/edit/delete a *dependency edge*) is not yet exposed via CRUD API — only the read side (`GET /scenes/{id}/dependencies`) and the fanout above exist today (doc 03 §scenes/{id}/dependencies.json).
 
 ### PATCH /api/books/{b}/dependencies/{id}
 **Request** `{ "reason": string }` (only the reason is mutable; re-pointing = delete + create).
@@ -400,10 +405,26 @@ Removes it; existing dependency-generated todos remain (they're the author's to 
 
 ## 8. Todos
 
-### GET /api/books/{b}/todos → `[Todo]` (all in book, parentTitle resolved). Filtering/sorting is client-side (AG Grid).
-### POST — `{ "parentType", "parentId", "action": required }` → origin `user`, status `open`. 422 unknown parent. **201** Todo.
-### PATCH /{id} — `{ "status"?: todoStatus, "action"?: string }`.
+Storage is split by `parentType` (doc 03 §Todos storage split): scene-parented
+todos persist in the owning scene's own `scenes/{id}/todos.json`; every other
+todo (`chapter`/`part`/`book`) persists in the book-level `db/todos.json`.
+This router only ever reads/writes the latter tier for create; scene-parented
+todos are created via `POST /scenes/{id}/todos` (§5). PATCH/DELETE-by-id work
+on either tier transparently — the id resolves to its storage location
+server-side (`BookDataManager.find_todo`), the same pattern
+`DELETE /relationships/{id}` already uses.
+
+### GET /api/books/{b}/todos → `[Todo]` (book-level: chapter/part/book-parented only, parentTitle resolved). Filtering/sorting is client-side (AG Grid).
+### GET /api/books/{b}/todos?includeScenes=true → `[Todo]` — the above **plus** every scene's todos, flattened. Read fresh on each call rather than from a maintained index (doc 03): this is a rare, human-paced request (opening the Tasks page with its toggle on), not a hot path, so there's no reverse index to keep in sync.
+### POST — `{ "parentType", "parentId", "action": required }`, `parentType` must not be `scene` (422 — use `POST /scenes/{id}/todos` instead) → origin `user`, status `open`. 422 unknown parent. **201** Todo.
+### PATCH /{id} — `{ "status"?: todoStatus, "action"?: string, "conversationId"?: string }`. `conversationId` is set-once (links the todo to the conversation it's discussed in — the 💬 affordance in both the Tasks page and the editor's To-dos accordion); there's no way to clear it back to null via this endpoint.
 ### DELETE /{id} — hard delete (kept for mistakes; normal lifecycle is `closed`). **204**.
+
+Dependency-fanout todos (§6) and accepted `todo-create` proposals (§10) both
+land here through the same `TodoService.create` path, not a separate one —
+an AI-raised todo (from `propose_todo` in chat, or an AI-Job's output) has its
+`conversationId` set automatically to the conversation it was proposed in, so
+its 💬 opens straight back into that discussion.
 
 ---
 

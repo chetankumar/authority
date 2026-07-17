@@ -23,7 +23,9 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | doc 07 | `docs/claude-tech-specs/07-decisions-and-deferred.md` |
 | doc 08 | `docs/claude-tech-specs/08-user-journey.md` |
 
-**Last audited:** 2026-07-16 (`db/scenes.json` split into a lean master table — identity/hard-chain/structure — plus a per-scene `scenes/{id}/` folder — meta.json, bookkeeping.json, dependencies.json, relationships.json — so AI-bookkeeping churn and low-churn structure no longer share a file, a write, or a corruption blast radius; transparent migration for old-shape books; API `Scene` response shape and frontend unchanged. AI task models split: `ai.utilityModelId` fallback + 4 independent slots — commit message, scene summarization, character parsing, chat default; enrichment's `both` scope now runs as two independent model calls instead of one combined call)
+**Last audited:** 2026-07-17 (Todos vertical slice landed — `TDO-API-*`, `TDO-SVC-01`, `SCN-API-08`, `TSK-FE-*`, `EDT-FE-23` — with a storage split that **deviates from doc 03/04's single flat `db/todos.json`**: scene-parented todos now live in `scenes/{id}/todos.json`, joining meta/bookkeeping/dependencies/relationships in the per-scene folder split, while chapter/part/book-parented todos stay in the book-level file; `TodoService` resolves either tier from a flat id, same pattern as soft relationships. The book-level `GET /todos` also takes `?includeScenes=true` to aggregate every scene's todos for the Tasks page's toggle — a plain per-request scan, not a maintained index, since it's a rare human-paced read rather than a hot path. Dependency-todo fanout is implemented (previously stubbed); open todos no longer block scene deletion (previously did). `docs/claude-tech-specs/03-data-storage.md` and `04-api-reference.md` still describe the old single-file design and have not yet been updated to match — flagged here, not fixed, since editing the tech spec wasn't requested.)
+
+**Previously:** 2026-07-16 (`db/scenes.json` split into a lean master table — identity/hard-chain/structure — plus a per-scene `scenes/{id}/` folder — meta.json, bookkeeping.json, dependencies.json, relationships.json — so AI-bookkeeping churn and low-churn structure no longer share a file, a write, or a corruption blast radius; transparent migration for old-shape books; API `Scene` response shape and frontend unchanged. AI task models split: `ai.utilityModelId` fallback + 4 independent slots — commit message, scene summarization, character parsing, chat default; enrichment's `both` scope now runs as two independent model calls instead of one combined call)
 
 ---
 
@@ -180,9 +182,9 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | SCN-API-05 | ✅ | `PUT /books/{b}/scenes/{id}/content` | Autosaved prose with word count/hash. | Same as above + `src/backend/app/core/atomic.py` |
 | SCN-API-06 | ✅ | `POST /books/{b}/scenes/{id}/enrich` | On-demand AI redo of summary/characters. | **Modify:** `src/backend/app/api/scenes/router.py`, `src/backend/app/services/scene_service.py`; **Depends on:** Phase 7 (JobService, EnrichmentService) |
 | SCN-API-07 | ✅ | `GET /books/{b}/scenes/{id}/conversations` | Notes/chats scoped to scene. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 7 (ConversationService) |
-| SCN-API-08 | ⬜ | `GET /books/{b}/scenes/{id}/todos` | Scene-scoped todos. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 6 (TodoService) |
+| SCN-API-08 | ✅ | `GET`/`POST /books/{b}/scenes/{id}/todos` | Scene-scoped todos — list (open first, newest first) and create; PATCH/DELETE by id are the shared `/books/{b}/todos/{id}` routes (TDO-API-03/04). | `src/backend/app/api/scenes/router.py`, `src/backend/app/services/todo_service.py` |
 | SCN-API-09 | ⬜ | `GET /books/{b}/scenes/{id}/dependencies` | Depends-on + depended-on-by. | **Modify:** `src/backend/app/api/scenes/router.py`; **Depends on:** Phase 6 (dependencies) |
-| SCN-API-10 | ✅ | `DELETE /books/{b}/scenes/{id}` | As an author, I want to permanently delete an archived scene; if it has references (relationships, dependencies, todos, conversations, plotlines, running jobs) the API returns 409 with `blockedBy` details. The `.md` file moves to `.trash/`, never physically deleted. | `src/backend/app/api/scenes/router.py`, `src/backend/app/services/scene_service.py` |
+| SCN-API-10 | ✅ | `DELETE /books/{b}/scenes/{id}` | As an author, I want to permanently delete an archived scene; if it has references (relationships, dependencies, conversations, plotlines, running jobs) the API returns 409 with `blockedBy` details. Open todos are **not** a blocker (revised 2026-07-17) — they're silently discarded with the rest of the scene's per-scene folder. The `.md` file moves to `.trash/`, never physically deleted. | `src/backend/app/api/scenes/router.py`, `src/backend/app/services/scene_service.py` |
 | SCN-API-11 | ✅ | `POST /books/{b}/relationships` | Soft placement edges. | `src/backend/app/api/relationships/router.py`, `src/backend/app/services/scene_service.py` |
 | SCN-API-12 | ✅ | `DELETE /books/{b}/relationships/{id}` | Remove obsolete soft links. | Same as above |
 | SCN-API-13 | ⬜ | `POST /books/{b}/dependencies` | Declare prerequisites between scenes. | **Create:** `src/backend/app/api/dependencies/router.py`, `src/backend/app/api/dependencies/__init__.py`; **Modify:** `src/backend/app/services/scene_service.py` (or new dep service), `src/backend/app/services/book_data_manager.py`, `src/backend/app/main.py` (register router); **Create model:** `src/backend/app/models/dependency.py` (or add to `scene.py`) |
@@ -291,7 +293,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | EDT-FE-20 | ✅ | Bookkeeping → PATCH bookkeeping | Toggles persist at book level. | Same |
 | EDT-FE-21 | ✅ | **Chat** → Conversation Modal | Help when stuck, selection as context; AI on with the chat default model preselected (falls back to utility, then first model). | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/features/conversation/ConversationModal.tsx`; **Create:** `src/frontend/src/api/conversations.ts`; **Depends on:** AI-API-01 |
 | EDT-FE-22 | ✅ | **Notes** accordion | Past threads for scene. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SCN-API-07, Phase 7 |
-| EDT-FE-23 | ⬜ | **To-dos** accordion | Open obligations while writing. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/api/todos.ts`, `src/frontend/src/queries/todos.ts`; **Depends on:** SCN-API-08, Phase 6 |
+| EDT-FE-23 | ✅ | **To-dos** accordion | Open obligations while writing: checkbox → done, ✕ → closed, 🗑 → delete (confirm), 💬 → linked conversation (created on first use), ⛓ amber row for dependency-origin, plus an inline add-task field (not in the original spec — see doc 03 deviation note at TDO-API-02). | `src/frontend/src/features/editor/EditorPage.tsx`, `src/frontend/src/api/todos.ts`, `src/frontend/src/queries/todos.ts` |
 | EDT-FE-24 | ✅ | **AI Jobs** accordion — SSE status | Running/done jobs visible. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SSE-FE-01, Phase 7 |
 | EDT-FE-25 | ⬜ | Amber count badges | Pending items use attention color. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Create:** `src/frontend/src/components/Badge.tsx` |
 | EDT-FE-26 | 🔄 | Toast on job completion | Know when background job finishes. | **Modify:** `src/frontend/src/features/editor/EditorPage.tsx`; **Depends on:** SSE |
@@ -339,11 +341,11 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | DEP-API-01 | ⬜ | `POST /books/{b}/dependencies` | Declare prerequisites. | **Create:** `src/backend/app/api/dependencies/router.py`, `__init__.py`; **Modify:** `src/backend/app/services/book_data_manager.py` (load/save deps); **Modify:** `src/backend/app/main.py`, `src/backend/app/api/deps.py`; **Add model in:** `src/backend/app/models/scene.py` (or new file) |
 | DEP-API-02 | ⬜ | `PATCH /books/{b}/dependencies/{id}` | Edit reason only. | Same files |
 | DEP-API-03 | ⬜ | `DELETE /books/{b}/dependencies/{id}` | Remove dependency. | Same files |
-| TDO-API-01 | ⬜ | `GET /books/{b}/todos` | All todos with parent titles. | **Create:** `src/backend/app/api/todos/router.py`, `__init__.py`; **Modify:** `src/backend/app/services/book_data_manager.py` (load/save todos); **Modify:** `src/backend/app/main.py`, `src/backend/app/api/deps.py`; **Add model in:** `src/backend/app/models/todo.py` (or add to existing) |
-| TDO-API-02 | ⬜ | `POST /books/{b}/todos` | Manual book-level or scoped todos. | Same files |
-| TDO-API-03 | ⬜ | `PATCH /books/{b}/todos/{id}` | Mark done or edit action. | Same files |
-| TDO-API-04 | ⬜ | `DELETE /books/{b}/todos/{id}` | Delete mistaken todos. | Same files |
-| TDO-SVC-01 | ⬜ | Dependency fanout → todo (dedup) | One reminder when dep source changes. | **Modify:** `src/backend/app/services/scene_service.py` (line ~209, implement the phase 6 hook), `src/backend/app/services/book_data_manager.py` |
+| TDO-API-01 | ✅ | `GET /books/{b}/todos` (book-level; `?includeScenes=true` aggregates every scene too) | All todos with parent titles. | `src/backend/app/api/todos/router.py`, `src/backend/app/services/todo_service.py`, `src/backend/app/models/todo.py` |
+| TDO-API-02 | ✅ | `POST /books/{b}/todos` (chapter/part/book) + `POST /books/{b}/scenes/{id}/todos` (scene) | Manual book-level or scene-scoped todos. **Storage deviates from doc 03/04's single flat `db/todos.json`:** scene-parented todos persist in `scenes/{id}/todos.json` (own folder, same corruption-blast-radius reasoning as dependencies/relationships), not the book-level file — see `TodoService`/`BookDataManager` docstrings. | `src/backend/app/api/todos/router.py`, `src/backend/app/api/scenes/router.py`, `src/backend/app/services/todo_service.py`, `src/backend/app/services/book_data_manager.py` |
+| TDO-API-03 | ✅ | `PATCH /books/{b}/todos/{id}` | Mark done/closed or edit action; resolves either storage tier from a flat id (mirrors `DELETE /relationships/{id}`). Also accepts a set-once `conversationId` (the 💬 link). | Same files |
+| TDO-API-04 | ✅ | `DELETE /books/{b}/todos/{id}` | Delete mistaken todos. | Same files |
+| TDO-SVC-01 | ✅ | Dependency fanout → todo (dedup) | One reminder when dep source changes; creates a scene-level todo on each dependent scene, deduped by open `sourceDependencyId`. Open todos no longer block scene deletion (deviates from the original doc 04 §5 delete-blockers list — the folder just moves to `.trash/` with its todos). | `src/backend/app/services/scene_service.py` (`_fanout_dependency_todos`, `save_content`, `delete_scene`) |
 
 ### Frontend — Metadata page
 
@@ -382,14 +384,14 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 | ID | Status | Control | User story | Files |
 |---|---|---|---|---|
-| TSK-FE-01 | ⬜ | Tasks route + nav live | One ledger of everything owed. | **Create:** `src/frontend/src/features/tasks/TasksPage.tsx`; **Modify:** `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx` (nav `soon` → live); **Create:** `src/frontend/src/api/todos.ts`, `src/frontend/src/queries/todos.ts`; **Modify:** `src/frontend/src/queries/keys.ts` |
-| TSK-FE-02 | ⬜ | AG Grid (Status, Action, Parent, Origin) | Scan todos book-wide. | `src/frontend/src/features/tasks/TasksPage.tsx` |
-| TSK-FE-03 | ⬜ | Filter Open / All | Focus on open work. | Same as above |
-| TSK-FE-04 | ⬜ | Parent chip → navigate | Jump to what a todo is about. | Same as above |
-| TSK-FE-05 | ⬜ | Checkbox → done; menu → closed | Done vs dismissed. | Same as above |
-| TSK-FE-06 | ⬜ | Origin icons (user / ⛓ / ✦) | Provenance at a glance. | Same as above |
-| TSK-FE-07 | ⬜ | [＋ Add task] inline | Book-level todos. | Same as above |
-| TSK-FE-08 | ⬜ | Row menu — conversation / delete | Todos linked to discussions. | Same as above |
+| TSK-FE-01 | ✅ | Tasks route + nav live | One ledger of everything owed. | `src/frontend/src/features/tasks/TasksPage.tsx`, `src/frontend/src/router.tsx`, `src/frontend/src/App.tsx`, `src/frontend/src/api/todos.ts`, `src/frontend/src/queries/todos.ts`, `src/frontend/src/queries/keys.ts` |
+| TSK-FE-02 | ✅ | AG Grid (Status, Action, Parent, Origin) | Scan todos book-wide. | `src/frontend/src/features/tasks/TasksPage.tsx` |
+| TSK-FE-03 | ✅ | Filter Open / All | Focus on open work. | Same as above |
+| TSK-FE-04 | ✅ | Parent chip → navigate | Jump to what a todo is about. | Same as above |
+| TSK-FE-05 | ✅ | Checkbox → done; menu → closed | Done vs dismissed. | Same as above |
+| TSK-FE-06 | ✅ | Origin icons (user / ⛓ / ✦) | Provenance at a glance. | Same as above |
+| TSK-FE-07 | ✅ | [＋ Add task] inline (chapter/part/book — scene todos are added from the editor's To-dos accordion instead) | Book-level todos. | Same as above |
+| TSK-FE-08 | ✅ | Row menu — conversation / delete | Todos linked to discussions. Plus a persistent "also show scene todos" toggle (`ui.json`), not in the original spec — this book's Tasks page has two storage tiers to surface (doc 03 deviation, see TDO-API-02). | Same as above |
 
 ---
 

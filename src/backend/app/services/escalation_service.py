@@ -1,4 +1,4 @@
-"""EscalationService — unclear → open a chat for the author (engine rule)."""
+"""EscalationService — unclear → ask the author, in-thread (engine rule)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.event_hub import EventHub
-from app.models.conversation import AiParticipant, ConversationCreate
-from app.models.enums import ConversationKind, ParentType
 from app.services.conversation_service import ConversationService
 from app.services.settings_service import SettingsService
 
@@ -17,7 +15,7 @@ log = logging.getLogger("authority.escalation")
 
 @dataclass
 class EscalationIssue:
-    """Caller-built escalation. ``title`` is the Notes-list label; ``message`` is the thread seed."""
+    """Caller-built escalation. ``title`` documents intent; ``message`` is the question asked."""
 
     kind: str  # unmatched_name | ambiguity | minor_character | other
     message: str
@@ -36,31 +34,10 @@ class EscalationService:
         self._settings = settings
         self._hub = hub
 
-    def escalate(
-        self,
-        book_id: str,
-        *,
-        parent_type: ParentType = ParentType.scene,
-        parent_id: str,
-        issue: EscalationIssue,
-        model_id: str | None = None,
-    ) -> str:
-        """Create a chat seeded with the question. Returns conversation id."""
-        utility = self._settings.get_utility_model()
-        mid = model_id or (utility.id if utility else None)
-        ai = AiParticipant(enabled=bool(mid), modelId=mid)
-        title = (issue.title or "").strip() or "Needs your input"
-        conv = self._conversations.create(
-            book_id,
-            ConversationCreate(
-                kind=ConversationKind.chat,
-                parentType=parent_type,
-                parentId=parent_id,
-                aiParticipant=ai,
-                title=title,
-            ),
-        )
-
+    def escalate_in(self, book_id: str, *, conversation_id: str, issue: EscalationIssue) -> None:
+        """Post an escalation question as a system message into an already-open
+        conversation (the bookkeeping run that raised it), instead of spawning
+        a new, disconnected chat per question."""
         opening = issue.message
         extras: list[str] = []
         if issue.context.get("excerpt"):
@@ -69,18 +46,5 @@ class EscalationService:
             extras.append("Candidates: " + ", ".join(str(c) for c in issue.context["candidates"]))
         if extras:
             opening = opening + "\n\n" + "\n".join(extras)
-        self._conversations.append_system_message(book_id, conv.id, opening)
-
-        log.info("escalated %s on %s/%s → %s", issue.kind, parent_type.value, parent_id, conv.id)
-        self._hub.emit(
-            book_id,
-            "job",
-            {
-                "id": None,
-                "type": "system",
-                "sceneId": parent_id if parent_type == ParentType.scene else None,
-                "status": "done",
-                "result": {"conversationId": conv.id, "escalation": issue.kind},
-            },
-        )
-        return conv.id
+        self._conversations.append_system_message(book_id, conversation_id, opening)
+        log.info("escalated %s into %s", issue.kind, conversation_id)

@@ -14,17 +14,25 @@ from typing import Any
 
 from app.core.errors import ApiError, validation
 from app.core.event_hub import EventHub
-from app.models.enums import JobScope, JobStatus, ParentType
+from app.models.conversation import AiParticipant, ConversationCreate, ConversationPatch
+from app.models.enums import ConversationKind, JobScope, JobStatus, ParentType
 from app.models.job import Job
 from app.models.scene import SceneCharacterRef
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.book_registry import BookRegistry
 from app.services.context_assembler import ContextAssembler
+from app.services.conversation_service import ConversationService
 from app.services.escalation_service import EscalationIssue, EscalationService
 from app.services.output_parsers import parse_enrichment_result
 from app.services.settings_service import SettingsService
 
 log = logging.getLogger("authority.enrichment")
+
+_SCOPE_TITLES = {
+    JobScope.summary: "Scene summarization",
+    JobScope.characters: "Character enrichment",
+    JobScope.both: "Scene summarization & character enrichment",
+}
 
 
 def _now() -> str:
@@ -39,6 +47,7 @@ class EnrichmentService:
         hub: EventHub,
         orchestrator: AIOrchestrator,
         escalation: EscalationService,
+        conversations: ConversationService,
         job_service: Any | None = None,
     ) -> None:
         self._registry = registry
@@ -46,6 +55,7 @@ class EnrichmentService:
         self._hub = hub
         self._orch = orchestrator
         self._escalation = escalation
+        self._conversations = conversations
         self._jobs = job_service
         self._assembler = ContextAssembler()
 
@@ -112,6 +122,20 @@ class EnrichmentService:
         prose = mgr.read_scene_content(scene.file)
         book = mgr.get_book()
 
+        conv = self._conversations.create(
+            book_id,
+            ConversationCreate(
+                kind=ConversationKind.ai_job,
+                parentType=ParentType.scene,
+                parentId=scene.id,
+                title=_SCOPE_TITLES.get(job.scope, "Bookkeeping"),
+                aiParticipant=AiParticipant(enabled=False, modelId=None),
+            ),
+        )
+        job.conversationId = conv.id
+        if self._jobs is not None:
+            self._jobs.update_job(book_id, job)
+
         chars: list[Any] = []
         getter = getattr(mgr, "get_characters", None)
         if getter is not None:
@@ -158,7 +182,8 @@ class EnrichmentService:
 
         changed: list[str] = []
         unrecognized: list[str] = []
-        conversation_ids: list[str] = []
+        matched_names: list[str] = []
+        ai_enabled_for_escalation = False
 
         async with mgr.lock:
             if not any(s.id == scene.id for s in mgr.get_scenes()):
@@ -174,20 +199,31 @@ class EnrichmentService:
                 if refs:
                     bookkeeping.characters = refs
                     changed.append("characters")
+                    by_id = {c.id: c for c in chars}
+                    matched_names = [by_id[r.characterId].name for r in refs if r.characterId in by_id]
 
                 for name in parsed.get("unrecognizedNames") or []:
                     if isinstance(name, str) and name.strip():
                         unrecognized.append(name.strip())
+
+                escalations_pending = bool(parsed.get("ambiguous")) or bool(unrecognized)
+                if escalations_pending and not ai_enabled_for_escalation:
+                    # Let the author's reply in-thread get an AI response.
+                    self._conversations.patch(
+                        book_id,
+                        conv.id,
+                        ConversationPatch(aiParticipant=AiParticipant(enabled=True, modelId=chars_model.id)),
+                    )
+                    ai_enabled_for_escalation = True
 
                 for amb in parsed.get("ambiguous") or []:
                     if not isinstance(amb, dict):
                         continue
                     amb_name = str(amb.get("name") or "").strip() or "this character"
                     q = amb.get("question") or f"I'm unsure about '{amb_name}'. How should I treat this character?"
-                    cid = self._escalation.escalate(
+                    self._escalation.escalate_in(
                         book_id,
-                        parent_type=ParentType.scene,
-                        parent_id=scene.id,
+                        conversation_id=conv.id,
                         issue=EscalationIssue(
                             kind="ambiguity",
                             title=f"who is {amb_name}?",
@@ -198,15 +234,12 @@ class EnrichmentService:
                                 "excerpt": prose[:400],
                             },
                         ),
-                        model_id=chars_model.id,
                     )
-                    conversation_ids.append(cid)
 
                 for name in unrecognized:
-                    cid = self._escalation.escalate(
+                    self._escalation.escalate_in(
                         book_id,
-                        parent_type=ParentType.scene,
-                        parent_id=scene.id,
+                        conversation_id=conv.id,
                         issue=EscalationIssue(
                             kind="unmatched_name",
                             title=f"who is {name}?",
@@ -217,9 +250,7 @@ class EnrichmentService:
                             ),
                             context={"name": name, "excerpt": prose[:400]},
                         ),
-                        model_id=chars_model.id,
                     )
-                    conversation_ids.append(cid)
 
             if changed:
                 bookkeeping.updatedAt = _now()
@@ -228,9 +259,20 @@ class EnrichmentService:
         if changed:
             self._hub.emit(book_id, "scene-updated", {"id": job.sceneId, "changed": changed})
 
+        summary_lines: list[str] = []
+        if "summary" in changed:
+            summary_lines.append("Updated the scene summary.")
+        if "characters" in changed:
+            summary_lines.append(
+                f"Matched {len(matched_names)} character(s): {', '.join(matched_names)}."
+                if matched_names
+                else "Updated character involvement."
+            )
+        if summary_lines:
+            self._conversations.append_system_message(book_id, conv.id, " ".join(summary_lines))
+
         job.result = {
             "unrecognizedNames": unrecognized,
-            "conversationIds": conversation_ids,
             "modelsUsed": models_used,
         }
         job.status = JobStatus.done

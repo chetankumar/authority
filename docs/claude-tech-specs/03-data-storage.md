@@ -65,6 +65,7 @@ a3f9c2-my-great-novel/
       bookkeeping.json           # summary, characters[{characterId, involvement}], contentHash, wordCount
       dependencies.json          # this scene's outgoing depends-on edges
       relationships.json         # this scene's outgoing soft edges
+      todos.json                 # this scene's own todos — see "Todos storage split" below
   db/
     scenes.json  parts.json  chapters.json
     characters.json  character_relationships.json  plotlines.json  todos.json  jobs.json  ui.json
@@ -179,22 +180,68 @@ scan on first access, then kept current by an incremental update inside
 memory lookup, not a folder scan, despite the edge itself living in the
 *other* scene's folder.
 
-**Not yet exposed via CRUD API.** The model and per-scene storage exist so the
-storage layer has a real shape; only the delete-blocked check
-(`SceneService.delete_scene`) reads it today. Fanout-on-content-save (auto-
-creating a todo on each dependent scene when `dependsOnSceneId`'s content hash
-changes: action = `"'{depended-on title}' changed — verify dependency:
-{reason}"`, origin `dependency`, `sourceDependencyId` set) is future work. No
-status on the dependency itself.
+**Not yet exposed via CRUD API** (create/edit/delete a dependency itself —
+`POST/PATCH/DELETE /dependencies`). The model and per-scene storage exist so
+the storage layer has a real shape; the delete-blocked check
+(`SceneService.delete_scene`) reads it today. No status on the dependency
+itself.
 
-## db/todos.json
+**Fanout-on-content-save is implemented.** When a scene's content hash
+changes on save, `SceneService._fanout_dependency_todos` walks
+`get_dependents(scene_id)` and creates a todo on each dependent scene (action
+`"'{depended-on title}' changed — verify dependency: {reason}"`, origin
+`dependency`, `sourceDependencyId` set), deduped against any todo already
+open for that same `sourceDependencyId`. The todo lands in the *dependent*
+scene's own `todos.json` (below) — a scene-parented todo, same as any other.
+
+## Todos storage split
+
+Unlike most `db/*.json` collections, todos are split by `parentType` across
+two locations — the same reasoning as the meta/bookkeeping/dependencies/
+relationships split above: smaller files, smaller corruption blast radius,
+and a scene-parented todo naturally travels with the rest of that scene's
+data (archive it, trash it, and the todo goes with it).
+
+**`scenes/{id}/todos.json`** — this scene's own todos (every todo where
+`parentType == "scene"` and `parentId == {id}`):
 
 ```json
-{ "id": "tdo-x", "parentType": "scene" | "chapter" | "part" | "book", "parentId": "...",
+[{ "id": "tdo-x", "parentType": "scene", "parentId": "scn-10",
+   "action": "...", "status": "open" | "done" | "closed",
+   "origin": "user" | "dependency" | "ai", "sourceDependencyId": null,
+   "conversationId": null, "createdAt": "...", "updatedAt": "..." }]
+```
+
+Lazy-loaded and cached per scene like `dependencies.json`/`relationships.json`
+(`BookDataManager._ensure_scene_todos_loaded`). Reading *all* scene todos at
+once (the Tasks page's "also show scene todos" toggle) is **not** backed by a
+maintained reverse index the way `get_dependents` is — `get_all_scene_todos()`
+just walks every scene and reads its file fresh on each call. That aggregate
+is only ever read from a rare, human-paced request (opening the Tasks page),
+not a hot path like autosave, so a plain scan is simpler than a second
+data structure that could drift, at negligible cost even for a few hundred
+scenes.
+
+**`db/todos.json`** — every other todo, i.e. `parentType` ∈ `chapter | part |
+book`:
+
+```json
+{ "id": "tdo-x", "parentType": "chapter" | "part" | "book", "parentId": "...",
   "action": "...", "status": "open" | "done" | "closed",
   "origin": "user" | "dependency" | "ai", "sourceDependencyId": null,
   "conversationId": null, "createdAt": "...", "updatedAt": "..." }
 ```
+
+A todo's id resolves to whichever tier it lives in without the caller needing
+to know which (`BookDataManager.find_todo`) — the same flat-id-across-storage
+pattern `DELETE /relationships/{id}` already uses. `conversationId` is
+set-once: it links the todo to the conversation it was discussed or proposed
+in (💬 in the UI); there's no way to clear it back to null.
+
+**Open todos no longer block scene deletion** (a deviation from the
+delete-blockers this doc's earlier drafts implied) — an archived scene with
+open todos can still be hard-deleted; its `todos.json` moves to `.trash/`
+with the rest of the folder, same as its dependencies/relationships.
 
 ## db/characters.json
 

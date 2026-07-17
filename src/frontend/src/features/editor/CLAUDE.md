@@ -22,6 +22,6 @@ Save current, then navigate + scroll to top; **Next with no neighbor** → Scene
 ## Right pane accordion
 
 - **Notes** (`GET /scenes/{id}/conversations`, kinds note/chat) → Conversation Modal.
-- **To-dos** (`GET /scenes/{id}/todos`): checkbox = done, ✕ = closed (`PATCH`); dependency rows ⛓ + amber; 💬 opens linked conversation.
+- **To-dos** (`GET`/`POST /scenes/{id}/todos`, persisted in this scene's own `scenes/{id}/todos.json` — doc 03 §Todos storage split, not the book-level [Tasks page](../tasks/CLAUDE.md)'s file): inline "Add a task for this scene…" field above the list; checkbox = done, 🗑 = delete (confirm), ✕ = closed (`PATCH`); dependency rows ⛓ + amber; 💬 opens the linked conversation, creating a `task-discussion` one on first use.
 - **AI Jobs** (`GET /jobs?scene=`): name · status chip (live via SSE) · unrecognized-names note → its conversation.
 - Amber count badges on headers = open/pending items.

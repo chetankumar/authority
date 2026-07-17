@@ -90,8 +90,8 @@ frontend/src/
   App.tsx, router.tsx
 ```
 
-- **Query keys:** `['book', id]`, `['scenes', bookId]`, `['todos', bookId]`, `['conversations', bookId, sceneId]`, `['jobs', bookId, sceneId]`, `['git', bookId]`, `['compileCheck', bookId]`, `['settings', section]`.
-- **SSE integration:** `useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `job` patches `['jobs']` + streaming modal state; `todos-created` invalidates `['todos']`; `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`. On reconnect: refetch active queries.
+- **Query keys:** `['book', id]`, `['scenes', bookId]`, `['todos', bookId, includeScenes]`, `['sceneTodos', bookId, sceneId]`, `['conversations', bookId, sceneId]`, `['jobs', bookId, sceneId]`, `['git', bookId]`, `['compileCheck', bookId]`, `['settings', section]`. Todos carry two key shapes because storage is split by `parentType` (doc 03 §Todos storage split): `todos` is the book-level Tasks-page list (keyed by the includeScenes toggle, since that changes what's fetched), `sceneTodos` is one scene's own list (the editor's To-dos accordion).
+- **SSE integration:** `useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `job` patches `['jobs']` + streaming modal state; `todos-created` invalidates both `['todos', bookId]` and `['sceneTodos', bookId]` (prefix match — a dependency fanout or an accepted `todo-create` proposal could land in either tier); `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`. On reconnect: refetch active queries.
 - **Editor autosave:** local dirty buffer → debounce 2s → `PUT content`; never blocks typing; failures show a persistent "Not saved — retrying" state, retry with backoff.
 - **Routing:** as listed below per page; unknown ids → friendly 404 panel with "Back to bookshelf".
 
@@ -287,7 +287,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 | Save indicator | Bottom bar | "Saving…" → "Saved · 2:41pm"; failure → persistent amber "Not saved — retrying" | Trust: an author must never wonder whether words are on disk |
 | Word count | Bottom bar, mono | Live local count; server value reconciles on save | The writer's odometer |
 | **← Previous / Next →** | Bottom bar, right | Save current, then: neighbor exists → navigate + **scroll to top**; Next with no neighbor → Scene Modal (create) with Previous prefilled to this scene → on save, navigate into the new scene. Prev with no neighbor → disabled with tooltip "This is the first scene" | Drafting momentum: write, next, write. The prefilled-create turns "what comes next?" into one gesture; scroll-to-top starts each scene at its beginning |
-| Right pane accordion | Right, 320px | **Notes** (`GET /scenes/{id}/conversations`, kinds note/chat): rows = title (CSS ellipsis; full title on hover) · relative time · snippet; click → Conversation Modal. **To-dos** (`GET /scenes/{id}/todos`): checkbox = done (`PATCH`), ✕ = closed; dependency-origin rows carry a ⛓ icon + amber tint; 💬 opens linked conversation. **AI Jobs** (`GET /jobs?scene=`): rows = job/conversation name (ellipsis + hover) · status chip (queued/running spinner/done/failed, live via SSE) · unrecognized-names note; click → its conversation. Amber count badges on headers = open/pending items | The scene's memory: everything ever discussed, owed, or run against this scene, adjacent to the prose but collapsed by default — present, not loud |
+| Right pane accordion | Right, 320px | **Notes** (`GET /scenes/{id}/conversations`, kinds note/chat): rows = title (CSS ellipsis; full title on hover) · relative time · snippet; click → Conversation Modal. **To-dos** (`GET /scenes/{id}/todos`, persisted in this scene's own `scenes/{id}/todos.json` — doc 03): an inline "Add a task for this scene…" field (`POST /scenes/{id}/todos`) above the list; rows = checkbox = done (`PATCH`), 💬 opens/creates the linked conversation, ✕ = closed, 🗑 = delete (confirm); dependency-origin rows carry a ⛓ icon + amber tint. **AI Jobs** (`GET /jobs?scene=`): rows = job/conversation name (ellipsis + hover) · status chip (queued/running spinner/done/failed, live via SSE) · unrecognized-names note; click → its conversation. Amber count badges on headers = open/pending items | The scene's memory: everything ever discussed, owed, or run against this scene, adjacent to the prose but collapsed by default — present, not loud |
 
 **Leaving with a running stream/job:** navigation allowed; jobs are server-side; the AI Jobs pane and SSE keep truth. A toast on completion ("Editorial review finished") links back to the conversation.
 
@@ -347,14 +347,17 @@ A list of this character's relationships to others, each rendered as "*{this cha
 
 ## 13. Tasks — `/book/{id}/tasks`
 
-**Purpose:** everything owed, in one ledger. **Layout:** toolbar (status filter segmented **Open / All** · [＋ Add task]) over full-height AG Grid: Status · Action · Parent (link chip) · Origin (icon: 👤 user / ⛓ dependency / ✦ ai) · Created · Updated.
+**Purpose:** everything owed, in one ledger. **Layout:** toolbar (status filter segmented **Open / All** · "Also show scene todos" toggle · [＋ Add task]) over full-height AG Grid: Status · Action · Parent (link chip) · Origin (icon: 👤 user / ⛓ dependency / ✦ ai) · Created · Updated.
+
+Storage is split by `parentType` (doc 03 §Todos storage split): this page's base list is `GET /todos` — chapter/part/book-parented todos only, from the book-level `db/todos.json`. Scene-parented todos live in each scene's own `scenes/{id}/todos.json` and are normally worked from the editor's To-dos accordion (§9), not here — the "Also show scene todos" toggle pulls them in too, via `GET /todos?includeScenes=true`, for the rare book-wide sweep.
 
 | Control | Behavior | Why |
 |---|---|---|
-| Parent chip | Navigates: scene → editor; chapter/part → Metadata tab; book → Metadata Book tab | A task is only useful next to the thing it's about |
-| Status controls | Checkbox → done; row-menu Close → closed; both `PATCH /todos/{id}` | Done = accomplished; closed = dismissed (the dependency-review "not applicable" verdict) — two distinct ends, both cheap |
-| Row menu → Open conversation / Delete | 💬 → Conversation Modal; Delete → confirm → `DELETE` | Delete exists for mistakes only; the hint in the confirm says so |
-| [＋ Add task] | Inline row: action text + parent picker (defaults book) → `POST /todos` | Book-level todos ("research Venetian glassmaking") need a home that isn't a scene |
+| Also show scene todos | Checkbox, persisted per book in `ui.json` (`tasksShowSceneTodos`) — survives reload | The two storage tiers need one visible switch, not a permanent merge; most days you only want the book-level ledger |
+| Parent chip | Navigates: scene → editor; chapter/part/book → Metadata | A task is only useful next to the thing it's about |
+| Status controls | Checkbox → done; row-menu Close → closed; both `PATCH /todos/{id}` (resolves either storage tier from the flat id) | Done = accomplished; closed = dismissed (the dependency-review "not applicable" verdict) — two distinct ends, both cheap |
+| Row menu → Open conversation / Delete | 💬 → Conversation Modal, creating a `task-discussion` conversation on first use and linking it back via `PATCH {conversationId}` (set-once); Delete → confirm → `DELETE` | Delete exists for mistakes only; the hint in the confirm says so |
+| [＋ Add task] | Inline row: action text + parent-type picker (Book / Chapter / Part only — scene todos are added from the editor) + parent picker → `POST /todos` | Book-level todos ("research Venetian glassmaking") need a home that isn't a scene |
 | Origin icons | Static | Provenance at a glance — especially the ⛓ rows, which are the dependency system talking |
 
 ---

@@ -123,6 +123,7 @@ def get_enrichment_service() -> EnrichmentService:
         get_event_hub(),
         get_ai_orchestrator(),
         get_escalation_service(),
+        get_conversation_service(),
     )
     return svc
 
