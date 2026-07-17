@@ -3,6 +3,7 @@ setlocal
 
 :: Authority — Windows launcher
 :: Starts the backend server. Run setup.bat first if dependencies changed.
+:: Stays in the calling terminal (same pattern as start.sh).
 
 set "ROOT=%~dp0"
 cd /d "%ROOT%"
@@ -32,41 +33,16 @@ if %errorlevel%==0 (
 )
 
 :: -------------------------------------------------------------------
-:: 3. Start the backend in its own console window
-:: Uvicorn is the window's main process, so Ctrl+C or closing that
-:: window stops the server — no "Terminate batch job (Y/N)?" prompt.
+:: 3. Open browser once ready (background), then run uvicorn in foreground
+:: Uvicorn owns this terminal — Ctrl+C stops the server.
 :: -------------------------------------------------------------------
 echo [Authority] Starting on port %PORT%...
+echo [Authority] Stop with Ctrl+C, or run kill.bat.
+
+start "Authority-ready" /b powershell -NoProfile -Command "1..30 | ForEach-Object { Start-Sleep 2; $code = & curl.exe -s -o NUL -w '%%{http_code}' http://localhost:%PORT%/api/health 2>$null; if ($code -eq '200') { Write-Host '[Authority] Ready at http://localhost:%PORT%'; Start-Process 'http://localhost:%PORT%'; exit 0 } }; Write-Host '[Authority] ERROR: Backend did not start within 60 seconds.'; Write-Host '             Check logs\api.log for details.'"
 
 if "%USE_CONDA%"=="1" (
-    start "Authority" conda run -n %ENV_NAME% --no-capture-output python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
+    conda run -n %ENV_NAME% --no-capture-output python -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
 ) else (
-    start "Authority" "%ROOT%.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
+    "%ROOT%.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT% --workers 1 --reload --app-dir "%BACKEND%"
 )
-
-:: -------------------------------------------------------------------
-:: 4. Poll for readiness (up to 60s)
-:: -------------------------------------------------------------------
-set "TRIES=0"
-:poll
-if %TRIES% geq 30 (
-    echo [Authority] ERROR: Backend did not start within 60 seconds.
-    echo              Check logs\api.log for details.
-    echo              Close the Authority window if it is still open.
-    pause
-    exit /b 1
-)
-timeout /t 2 /nobreak >NUL
-curl -s -o NUL -w "%%{http_code}" "http://localhost:%PORT%/api/health" 2>NUL | findstr "200" >NUL 2>&1
-if %errorlevel% neq 0 (
-    set /a TRIES+=1
-    goto :poll
-)
-
-:: -------------------------------------------------------------------
-:: 5. Open browser and exit the launcher
-:: -------------------------------------------------------------------
-echo [Authority] Ready at http://localhost:%PORT%
-echo [Authority] Stop with Ctrl+C in the Authority window, or run kill.bat.
-start "" "http://localhost:%PORT%"
-exit /b 0
