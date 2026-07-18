@@ -22,6 +22,7 @@ import {
 } from "../../queries/structure";
 import { useBook } from "../../queries/books";
 import { useElevenLabsVoices, useGitignore, usePutGitignore } from "../../queries/audio";
+import { voiceSelectOptions } from "../../api/audio";
 import { Modal } from "../../components/Modal";
 import {
   BlockedDeletionDialog,
@@ -797,18 +798,20 @@ function BookTab({ bookId }: { bookId: string }) {
 
       <Field label="Narrator voice" hint="ElevenLabs voice for narration lines in scene audio">
         <SearchableSelect
-          options={(voicesQ.data ?? []).map((v) => ({
-            value: v.voiceId,
-            label: v.name,
-          }))}
+          options={voiceSelectOptions(voicesQ.data ?? [])}
           value={narratorVoiceId || null}
           onChange={(v) => {
             const voice = (voicesQ.data ?? []).find((x) => x.voiceId === v);
             setNarratorVoiceId(v ?? "");
             setNarratorVoiceName(voice?.name ?? "");
           }}
-          placeholder="Choose narrator voice…"
+          placeholder={
+            (voicesQ.data?.length ?? 0) === 0
+              ? "Sync voices in Settings → AI first…"
+              : "Choose narrator voice…"
+          }
           clearable
+          clearLabel="No voice"
         />
       </Field>
 

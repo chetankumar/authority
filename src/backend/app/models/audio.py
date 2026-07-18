@@ -41,9 +41,11 @@ class AudioSequenceItem(BaseModel):
 
 
 class AudioScriptNotes(BaseModel):
-    respellings: dict[str, str] = Field(default_factory=dict)
+    # Directing prompt often emits [{id, prose, tts}]; we also accept {id: "prose→tts"}.
+    respellings: list[dict[str, Any]] | dict[str, str] = Field(default_factory=list)
     removed_ids: list[str] = Field(default_factory=list)
-    changelog: list[str] = Field(default_factory=list)
+    # Directing prompt uses one paragraph; format instructions may use a string list.
+    changelog: str | list[str] = ""
     # Allow extra narrative notes from the directing prompt without failing validation.
     model_config = {"extra": "allow"}
 
@@ -70,12 +72,32 @@ class AudioManifest(BaseModel):
                 entry["id"] = str(entry["id"])
             if "generation_status" not in entry and "generationStatus" in entry:
                 entry["generation_status"] = entry.pop("generationStatus")
+            # Enum fields: tolerate common casing / aliases.
+            if "type" in entry and isinstance(entry["type"], str):
+                entry["type"] = entry["type"].strip().lower()
+            if "generation_status" in entry and isinstance(entry["generation_status"], str):
+                entry["generation_status"] = entry["generation_status"].strip().lower()
             seq.append(entry)
         raw["sequence"] = seq
         speakers = {}
         for key, sp in (raw.get("speakers") or {}).items():
             speakers[str(key)] = sp
         raw["speakers"] = speakers
+        notes = raw.get("notes")
+        if isinstance(notes, dict):
+            notes = dict(notes)
+            removed = notes.get("removed_ids") or notes.get("removedIds") or []
+            notes["removed_ids"] = [str(x) for x in removed]
+            raw["notes"] = notes
+        # Drop runtime-only fields the model may echo from an existing manifest.
+        raw.pop("synthesisStatus", None)
+        raw.pop("updatedAt", None)
+        raw.pop("stitchedFile", None)
+        raw.pop("lastError", None)
+        for item in raw.get("sequence") or []:
+            if isinstance(item, dict):
+                item.pop("renderedFile", None)
+                item.pop("duration_seconds", None)
         return cls.model_validate(raw)
 
 
@@ -86,6 +108,24 @@ class AudioLinePatch(BaseModel):
 
 class GitignoreBody(BaseModel):
     patterns: list[str] = Field(default_factory=list)
+
+
+class VoiceSuggestBody(BaseModel):
+    """Optional unsaved form overrides — Suggest should use what the author sees, not only disk."""
+
+    name: str | None = None
+    age: str | None = None
+    gender: str | None = None
+    nationality: str | None = None
+    ethnicity: str | None = None
+    occupation: str | None = None
+    personality: str | None = None
+    history: str | None = None
+    want: str | None = None
+    need: str | None = None
+    flaw: str | None = None
+    arc: str | None = None
+    notes: str | None = None
 
 
 class VoiceSuggestResponse(BaseModel):

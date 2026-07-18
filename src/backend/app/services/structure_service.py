@@ -344,8 +344,13 @@ class StructureService:
         chr_id: str,
         settings: Any,
         orch: Any,
+        overrides: Any | None = None,
     ) -> Any:
-        """One-shot AI voice suggestion — writes nothing."""
+        """One-shot AI voice suggestion — writes nothing.
+
+        ``overrides`` (optional VoiceSuggestBody) lets the UI pass the open form
+        so Suggest matches what the author is editing, not only the last Save.
+        """
         from app.core.errors import ApiError, not_found
         from app.models.audio import VoiceSuggestResponse
         from app.services.output_parsers import extract_fenced_json
@@ -367,31 +372,46 @@ class StructureService:
         if model is None:
             raise ApiError(422, "No model configured for voice suggestion.", {"code": "no-model"})
 
+        def field(name: str) -> str:
+            if overrides is not None:
+                val = getattr(overrides, name, None)
+                if val is not None and str(val).strip():
+                    return str(val).strip()
+            return (getattr(record, name, None) or "").strip() or "(unset)"
+
         voice_lines = []
-        for v in voices[:80]:
-            bits = [v.name, v.voiceId]
-            for label in (v.gender, v.age, v.accent, v.description):
-                if label:
-                    bits.append(label)
+        for v in voices[:120]:
+            bits = [f"{v.name} (voiceId={v.voiceId})"]
+            meta = ", ".join(x for x in (v.gender, v.age, v.accent, v.category) if x)
+            if meta:
+                bits.append(meta)
+            if v.description:
+                bits.append(v.description)
             voice_lines.append(" — ".join(bits))
 
-        craft = f"""Character: {record.name}
-Age: {record.age or "(unset)"}
-Gender: {record.gender or "(unset)"}
-Occupation: {record.occupation or "(unset)"}
-Personality: {record.personality or "(unset)"}
-Want: {record.want or "(unset)"}
-Need: {record.need or "(unset)"}
-Flaw: {record.flaw or "(unset)"}
-Arc: {record.arc or "(unset)"}
-Notes: {record.notes or "(unset)"}
+        craft = f"""You cast ElevenLabs voices for an audio drama. Match the character's demographics and personality to a voice whose NEUTRAL baseline fits — tags can only bend a voice, not transform it.
+
+Character sheet (use ALL of these fields when choosing):
+- Name: {field("name")}
+- Age: {field("age")}
+- Gender: {field("gender")}
+- Nationality: {field("nationality")}
+- Ethnicity: {field("ethnicity")}
+- Occupation: {field("occupation")}
+- Personality: {field("personality")}
+- History: {field("history")}
+- Want: {field("want")}
+- Need: {field("need")}
+- Flaw: {field("flaw")}
+- Arc: {field("arc")}
+- Notes: {field("notes")}
 
 Available voices:
 {chr(10).join(voice_lines)}
 
-Pick the single best matching voiceId. End with:
+Pick the single best matching voiceId. Prefer demographic fit (gender, age, accent/nationality) first, then personality/occupation tone. End with:
 ```json
-{{"voiceId": "...", "rationale": "one sentence"}}
+{{"voiceId": "...", "rationale": "one sentence naming which sheet fields drove the pick"}}
 ```
 """
         messages = [{"role": "user", "content": craft}]
@@ -399,8 +419,17 @@ Pick the single best matching voiceId. End with:
         _, parsed = extract_fenced_json(reply or "")
         if not isinstance(parsed, dict):
             return VoiceSuggestResponse(voiceId=None, rationale="Could not parse suggestion.")
+        voice_id = parsed.get("voiceId") or parsed.get("voice_id")
+        if not isinstance(voice_id, str) or not voice_id.strip():
+            return VoiceSuggestResponse(voiceId=None, rationale=str(parsed.get("rationale") or "No voiceId returned."))
+        known = {v.voiceId for v in voices}
+        if voice_id not in known:
+            return VoiceSuggestResponse(
+                voiceId=None,
+                rationale=f"Model returned unknown voiceId {voice_id!r}. {parsed.get('rationale') or ''}".strip(),
+            )
         return VoiceSuggestResponse(
-            voiceId=parsed.get("voiceId") if isinstance(parsed.get("voiceId"), str) else None,
+            voiceId=voice_id,
             rationale=str(parsed.get("rationale") or ""),
         )
 

@@ -122,12 +122,20 @@ Field must be a scene metadata field (never prose). Preceding commentary is fine
 
 AUDIO_SCRIPT_FORMAT_INSTRUCTIONS = """
 When you produce an audio-drama script, end your reply with a fenced JSON object matching this shape
-(speakers may be included but are ignored server-side — voice casting comes from the Character Sheet):
+(speakers may be included; voice_id/voice_name are overwritten from the Character Sheet / Narrator on Accept):
 ```json
 {
   "title": "Scene title",
   "revision": 1,
-  "notes": { "removed_ids": [], "changelog": [] },
+  "speakers": {
+    "narrator": { "name": "Narrator", "role": "narration", "voice_name": "", "voice_id": "", "direction": "…" },
+    "chr-xxxxxx": { "name": "Name", "role": "dialogue", "voice_name": "", "voice_id": "", "direction": "…" }
+  },
+  "notes": {
+    "removed_ids": [],
+    "changelog": "one paragraph or a list of strings",
+    "respellings": [{ "id": "1", "prose": "read", "tts": "red" }]
+  },
   "sequence": [
     {
       "id": "1",
@@ -136,12 +144,15 @@ When you produce an audio-drama script, end your reply with a fenced JSON object
       "speaker_id": "chr-xxxxxx",
       "text": "[emotion] spoken line",
       "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
-      "generation_status": "new"
+      "generation_status": "new",
+      "change_reason": ""
     }
   ]
 }
 ```
-Use generation_status values: new | regenerate | unchanged. Preceding analysis is fine.
+Required: `sequence` with every item having `id`, `type` (dialogue|narration|sfx), `generation_status` (new|regenerate|unchanged).
+Non-sfx items need `speaker_id`, `text`, and `voice_settings` with stability in {0.0, 0.5, 1.0}.
+Preceding analysis is fine; the fenced object is what gets accepted.
 """.strip()
 
 

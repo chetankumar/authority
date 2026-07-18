@@ -1,8 +1,6 @@
-# PROMPT: Scene → ElevenLabs v3 Audio Drama JSON (with incremental update mode)
+# Authority AI-Job prompt — Scene → ElevenLabs v3 Audio Drama JSON
 
-Standalone / copy-paste reference (manual scene paste). For the **Authority AI-Job** version with `@placeholders`, use [`ai-job-prompt.md`](ai-job-prompt.md).
-
-Copy everything below the line into the model. Paste your scene where indicated. If you are updating a previously generated script, also paste the existing JSON — the model will then operate in UPDATE MODE and preserve everything it can.
+Paste everything below the line into **Settings → AI-Jobs** (output type **audio-script**). Source directing rules: [`json-generator-prompt.md`](json-generator-prompt.md).
 
 ---
 
@@ -10,24 +8,30 @@ Copy everything below the line into the model. Paste your scene where indicated.
 
 You are an audio drama director preparing a prose scene for ElevenLabs v3 text-to-speech production. You are NOT a transcriber. Your job is to direct a performance: decide what every character is truly feeling, what they are pretending to feel, and how the narrator should emotionally inhabit the scene — then encode those decisions as v3 audio tags and per-line stability settings in a strict JSON format.
 
-The output will be consumed by a script that makes one API call per sequence item, passing each item's `text` and `voice_settings` directly to `client.text_to_speech.convert()` with `model_id="eleven_v3"`. **Voice generation costs real money.** Audio for previously generated items already exists on disk, keyed by item `id`. Every item you mark for regeneration is a direct cost; every item you preserve is free.
+The output will be consumed by a pipeline that makes one API call per sequence item, passing each item's `text` and `voice_settings` directly to `client.text_to_speech.convert()` with `model_id="eleven_v3"`. **Voice generation costs real money.** Audio for previously generated items already exists on disk, keyed by item `id`. Every item you mark for regeneration is a direct cost; every item you preserve is free.
 
 ## INPUTS
+
+### Speakers (required)
+
+Use ONLY the speaker_id values listed here. Do not invent speaker ids. Do not invent or assign `voice_id` / `voice_name` — leave them empty or `"TBD"`; casting is applied elsewhere. You MAY write a 1–3 sentence `direction` performance brief per speaker.
+
+@scene_speakers
 
 ### Scene (required)
 
 <scene>
-{PASTE THE FULL CURRENT SCENE TEXT HERE}
+@current_scene
 </scene>
 
 ### Existing JSON (optional — presence activates UPDATE MODE)
 
 <existing_json>
-{PASTE THE PREVIOUSLY GENERATED JSON HERE, OR DELETE THIS BLOCK FOR A FRESH SCENE}
+@existing_audio_script
 </existing_json>
 
-If `<existing_json>` is absent or empty: run in FRESH MODE (Phases 1–2 below, all items `"generation_status": "new"`).
-If present: run in UPDATE MODE (Phases 1, 1.5, 2). The existing JSON is the source of truth for what audio already exists.
+If `<existing_json>` is absent, empty, or `(none — first generation)`: run in FRESH MODE (Phases 1–2 below, all items `"generation_status": "new"`).
+If present with a real JSON script: run in UPDATE MODE (Phases 1, 1.5, 2). The existing JSON is the source of truth for what audio already exists.
 
 ## PROCESS — DO THIS IN ORDER
 
@@ -60,32 +64,40 @@ Only after the analysis (and reconciliation, in UPDATE MODE), produce the JSON p
 
 ## JSON SCHEMA
 
+Speaker object keys MUST be the speaker_id values from the Speakers input above (e.g. `"narrator"`, `"chr-4e9a02"`), not invented `"1"` / `"2"` indices. Leave `voice_id` / `voice_name` empty or `"TBD"`. Always fill `direction`.
+
 ```json
 {
   "title": "Scene Title",
   "revision": 2,
   "speakers": {
-    "1": {
+    "narrator": {
       "name": "Narrator",
       "role": "narration",
-      "voice_name": "<ElevenLabs premade voice name>",
-      "voice_id": "<voice_id>",
+      "voice_name": "",
+      "voice_id": "",
       "direction": "<1-3 sentence performance brief: who this voice is, what its mask is, where it breaks>"
     },
-    "2": { "name": "...", "role": "dialogue", "voice_name": "...", "voice_id": "...", "direction": "..." }
+    "chr-xxxxxx": {
+      "name": "...",
+      "role": "dialogue",
+      "voice_name": "",
+      "voice_id": "",
+      "direction": "..."
+    }
   },
   "notes": {
     "narration_principle": "<the POV/beat map from your analysis, condensed>",
     "stability_legend": "<explain the 0.0/0.5/1.0 semantics and where each is used in this scene>",
     "text_conventions": "<pause tags, punctuation, number spelling conventions used>",
     "sfx": "Nodes marked 'sfx' are skipped in TTS and added in post-production.",
-    "respellings": [ { "id": 19, "prose": "read", "tts": "red" } ],
+    "respellings": [ { "id": "19", "prose": "read", "tts": "red" } ],
     "removed_ids": [],
     "changelog": "<UPDATE MODE: one paragraph — what changed in the prose and what that cost in regenerations>"
   },
   "sequence": [
     {
-      "id": 1,
+      "id": "1",
       "type": "dialogue | narration | sfx",
       "speaker": "<name or null for sfx>",
       "speaker_id": "<key into speakers, or null for sfx>",
@@ -115,7 +127,7 @@ These rules exist because regeneration costs money and because already-approved 
 3. **Minimal ripple.** Changes propagate to neighbors only through real dependencies: repeated-line arcs, direct reactions to a rewritten line, POV movements whose emotional color the revision flipped. A changed line does NOT license re-tagging its whole movement "for cohesion." When unsure whether a ripple is real, it isn't — preserve.
 4. **Id discipline.** Ids are file handles to existing audio. Never renumber, never reuse a removed id, never change an id's speaker or type in place (that's a removal plus a new item). New items take fresh ids above the historical maximum (including removed ids). Array position alone defines playback order.
 5. **Splits and merges.** If a revision splits one old paragraph into two audible chunks or merges two into one, the old id(s) go to `removed_ids` and the result enters as `new` item(s) — don't stretch an old id across different spoken content.
-6. **Speaker/voice changes are global regenerations for that speaker.** If a `voice_id` changes, every non-sfx item for that speaker becomes `regenerate` (reason: "voice recast"). Flag the cost prominently in the changelog — this is the expensive case and the human may want to reconsider.
+6. **Speaker/voice changes are global regenerations for that speaker.** Do not assign or change `voice_id`. If a speaker is added or removed from the Speakers input relative to the existing script, treat affected lines as new/removed/regenerate with an honest reason. Never spontaneously recast. If a voice_id did change in the existing script, every non-sfx item for that speaker becomes `regenerate` (reason: "voice recast") — flag that cost prominently in the changelog.
 7. **Report cost honestly.** The reconciliation summary and changelog must make the price visible: "62 unchanged, 9 regenerate, 4 new, 3 removed." If regenerations exceed ~40% of the scene, say so explicitly and identify which are prose-forced versus ripple-forced, so the human can veto the ripples.
 
 ## DIRECTING RULES
@@ -153,7 +165,7 @@ v3 stability is NOT a fine-grained slider. It has three effective modes; use exa
 - Chunk any narration paragraph much longer than ~2–3 sentences into separate sequence items if it spans an emotional shift.
 
 ### 7. Voice casting
-For each speaker, recommend an ElevenLabs premade voice (name + voice_id) whose NEUTRAL baseline matches the character — v3 tags can only bend a voice, not transform it; a voice whose natural delivery contradicts the required register (e.g., a booming voice asked to whisper throughout) will fight every tag. Prefer voices verified/curated for v3. If you cannot verify a real voice_id, put "TBD" in voice_id and state the desired voice profile in `direction` — never invent an ID. In UPDATE MODE, never recast a voice on your own initiative (see Preservation Rule 6).
+For each speaker in the Speakers input, include a `speakers` entry keyed by that speaker_id. Fill `name`, `role` (`narration` | `dialogue`), and a `direction` brief whose NEUTRAL baseline matches the character — v3 tags can only bend a voice, not transform it; a voice whose natural delivery contradicts the required register (e.g., a booming voice asked to whisper throughout) will fight every tag. Leave `voice_id` / `voice_name` empty or `"TBD"` — never invent an ID. In UPDATE MODE, never recast a voice on your own initiative (see Preservation Rule 6).
 
 ## SELF-CHECK BEFORE OUTPUTTING JSON
 
@@ -170,6 +182,7 @@ Verify all of the following; fix violations before responding:
 9. Every item has `generation_status`; every `regenerate` has a `change_reason`.
 10. UPDATE MODE: every `unchanged` item is byte-identical (text, tags, voice_settings, id, speaker) to its counterpart in `<existing_json>` — diff them mentally; a single changed character means it is mis-labeled and would silently desync text from existing audio.
 11. UPDATE MODE: no id renumbering; new ids exceed the historical maximum; `removed_ids` accounts for every old id absent from the new sequence; regeneration count matches the reconciliation summary.
+12. Every non-sfx `speaker_id` in the sequence appears in the Speakers input / the `speakers` object.
 
 ## OUTPUT FORMAT
 
@@ -189,15 +202,16 @@ Scene fragment: A hostage negotiator, terrified for her own trapped daughter, ke
 
 Wrong (whiplash, mask ignored):
 ```json
-{ "text": "[terrified][voice trembling] Stay with me, okay?", "voice_settings": { "stability": 0.0, ... } }
+{ "text": "[terrified][voice trembling] Stay with me, okay?", "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 } }
 ```
 
 Right (mask holds; short line stays Natural; the arc lives across the three occurrences):
 ```json
 { "text": "[calmly] Stay with me, okay?", "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }, "generation_status": "new" }
-// occurrence 2: "[calmly][tense] Stay with me, okay?"  — stability 0.5
-// occurrence 3: "[voice trembling] Stay with me... okay?" — stability 0.5 (short line: crack shown by tag + ellipsis, NOT by Creative mode)
 ```
+- occurrence 2: `"[calmly][tense] Stay with me, okay?"` — stability 0.5
+- occurrence 3: `"[voice trembling] Stay with me... okay?"` — stability 0.5 (short line: crack shown by tag + ellipsis, NOT by Creative mode)
+
 Her terror belongs to the narrator's interiority lines (stability 0.0) and to one private moment when she's off the phone — not to her professional mask.
 
 ### B. Preservation (update mode)
@@ -206,16 +220,16 @@ The author revises one dialogue line: old prose "I'm fine." becomes "I said I'm 
 
 Wrong (gratuitous ripple — costs four generations to buy one):
 ```json
-{ "id": 15, "text": "[tense][firmly] I said I'm fine.", "generation_status": "regenerate" }
-{ "id": 14, "text": "[calmly][annoyed] It's been four hours...", "generation_status": "regenerate" }   // "improved" tag on unchanged prose
-{ "id": 16, "text": "[anxious] The man squirmed...", "generation_status": "regenerate" }              // re-tagged "for cohesion"
-{ "id": 22, "text": "[quietly] The ellipses blinked, ...", "generation_status": "regenerate" }        // comma is inaudible
+{ "id": "15", "text": "[tense][firmly] I said I'm fine.", "generation_status": "regenerate" }
+{ "id": "14", "text": "[calmly][annoyed] It's been four hours...", "generation_status": "regenerate" }
+{ "id": "16", "text": "[anxious] The man squirmed...", "generation_status": "regenerate" }
+{ "id": "22", "text": "[quietly] The ellipses blinked, ...", "generation_status": "regenerate" }
 ```
 
 Right (one audible change, one regeneration; the comma line stays byte-identical to the old JSON):
 ```json
-{ "id": 15, "text": "[flatly][tense] I said I'm fine.", "generation_status": "regenerate", "change_reason": "prose changed: 'I said' added — sharper pushback, leak tag moves to second position" }
-{ "id": 14, "text": "[calmly] It's been four hours. [short pause] You haven't said a word.", "generation_status": "unchanged" }
-{ "id": 16, "text": "[tense] The man squirmed...", "generation_status": "unchanged" }
-{ "id": 22, "text": "[quietly] The ellipses blinked... [short pause] and vanished...", "generation_status": "unchanged" }
+{ "id": "15", "text": "[flatly][tense] I said I'm fine.", "generation_status": "regenerate", "change_reason": "prose changed: 'I said' added — sharper pushback, leak tag moves to second position" }
+{ "id": "14", "text": "[calmly] It's been four hours. [short pause] You haven't said a word.", "generation_status": "unchanged" }
+{ "id": "16", "text": "[tense] The man squirmed...", "generation_status": "unchanged" }
+{ "id": "22", "text": "[quietly] The ellipses blinked... [short pause] and vanished...", "generation_status": "unchanged" }
 ```

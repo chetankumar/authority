@@ -96,13 +96,13 @@ Server-defined; exposed via `GET /api/settings/placeholders`; drives the `@` aut
 | `@selection` | The selected text (empty if none) |
 | `@selection_or_scene` | Selection if present, else full scene |
 | `@scene_metadata` | Title, description, location, dateTime, mood, arc, summary of the target scene |
-| `@scene_characters` | Full character sheets (identity + craft fields) of characters tagged in the scene |
+| `@scene_characters` | Full character sheets (identity + craft) of characters tagged in the scene, plus each tag's per-scene **involvement** (`In this scene: …`) |
 | `@character_sheet` | Full character sheets of everyone in the book, plus their relationships to each other |
 | `@previous_scenes_summary` | Hard prev-chain walked back to Start, emitted in story order as `Title — summary` lines (summaries only, never prose; missing summary → `(no summary)`); archived and soft-only scenes excluded |
 | `@all_scene_summaries` | Every active scene's title + summary in seq order |
 | `@story_summary` | book.json storySummary |
 | `@plotlines` | Plotline titles + descriptions, this scene's links flagged |
-| `@scene_speakers` | Available speaker_id values for audio-script jobs: `speaker_id "narrator" — Narrator` plus tagged characters as `speaker_id "chr-…" — Name`. **No voice ids.** Empty tags → only-narrator message |
+| `@scene_speakers` | Available speaker_id values for audio-script jobs: `speaker_id "narrator" — Narrator` plus tagged characters as `speaker_id "chr-…" — Name — in this scene: {involvement}`. **No voice ids.** Empty tags → only-narrator message |
 | `@existing_audio_script` | Current `scenes/{id}/audio/manifest.json` as indented JSON, or `"(none — first generation)"` |
 
 Unknown tokens are left literal at resolve time but flagged at AI-Job definition save.

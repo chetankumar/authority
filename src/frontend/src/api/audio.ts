@@ -97,11 +97,45 @@ export const patchElevenLabs = (body: { apiKey?: string | null }) =>
 export const listElevenLabsVoices = () => apiGet<VoiceInfo[]>("/settings/elevenlabs/voices");
 export const syncElevenLabsVoices = () => apiSend<VoiceInfo[]>("POST", "/settings/elevenlabs/voices/sync");
 
-export const suggestVoice = (bookId: string, characterId: string) =>
+export const suggestVoice = (
+  bookId: string,
+  characterId: string,
+  body?: {
+    name?: string;
+    age?: string;
+    gender?: string;
+    nationality?: string;
+    ethnicity?: string;
+    occupation?: string;
+    personality?: string;
+    history?: string;
+    want?: string;
+    need?: string;
+    flaw?: string;
+    arc?: string;
+    notes?: string;
+  },
+) =>
   apiSend<{ voiceId: string | null; rationale: string }>(
     "POST",
     `/books/${bookId}/characters/${characterId}/voice/suggest`,
+    body ?? {},
   );
+
+/** Build SearchableSelect options from synced ElevenLabs voices. */
+export function voiceSelectOptions(voices: VoiceInfo[]) {
+  return voices.map((v) => {
+    const meta = [v.gender, v.age, v.accent].filter(Boolean).join(", ");
+    return {
+      value: v.voiceId,
+      label: v.name || v.voiceId,
+      hint: meta || undefined,
+      searchText: [v.name, v.voiceId, v.gender, v.age, v.accent, v.category, v.description]
+        .filter(Boolean)
+        .join(" "),
+    };
+  });
+}
 
 /** Playlist gap timing — mirrors backend / speech_generator.py */
 export const DEFAULT_GAP_MS = 500;

@@ -6,7 +6,7 @@ import type {
   CharacterRelationship,
   CharacterRelationshipCategory,
 } from "../../api/characters";
-import { suggestVoice } from "../../api/audio";
+import { suggestVoice, voiceSelectOptions } from "../../api/audio";
 import { ApiError } from "../../api/client";
 import {
   useCharacters,
@@ -550,18 +550,19 @@ function CharacterRow({
           <div className="flex flex-wrap items-center gap-2">
             <div className="min-w-[14rem] flex-1">
               <SearchableSelect
-                options={(voicesQ.data ?? []).map((v) => ({
-                  value: v.voiceId,
-                  label: `${v.name}${v.gender || v.age || v.accent ? ` (${[v.gender, v.age, v.accent].filter(Boolean).join(", ")})` : ""}`,
-                  hint: v.description || undefined,
-                }))}
+                options={voiceSelectOptions(voicesQ.data ?? [])}
                 value={form.voiceId || null}
                 onChange={(v) => {
                   const voice = (voicesQ.data ?? []).find((x) => x.voiceId === v);
                   setForm((f) => ({ ...f, voiceId: v ?? "", voiceName: voice?.name ?? "" }));
                 }}
-                placeholder="Choose a voice…"
+                placeholder={
+                  (voicesQ.data?.length ?? 0) === 0
+                    ? "Sync voices in Settings → AI first…"
+                    : "Choose a voice…"
+                }
                 clearable
+                clearLabel="No voice"
               />
             </div>
             {form.voiceId && (voicesQ.data ?? []).find((v) => v.voiceId === form.voiceId)?.previewUrl && (
@@ -576,7 +577,21 @@ function CharacterRow({
               disabled={suggesting}
               onClick={() => {
                 setSuggesting(true);
-                void suggestVoice(bookId, character.id)
+                void suggestVoice(bookId, character.id, {
+                  name: form.name,
+                  age: form.age,
+                  gender: form.gender,
+                  nationality: form.nationality,
+                  ethnicity: form.ethnicity,
+                  occupation: form.occupation,
+                  personality: form.personality,
+                  history: form.history,
+                  want: form.want,
+                  need: form.need,
+                  flaw: form.flaw,
+                  arc: form.arc,
+                  notes: form.notes,
+                })
                   .then((res) => {
                     if (res.voiceId) {
                       const voice = (voicesQ.data ?? []).find((x) => x.voiceId === res.voiceId);

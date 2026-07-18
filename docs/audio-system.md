@@ -12,6 +12,8 @@
 
 Reference pipeline (behavior ported into `AudioService`, not run as a subprocess): [`audio-system/speech_generator.py`](audio-system/speech_generator.py), [`audio-system/json-generator-prompt.md`](audio-system/json-generator-prompt.md), [`audio-system/speech_ref.json`](audio-system/speech_ref.json).
 
+**AI-Job prompt (paste into Settings → AI-Jobs):** [`audio-system/ai-job-prompt.md`](audio-system/ai-job-prompt.md) — full directing prompt; includes `@current_scene` / `@scene_speakers` / `@existing_audio_script` injection points.
+
 ---
 
 ## 0. Spec + implementation map

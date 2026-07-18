@@ -5,6 +5,8 @@ export interface Option {
   label: string;
   /** Optional right-aligned hint (e.g. a seq number or placement). */
   hint?: string;
+  /** Extra text used only for filtering (not shown). Falls back to label + hint. */
+  searchText?: string;
 }
 
 interface Props {
@@ -12,7 +14,7 @@ interface Props {
   value: string | null;
   onChange: (value: string | null) => void;
   placeholder?: string;
-  /** Show a "— none —" clear entry at the top. */
+  /** Show a clear entry at the top. */
   clearable?: boolean;
   clearLabel?: string;
   disabled?: boolean;
@@ -26,7 +28,7 @@ export function SearchableSelect({
   onChange,
   placeholder = "Select…",
   clearable = false,
-  clearLabel = "— none —",
+  clearLabel = "Clear selection",
   disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -50,8 +52,12 @@ export function SearchableSelect({
   }, [open]);
 
   const selected = options.find((o) => o.value === value);
-  const filtered = query
-    ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? options.filter((o) => {
+        const hay = (o.searchText || `${o.label} ${o.hint || ""}`).toLowerCase();
+        return hay.includes(q);
+      })
     : options;
 
   const pick = (v: string | null) => {
@@ -87,7 +93,7 @@ export function SearchableSelect({
             <button
               type="button"
               onClick={() => pick(null)}
-              className="block w-full px-3 py-1.5 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
+              className="block w-full border-b border-line px-3 py-1.5 text-left text-[0.8125rem] italic text-ink-faint hover:bg-accent-wash"
             >
               {clearLabel}
             </button>
@@ -99,13 +105,16 @@ export function SearchableSelect({
               <button
                 key={o.value}
                 type="button"
+                title={o.searchText || o.label}
                 onClick={() => pick(o.value)}
-                className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-[0.8125rem] hover:bg-accent-wash ${
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[0.8125rem] hover:bg-accent-wash ${
                   o.value === value ? "bg-accent-wash text-accent" : "text-ink"
                 }`}
               >
-                <span className="truncate">{o.label}</span>
-                {o.hint && <span className="ml-2 shrink-0 text-ink-faint">{o.hint}</span>}
+                <span className="min-w-0 flex-1 truncate font-medium">{o.label}</span>
+                {o.hint && (
+                  <span className="max-w-[40%] shrink truncate text-[0.75rem] text-ink-faint">{o.hint}</span>
+                )}
               </button>
             ))
           )}

@@ -23,7 +23,10 @@ _REGISTRY: list[Placeholder] = [
         name="@scene_metadata",
         description="Title, description, location, dateTime, mood, arc, summary of the target scene",
     ),
-    Placeholder(name="@scene_characters", description="Character sheets of characters tagged in the scene"),
+    Placeholder(
+        name="@scene_characters",
+        description="Character sheets of characters tagged in the scene, plus each tag's per-scene involvement",
+    ),
     Placeholder(name="@character_sheet", description="All character sheets in the book"),
     Placeholder(
         name="@previous_scenes_summary",
@@ -34,7 +37,7 @@ _REGISTRY: list[Placeholder] = [
     Placeholder(name="@plotlines", description="Plotline titles + descriptions, this scene's links flagged"),
     Placeholder(
         name="@scene_speakers",
-        description="Available speaker_id values for this scene's audio script — name only, no voice data",
+        description="Available speaker_id values for this scene (narrator + tagged characters with involvement) — no voice data",
     ),
     Placeholder(
         name="@existing_audio_script",
@@ -200,9 +203,13 @@ class PlaceholderRegistry:
                 c = by_id.get(ref.characterId)
                 if c is None:
                     continue
-                block = format_character(c)
-                if ref.involvement.strip():
-                    block = f"{block}\nIn this scene: {ref.involvement.strip()}"
+                involvement = (ref.involvement or "").strip() or "(not set)"
+                # Sheet first, then the per-scene involvement row from Scene Modal → Characters.
+                block = (
+                    f"{format_character(c)}\n"
+                    f"  id: {c.id}\n"
+                    f"  In this scene: {involvement}"
+                )
                 entries.append(block)
             return "\n\n".join(entries) if entries else "(none tagged)"
 
@@ -238,7 +245,11 @@ class PlaceholderRegistry:
                 c = by_id.get(ref.characterId)
                 if c is None:
                     continue
-                lines.append(f'speaker_id "{c.id}" — {c.name}')
+                involvement = (ref.involvement or "").strip()
+                if involvement:
+                    lines.append(f'speaker_id "{c.id}" — {c.name} — in this scene: {involvement}')
+                else:
+                    lines.append(f'speaker_id "{c.id}" — {c.name} — in this scene: (not set)')
             return "\n".join(lines)
 
         def existing_audio_script() -> str:

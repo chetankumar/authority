@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from starlette.responses import Response
 
 from app.api.deps import get_ai_orchestrator, get_settings_service, get_structure_service
-from app.models.audio import VoiceSuggestResponse
+from app.models.audio import VoiceSuggestBody, VoiceSuggestResponse
 from app.models.character import (
     Character,
     CharacterCreate,
@@ -52,11 +52,12 @@ async def delete_character(book_id: str, chr_id: str, svc: StructureService = Se
 async def suggest_voice(
     book_id: str,
     chr_id: str,
+    body: VoiceSuggestBody | None = None,
     svc: StructureService = Service,
     settings: SettingsService = Depends(get_settings_service),
     orch: AIOrchestrator = Depends(get_ai_orchestrator),
 ) -> VoiceSuggestResponse:
-    return await svc.suggest_voice(book_id, chr_id, settings, orch)
+    return await svc.suggest_voice(book_id, chr_id, settings, orch, overrides=body)
 
 
 @rel_router.get("", response_model=list[CharacterRelationship])
