@@ -12,7 +12,12 @@ from dataclasses import dataclass
 
 from app.core.event_hub import EventHub
 from app.models.enums import AudioLineStatus, AudioSynthesisStatus
-from app.services.audio_service import AudioService, read_manifest_if_exists
+from app.services.audio_service import (
+    AudioService,
+    audio_dir,
+    read_manifest_if_exists,
+    reconcile_rendered_files,
+)
 
 log = logging.getLogger("authority.audio_worker")
 
@@ -63,8 +68,30 @@ class AudioWorker:
             ]
 
         if not pending:
-            manifest.synthesisStatus = AudioSynthesisStatus.done
-            await self._audio.write_manifest_status(job.book_id, job.scene_id, manifest)
+            # Relink orphan mp3s and rebuild a missing/corrupt stitch without re-TTS.
+            if reconcile_rendered_files(mgr.book_dir, job.scene_id, manifest):
+                await self._audio.write_manifest_status(job.book_id, job.scene_id, manifest)
+            has_lines = any(it.renderedFile for it in manifest.sequence)
+            stitched_path = audio_dir(mgr.book_dir, job.scene_id) / "scene_stitched.mp3"
+            needs_stitch = has_lines and (
+                not manifest.stitchedFile
+                or not stitched_path.is_file()
+                or stitched_path.stat().st_size < 4096
+            )
+            if needs_stitch:
+                self._emit(job, "stitch", completed=0, total=0)
+                try:
+                    await self._audio.stitch(job.book_id, job.scene_id)
+                except Exception as exc:
+                    log.exception("stitch failed")
+                    await self._mark_failed(job.book_id, job.scene_id, f"stitch failed: {exc}")
+                    self._emit(job, "error", message=str(exc))
+                    return
+            manifest = read_manifest_if_exists(mgr.book_dir, job.scene_id)
+            if manifest:
+                manifest.synthesisStatus = AudioSynthesisStatus.done
+                manifest.lastError = None
+                await self._audio.write_manifest_status(job.book_id, job.scene_id, manifest)
             self._emit(job, "done", completed=0, total=0)
             return
 

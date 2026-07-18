@@ -27,6 +27,10 @@ const STATUS_STYLE: Record<string, string> = {
   unchanged: "bg-ok-wash text-ok",
 };
 
+function isPendingStatus(status: string): boolean {
+  return status === "new" || status === "regenerate";
+}
+
 export function AudioModal({
   bookId,
   sceneId,
@@ -49,11 +53,14 @@ export function AudioModal({
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [playIndex, setPlayIndex] = useState(0);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const gapTimer = useRef<number | null>(null);
 
   const manifest = manifestQ.data;
+  const pendingCount = manifest
+    ? manifest.sequence.filter((i) => isPendingStatus(i.generation_status)).length
+    : 0;
 
   useEffect(() => {
     return () => {
@@ -81,30 +88,48 @@ export function AudioModal({
 
   function stopPlaylist() {
     setPlaying(false);
+    setActiveItemId(null);
     if (gapTimer.current) window.clearTimeout(gapTimer.current);
     audioRef.current?.pause();
   }
 
+  function playlistOf(m: AudioManifest): AudioSequenceItem[] {
+    return m.sequence.filter((i) => i.renderedFile);
+  }
+
   function playScene() {
     if (!manifest) return;
-    const playlist = manifest.sequence.filter((i) => i.renderedFile);
+    const playlist = playlistOf(manifest);
     if (playlist.length === 0) {
       toast.error("No line audio yet — generate pending lines first.");
       return;
     }
     stopPlaylist();
     setPlaying(true);
-    setPlayIndex(0);
     playAt(playlist, 0);
+  }
+
+  function playFrom(item: AudioSequenceItem) {
+    if (!manifest) return;
+    const playlist = playlistOf(manifest);
+    const start = playlist.findIndex((i) => i.id === item.id);
+    if (start < 0) {
+      toast.error("No audio for this line yet.");
+      return;
+    }
+    stopPlaylist();
+    setPlaying(true);
+    playAt(playlist, start);
   }
 
   function playAt(playlist: AudioSequenceItem[], index: number) {
     const item = playlist[index];
     if (!item?.renderedFile) {
       setPlaying(false);
+      setActiveItemId(null);
       return;
     }
-    setPlayIndex(index);
+    setActiveItemId(item.id);
     const el = audioRef.current ?? new Audio();
     audioRef.current = el;
     el.src = audioLineUrl(bookId, sceneId, item.renderedFile);
@@ -112,6 +137,7 @@ export function AudioModal({
       const next = index + 1;
       if (next >= playlist.length) {
         setPlaying(false);
+        setActiveItemId(null);
         return;
       }
       const wait = gapMs(item, playlist[next]);
@@ -119,6 +145,7 @@ export function AudioModal({
     };
     void el.play().catch(() => {
       setPlaying(false);
+      setActiveItemId(null);
       toast.error("Playback failed");
     });
   }
@@ -126,12 +153,29 @@ export function AudioModal({
   function playOne(item: AudioSequenceItem) {
     if (!item.renderedFile) return;
     stopPlaylist();
+    setActiveItemId(item.id);
     const el = audioRef.current ?? new Audio();
     audioRef.current = el;
     el.src = audioLineUrl(bookId, sceneId, item.renderedFile);
-    el.onended = null;
-    void el.play();
+    el.onended = () => setActiveItemId(null);
+    void el.play().catch(() => {
+      setActiveItemId(null);
+      toast.error("Playback failed");
+    });
   }
+
+  const generateDisabled =
+    !manifest ||
+    generateAll.isPending ||
+    manifest.synthesisStatus === "running" ||
+    pendingCount === 0;
+
+  const generateLabel =
+    manifest?.synthesisStatus === "running"
+      ? "Generating…"
+      : pendingCount > 0
+        ? `Generate all pending (${pendingCount})`
+        : "Generate all pending";
 
   return (
     <Modal title="Scene audio" onClose={onClose} width={880}>
@@ -141,14 +185,14 @@ export function AudioModal({
         </Button>
         <Button
           variant="primary"
-          disabled={!manifest || generateAll.isPending || manifest.synthesisStatus === "running"}
+          disabled={generateDisabled}
           onClick={() =>
             generateAll.mutate(undefined, {
               onError: (e) => toast.error(e instanceof ApiError ? e.message : "Generate failed"),
             })
           }
         >
-          {manifest?.synthesisStatus === "running" ? "Generating…" : "Generate all pending"}
+          {generateLabel}
         </Button>
         {playing ? (
           <Button variant="secondary" onClick={stopPlaylist}>
@@ -183,9 +227,12 @@ export function AudioModal({
             <span>{manifest.title || "Untitled"}</span>
             <span>rev {manifest.revision}</span>
             <span className="font-mono">{manifest.synthesisStatus}</span>
-            {playing && <span className="text-accent">playing line {playIndex + 1}</span>}
+            {activeItemId && <span className="text-accent">playing</span>}
             {manifest.lastError && <span className="text-danger">{manifest.lastError}</span>}
           </div>
+          <p className="text-[0.75rem] text-ink-faint">
+            Edit a line or change stability to queue it; Regenerate on a row runs that line now.
+          </p>
           <div className="max-h-[55vh] space-y-3 overflow-y-auto pr-1">
             {manifest.sequence.map((item) => (
               <LineRow
@@ -193,7 +240,9 @@ export function AudioModal({
                 item={item}
                 speakers={manifest.speakers}
                 busy={generateLine.isPending}
+                isActive={item.id === activeItemId}
                 onPlay={() => playOne(item)}
+                onPlayFrom={() => playFrom(item)}
                 onRegen={() =>
                   generateLine.mutate(item.id, {
                     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Regen failed"),
@@ -234,19 +283,24 @@ function LineRow({
   item,
   speakers,
   busy,
+  isActive,
   onPlay,
+  onPlayFrom,
   onRegen,
   onSave,
 }: {
   item: AudioSequenceItem;
   speakers: AudioManifest["speakers"];
   busy: boolean;
+  isActive: boolean;
   onPlay: () => void;
+  onPlayFrom: () => void;
   onRegen: () => void;
   onSave: (body: { text?: string; voice_settings?: { stability: number; similarity_boost: number } }) => void;
 }) {
   const [text, setText] = useState(item.text);
   const [stability, setStability] = useState(item.voice_settings?.stability ?? 0.5);
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const name =
     (item.speaker_id && speakers[item.speaker_id]?.name) || item.speaker || item.speaker_id || "sfx";
 
@@ -255,8 +309,18 @@ function LineRow({
     setStability(item.voice_settings?.stability ?? 0.5);
   }, [item.text, item.voice_settings?.stability, item.id]);
 
+  useEffect(() => {
+    if (!isActive) return;
+    rowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [isActive]);
+
   return (
-    <div className="rounded-control border border-line bg-paper p-3">
+    <div
+      ref={rowRef}
+      className={`rounded-control border p-3 ${
+        isActive ? "border-accent bg-accent-wash" : "border-line bg-paper"
+      }`}
+    >
       <div className="mb-2 flex flex-wrap items-center gap-2 text-[0.75rem]">
         <span className="font-medium text-ink">{name}</span>
         <span className="rounded-full bg-accent-wash px-2 py-0.5 text-accent">{item.type}</span>
@@ -266,6 +330,9 @@ function LineRow({
         <div className="ml-auto flex gap-1">
           <Button variant="ghost" disabled={!item.renderedFile} onClick={onPlay}>
             Play
+          </Button>
+          <Button variant="ghost" disabled={!item.renderedFile} onClick={onPlayFrom}>
+            From here
           </Button>
           <Button variant="ghost" disabled={busy} onClick={onRegen}>
             Regenerate

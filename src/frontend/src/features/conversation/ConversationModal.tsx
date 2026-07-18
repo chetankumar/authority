@@ -11,6 +11,7 @@ import {
   type Proposal,
 } from "../../api/conversations";
 import { acceptProposal, rejectProposal } from "../../api/proposals";
+import { ApiError } from "../../api/client";
 import { listModels, type ModelConfig } from "../../api/settings";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Modal } from "../../components/Modal";
@@ -198,7 +199,17 @@ export function ConversationModal({
         void qc.invalidateQueries({ queryKey: keys.audio(bookId, sceneId) });
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't accept.");
+      if (err instanceof ApiError) {
+        const fields = err.detail?.fields as Record<string, unknown> | undefined;
+        const speakers = fields?.speakers;
+        if (Array.isArray(speakers) && speakers.length) {
+          toast.error(speakers.join(" · "));
+        } else {
+          toast.error(err.message);
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : "Couldn't accept.");
+      }
     }
   }
 

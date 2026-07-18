@@ -61,9 +61,9 @@ class AudioManifest(BaseModel):
     stitchedFile: str | None = None
     lastError: str | None = None
 
-    @classmethod
-    def from_raw(cls, data: dict[str, Any]) -> AudioManifest:
-        """Coerce loosely-typed model JSON (e.g. numeric ids) into our schema."""
+    @staticmethod
+    def _normalize(data: dict[str, Any]) -> dict[str, Any]:
+        """Coerce loosely-typed JSON (numeric ids, camelCase aliases, casing)."""
         raw = dict(data)
         seq = []
         for item in raw.get("sequence") or []:
@@ -89,7 +89,17 @@ class AudioManifest(BaseModel):
             removed = notes.get("removed_ids") or notes.get("removedIds") or []
             notes["removed_ids"] = [str(x) for x in removed]
             raw["notes"] = notes
-        # Drop runtime-only fields the model may echo from an existing manifest.
+        return raw
+
+    @classmethod
+    def from_disk(cls, data: dict[str, Any]) -> AudioManifest:
+        """Load a persisted manifest — keep synthesis / renderedFile fields."""
+        return cls.model_validate(cls._normalize(data))
+
+    @classmethod
+    def from_raw(cls, data: dict[str, Any]) -> AudioManifest:
+        """Parse an AI/proposal payload — strip runtime fields the model may echo."""
+        raw = cls._normalize(data)
         raw.pop("synthesisStatus", None)
         raw.pop("updatedAt", None)
         raw.pop("stitchedFile", None)

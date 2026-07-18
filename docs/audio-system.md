@@ -78,8 +78,8 @@ Two halves:
 1. Tag speakers on Scene Modal → Characters.
 2. Editor toolbar → **Audio** → Audio Modal.
 3. **Generate script** → AI-Job → Conversation Modal → review proposal → **Accept** (merge).
-4. **Generate all pending** and/or per-line **Regenerate**.
-5. **Play scene** (playlist) or play one line.
+4. **Generate all pending** (disabled when none queued) and/or per-line **Regenerate**. Lines become pending (`new`/`regenerate`) when you edit text/stability or Accept an updated script; per-line Regenerate synthesizes immediately.
+5. **Play scene** (full playlist), **From here** on a row (resume playlist), or **Play** one line. Active row highlights and auto-scrolls.
 
 After prose edits: re-run job → Accept (merge preserves unchanged `renderedFile`) → generate only pending.
 
@@ -228,9 +228,9 @@ Same path/scan/trash/lock discipline as `resource_service.py`.
 
 ### Audio Modal
 
-Header: Generate script | Generate all pending | Play scene | Stop | Delete.  
-Body: editable rows (text, stability slider, status, per-line play, Regenerate).  
-Play scene: client playlist with `DEFAULT_GAP_MS` / `SPEAKER_CHANGE_GAP_MS` / `SFX_GAP_MS` — no stream API.
+Header: Generate script | Generate all pending (N, disabled when 0) | Play scene | Stop | Delete.  
+Body: editable rows (text, stability slider, status, per-line Play / From here / Regenerate). Hint: edit or change stability queues a line; row Regenerate runs that line now.  
+Play scene / From here: client playlist with `DEFAULT_GAP_MS` / `SPEAKER_CHANGE_GAP_MS` / `SFX_GAP_MS` — no stream API. Active line is highlighted and scrolled into view.
 
 Files: `features/audio/AudioModal.tsx`, `api/audio.ts`, `queries/audio.ts`, `keys.audio`.
 

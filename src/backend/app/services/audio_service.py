@@ -80,10 +80,37 @@ def read_manifest_if_exists(book_dir: Path, scene_id: str) -> AudioManifest | No
         return None
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        return AudioManifest.from_raw(raw)
+        return AudioManifest.from_disk(raw)
     except Exception as exc:
         log.warning("corrupt audio manifest for %s: %s", scene_id, exc)
         return None
+
+
+def reconcile_rendered_files(book_dir: Path, scene_id: str, manifest: AudioManifest) -> bool:
+    """Link sequence items to on-disk mp3s when ``renderedFile`` is missing.
+
+    Recovers manifests that lost links (e.g. after a strip-on-read bug) without
+    re-billing ElevenLabs.
+    """
+    lines = audio_lines_dir(book_dir, scene_id)
+    changed = False
+    for i, item in enumerate(manifest.sequence):
+        expected = _line_filename(i + 1, item)
+        if item.renderedFile and (lines / item.renderedFile).is_file():
+            continue
+        if (lines / expected).is_file():
+            item.renderedFile = expected
+            changed = True
+    stitched = audio_dir(book_dir, scene_id) / "scene_stitched.mp3"
+    # Tiny/empty stitch means lines were skipped — clear so callers can restitch.
+    if stitched.is_file() and stitched.stat().st_size < 4096:
+        if manifest.stitchedFile:
+            manifest.stitchedFile = None
+            changed = True
+    elif stitched.is_file() and not manifest.stitchedFile:
+        manifest.stitchedFile = "scene_stitched.mp3"
+        changed = True
+    return changed
 
 
 def parse_gitignore_patterns(text: str) -> list[str]:
@@ -169,6 +196,15 @@ class AudioService:
         manifest = read_manifest_if_exists(mgr.book_dir, scene_id)
         if manifest is None:
             raise not_found("audio", scene_id)
+        if reconcile_rendered_files(mgr.book_dir, scene_id, manifest):
+            # Best-effort repair; avoid blocking the GET on a contended lock.
+            try:
+                path = manifest_path(mgr.book_dir, scene_id)
+                manifest.updatedAt = _now()
+                atomic_write_json(path, manifest.model_dump(mode="json"))
+                mgr.notify_changed()
+            except Exception:
+                log.exception("could not persist audio renderedFile reconcile for %s", scene_id)
         return manifest
 
     def get_gitignore(self, book_id: str) -> list[str]:
@@ -280,7 +316,11 @@ class AudioService:
         if missing_voices:
             # Dedupe messages
             uniq = list(dict.fromkeys(missing_voices))
-            raise validation({"speakers": uniq})
+            raise ApiError(
+                422,
+                "Assign ElevenLabs voices before accepting: " + "; ".join(uniq),
+                {"fields": {"speakers": uniq}},
+            )
 
         revision = incoming.revision
         if existing and revision <= existing.revision:
@@ -335,7 +375,7 @@ class AudioService:
                     if item.voice_settings != patch.voice_settings:
                         item.voice_settings = patch.voice_settings
                         changed = True
-                if changed and item.type != AudioSequenceItemType.sfx:
+                if changed:
                     item.generation_status = AudioLineStatus.regenerate
                 break
             if not found:
@@ -419,6 +459,11 @@ class AudioService:
         manifest = read_manifest_if_exists(mgr.book_dir, scene_id)
         if manifest is None:
             raise not_found("audio", scene_id)
+        if reconcile_rendered_files(mgr.book_dir, scene_id, manifest):
+            async with mgr.lock:
+                manifest.updatedAt = _now()
+                atomic_write_json(manifest_path(mgr.book_dir, scene_id), manifest.model_dump(mode="json"))
+                mgr.notify_changed()
 
         def _stitch() -> bytes:
             from pydub import AudioSegment
