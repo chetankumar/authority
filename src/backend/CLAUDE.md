@@ -6,7 +6,7 @@ Parent: [project root](../../CLAUDE.md). Specs: [02 Architecture](../../docs/cla
 
 ## Tech stack (locked)
 
-Python 3.11+, FastAPI + Uvicorn (single worker, pinned), GitPython (requires system `git`), LangChain (`langchain-core`, `langchain-anthropic`, `langchain-openai`, `langchain-google-genai`, `langchain-ollama`), `python-multipart`, `filelock`. No ORM, no database engine — a per-book in-memory data manager over JSON files.
+Python 3.11+, FastAPI + Uvicorn (single worker, pinned), GitPython (requires system `git`), LangChain (`langchain-core`, `langchain-anthropic`, `langchain-openai`, `langchain-google-genai`, `langchain-ollama`), `python-multipart`, `filelock`, `elevenlabs`, `pydub` (scene audio; system `ffmpeg` recommended for stitch). No ORM, no database engine — a per-book in-memory data manager over JSON files.
 
 ## Files to create here
 
@@ -27,7 +27,7 @@ Python 3.11+, FastAPI + Uvicorn (single worker, pinned), GitPython (requires sys
 | Services | [`app/services/`](app/services/CLAUDE.md) | All business logic; own the per-book mutation lock |
 | Models | [`app/models/`](app/models/CLAUDE.md) | Pydantic request/response/persistence schemas + enums |
 | Core | [`app/core/`](app/core/CLAUDE.md) | Config, logging, filelock, atomic write, asyncio locks, EventHub |
-| Worker | [`app/worker/`](app/worker/CLAUDE.md) | Single asyncio job worker; settle timers; enrichment execution |
+| Worker | [`app/worker/`](app/worker/CLAUDE.md) | Conversation worker, git-status debounce, **AudioWorker** (ElevenLabs synth queue) |
 
 ## Error conventions (doc 02 / doc 04 §1.2)
 

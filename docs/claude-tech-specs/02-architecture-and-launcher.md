@@ -80,3 +80,5 @@ Created with defaults on first run if absent. `appDataRoot` defaults to an OS-st
 8. **Git:** service + page + top-bar badge + suggest-message.
 9. **Compilation:** completeness check, readiness report, compile, standing indicator.
 10. **Polish:** ui.json persistence, empty states, keyboard shortcuts (Ctrl+S), fit-to-view, archived filter.
+11. **Book resources & book-level AI chat:** (Phase 11 — shipped.)
+12. **Scene Audio Drama:** ElevenLabs casting, `audio-script` AI-Job + Accept merge, Editor Audio Modal + playlist playback, book `*.mp3` gitignore. Spec: [`../audio-system.md`](../audio-system.md). (**Phase 12 — shipped.**)

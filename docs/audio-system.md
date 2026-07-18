@@ -128,17 +128,17 @@ Speaker keys: character ids (`chr-…`) + reserved `"narrator"`.
 
 ### 4.1 Placeholders
 
-| Token | Status today | Resolver |
+| Token | Status | Resolver |
 |---|---|---|
-| `@current_scene` | Exists | Scene prose |
-| `@scene_speakers` | **Add** | Tagged characters as `speaker_id "chr-…" — Name` + narrator; no voice ids. Empty tags → message that only narrator is available |
-| `@existing_audio_script` | **Add** | `json.dumps(manifest)` or `"(none — first generation)"` |
+| `@current_scene` | ✅ | Scene prose |
+| `@scene_speakers` | ✅ | Tagged characters as `speaker_id "chr-…" — Name` + narrator; no voice ids. Empty tags → message that only narrator is available |
+| `@existing_audio_script` | ✅ | `json.dumps(manifest)` or `"(none — first generation)"` |
 
-`@scene_characters` is **not** a substitute (full sheets, not casting ids).
+Implemented in `placeholder_registry.py`. `@scene_characters` is **not** a substitute (full sheets, not casting ids).
 
 ### 4.2 Prepare / parse / accept
 
-- `AiJobService.prepare`: append `AUDIO_SCRIPT_FORMAT_INSTRUCTIONS` for `outputType == audio_script`.
+- `AiJobService.prepare`: appends `AUDIO_SCRIPT_FORMAT_INSTRUCTIONS` for `outputType == audio_script`.
 - `parse_audio_script` → one `audio-script-create` proposal (whole manifest).
 - `ConversationService` dispatches on `outputType` (scene parent only).
 - `ProposalService._apply_audio_script_create` → `AudioService.save_manifest` (**merge**, see §5).
@@ -164,24 +164,24 @@ Accept never calls ElevenLabs.
 
 ## 6. Backend — `AudioService` + `AudioWorker`
 
-### AudioService
+### AudioService (`audio_service.py`)
 
-Mirror `resource_service.py` path/scan/trash/lock discipline.
+Same path/scan/trash/lock discipline as `resource_service.py`.
 
 - `save_manifest` — §5
 - `synthesize_line` — ElevenLabs TTS (`eleven_v3`) / SFX in `asyncio.to_thread`; write via `atomic_write_bytes`; set `renderedFile`
-- `stitch` — optional; port gaps from `speech_generator.py`
+- `stitch` — optional; gaps from `speech_generator.py` constants
 - `path_for_line` / `path_for_stitched` — 404 if absent
 - `update_line` — PATCH text/voice_settings; mark `regenerate` when content changed
-- Pure helpers: `audio_dir`, `read_manifest_if_exists`, `safe_audio_filename`, `ensure_gitignore_patterns` (or on BookService)
+- Helpers: `audio_dir`, `read_manifest_if_exists`, `safe_audio_filename`, `ensure_gitignore_patterns`
 
-### AudioWorker
+### AudioWorker (`audio_worker.py`)
 
 - Queue `(book_id, scene_id)` or single-line jobs; global concurrency 1 for batch jobs.
-- Per-line semaphore (2–3) inside a job.
-- Emit `audio-progress` SSE: `{ sceneId, phase, lineId?, completed, total, message? }`.
-- Fail job if any required line fails; leave those items `new`/`regenerate` for retry.
-- Wire in `deps.py` + `main.py` lifespan like `GitStatusWorker`.
+- Per-line semaphore inside a job.
+- Emits `audio-progress` SSE: `{ sceneId, phase, lineId?, completed, total, message? }`.
+- Failures leave items `new`/`regenerate` for retry.
+- Wired in `deps.py` + `main.py` lifespan (with ffmpeg PATH warning).
 
 ---
 
@@ -242,23 +242,25 @@ Files: `features/audio/AudioModal.tsx`, `api/audio.ts`, `queries/audio.ts`, `key
 
 ## 10. BUILD-TODO — Phase 12
 
-See [`BUILD-TODO.md`](BUILD-TODO.md) § Phase 12. Also keep docs 01/03/04/05/06 in sync when marking items ✅.
+See [`BUILD-TODO.md`](BUILD-TODO.md) § Phase 12 — **all items ✅**. Tech specs 01/03/04/05/06 describe the shipped behavior.
 
 ---
 
-## 11. Build order
+## 11. Build order (completed)
 
-1. Models + `secrets.py` (`ELEVENLABS_API_KEY` default)
-2. Book gitignore defaults + Metadata gitignore UI + ensure-on-open
-3. ElevenLabs settings + Character/Book voice UI + suggest
-4. Placeholders + AI-Job path + Accept merge
-5. AudioService / Worker / APIs
-6. Editor Audio Modal + playlist + proposal card + SSE
-7. Doc polish / BUILD-TODO status
+1. ~~Models + `secrets.py` (`ELEVENLABS_API_KEY` default)~~
+2. ~~Book gitignore defaults + Metadata gitignore UI + ensure-on-open~~
+3. ~~ElevenLabs settings + Character/Book voice UI + suggest~~
+4. ~~Placeholders + AI-Job path + Accept merge~~
+5. ~~AudioService / Worker / APIs~~
+6. ~~Editor Audio Modal + playlist + proposal card + SSE~~
+7. ~~Doc polish / BUILD-TODO status~~
 
 ---
 
 ## 12. Verification checklist
+
+Use when regression-testing audio:
 
 1. Env-only key works without UI paste; Sync populates cached voices; GET voices does not hit network.
 2. Character voice + Suggest + Narrator round-trip.

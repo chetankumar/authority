@@ -44,3 +44,4 @@ Two producers: the **book event channel** ([events](events/CLAUDE.md), §12) and
 | [`git/`](git/CLAUDE.md) | Git operations | §13 |
 | [`compile/`](compile/CLAUDE.md) | Completeness check + compile | §14 |
 | [`resources/`](resources/CLAUDE.md) | Files beside the book (upload/list/download/delete) | §15 |
+| [`audio/`](audio/) | Scene audio drama (manifest, generate, FileResponse mp3s); book gitignore is on books router | §16 |

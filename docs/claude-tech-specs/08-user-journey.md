@@ -452,9 +452,9 @@ CLICK     [Compile book]
 
 ---
 
-## J19 — Scene audio drama
+## J19 — Scene audio drama ✅
 
-*Full journey and UI/API contract: [`docs/audio-system.md`](../audio-system.md).*
+*Shipped (Phase 12). Full journey and UI/API contract: [`docs/audio-system.md`](../audio-system.md).*
 
 Setup once: AI Settings (ElevenLabs key optional — env `ELEVENLABS_API_KEY`; sync voices) → AI-Jobs (`audio-script`) → Character voices + Narrator → book gitignore includes `*.mp3`.
 

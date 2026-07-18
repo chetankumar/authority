@@ -63,3 +63,5 @@ Per doc 02, these launcher files belong at the repository root and are created d
 8. Git (service + page + top-bar badge + suggest-message)
 9. Compilation (completeness check, readiness report, compile, standing indicator)
 10. Polish (ui.json persistence, empty states, keyboard shortcuts, fit-to-view, archived filter)
+11. Book resources & book-level AI chat (Phase 11 — shipped)
+12. Scene Audio Drama (Phase 12 — shipped; see [`docs/audio-system.md`](docs/audio-system.md))

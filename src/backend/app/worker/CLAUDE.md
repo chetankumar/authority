@@ -19,3 +19,7 @@ This exists because automatic leave-scene enrichment is fire-and-forget: the aut
 ## Git status worker
 
 Separate standing task: consumes `book-changed`, 5s debounce, emits `git-status`. See `git_status_worker.py`.
+
+## Audio worker
+
+Standing task (`audio_worker.py`): drains batch / single-line synthesis jobs for scene audio drama (doc [`audio-system.md`](../../../../docs/audio-system.md), doc 04 §16). Calls `AudioService.synthesize_line` (and optional stitch); emits `audio-progress` SSE. Accept of an `audio-script-create` proposal never goes through this worker — that only merges `manifest.json`.

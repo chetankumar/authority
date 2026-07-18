@@ -24,3 +24,4 @@ Top bar (48px): logo + "Authority" → `/`; book-title breadcrumb → `/book/{id
 | [`tasks/`](tasks/CLAUDE.md) | `/book/{id}/tasks` | §13 |
 | [`git/`](git/CLAUDE.md) | `/book/{id}/git` | §14 |
 | [`resources/`](resources/CLAUDE.md) | `/book/{id}/resources` | §15 |
+| [`audio/`](audio/) | component (Editor **Audio** modal — not a route) | doc 06 Audio Modal; [`audio-system.md`](../../../../docs/audio-system.md) |

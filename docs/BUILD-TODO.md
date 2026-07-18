@@ -23,7 +23,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | doc 07 | `docs/claude-tech-specs/07-decisions-and-deferred.md` |
 | doc 08 | `docs/claude-tech-specs/08-user-journey.md` |
 
-**Last audited:** 2026-07-18 (**Phase 12 — Scene Audio Drama implemented.** End-to-end: models/secrets, book `.gitignore` + Metadata editor, ElevenLabs settings + voice casting, AI-Job `audio-script` + Accept merge, AudioService/Worker + APIs, Editor Audio Modal + playlist, proposal card, SSE `audio-progress`. Spec: `docs/audio-system.md`.)
+**Last audited:** 2026-07-18 (**Phase 12 docs closed.** `docs/audio-system.md` marked ✅ implemented; Phase 12 BUILD-TODO all ✅; doc 02 / root `CLAUDE.md` build phases list Phase 12; J19 marked shipped. Implementation: models/secrets, book `.gitignore` + Metadata editor, ElevenLabs settings + voice casting, AI-Job `audio-script` + Accept merge, AudioService/Worker + APIs, Editor Audio Modal + playlist, proposal card, SSE `audio-progress`.)
 
 **Previously:** 2026-07-18 (**`Job` entity collapsed into `Conversation`.** There is no more `Job`/`jobs.json`/`JobService`/`JobWorker`/`EscalationService`/`api/jobs`/frontend `api/jobs.ts` — a *run* (an AI-Job the author triggers, or an automatic bookkeeping pass) is now just a conversation, distinguished by `kind` (`ai-job`/`bookkeeping`) with its lifecycle in `ConversationStatus` (`open·queued·running·waiting·done·failed·archived`). AI-Job runs are *prepared* synchronously by the new `AiJobService` (resolve prompt → open conversation at `open`) and run when the author sends; automatic bookkeeping conversations are created `queued` by `EnrichmentService` and drained by the new `ConversationWorker`. Enrichment writes fields via new **execute tools** (`ai_tools/execute.py`: `set_scene_summary`/`set_scene_characters` through `SceneService.update_scene`), and asks the author in-thread (status `waiting`) instead of escalating to a separate chat. SSE `job` event → `conversation`. Legacy `db/jobs.json` is deleted on load. Rows below mentioning `JobService`/`job_service.py`/`api/jobs.ts`/`GET /jobs`/`EscalationService` are historical — the feature they describe now lives in the conversation surface. Docs 01–08 updated to match. Earlier note follows:) (Todos vertical slice landed — `TDO-API-*`, `TDO-SVC-01`, `SCN-API-08`, `TSK-FE-*`, `EDT-FE-23` — with a storage split that **deviates from doc 03/04's single flat `db/todos.json`**: scene-parented todos now live in `scenes/{id}/todos.json`, joining meta/bookkeeping/dependencies/relationships in the per-scene folder split, while chapter/part/book-parented todos stay in the book-level file; `TodoService` resolves either tier from a flat id, same pattern as soft relationships. The book-level `GET /todos` also takes `?includeScenes=true` to aggregate every scene's todos for the Tasks page's toggle — a plain per-request scan, not a maintained index, since it's a rare human-paced read rather than a hot path. Dependency-todo fanout is implemented (previously stubbed); open todos no longer block scene deletion (previously did). `docs/claude-tech-specs/03-data-storage.md` and `04-api-reference.md` still describe the old single-file design and have not yet been updated to match — flagged here, not fixed, since editing the tech spec wasn't requested.)
 
@@ -607,9 +607,9 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 ---
 
-## Phase 12 — Scene Audio Drama
+## Phase 12 — Scene Audio Drama ✅
 
-> **Read:** [`docs/audio-system.md`](audio-system.md) (authoritative build spec), doc 01 §write-permission, doc 03 §audio/, doc 04 §16, doc 05 placeholders + `audio-script` output type, doc 06 Editor / Characters / Metadata Book / Conversation Modal.
+> **Status:** complete (2026-07-18). **Read:** [`docs/audio-system.md`](audio-system.md) (authoritative behavior spec — status ✅ implemented), doc 01 §write-permission, doc 03 §audio/, doc 04 §16, doc 05 placeholders + `audio-script` output type, doc 06 Editor / Characters / Metadata Book / Conversation Modal.
 
 ### Data model & settings
 
