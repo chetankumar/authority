@@ -15,6 +15,8 @@ from app.models.settings import (
     AISettingsPatch,
     Appearance,
     AppearancePatch,
+    ElevenLabsSettingsOut,
+    ElevenLabsSettingsPatch,
     ModelConfigOut,
     ModelCreate,
     ModelPatch,
@@ -22,6 +24,7 @@ from app.models.settings import (
     Placeholder,
     UserPatch,
     UserSettings,
+    VoiceInfo,
 )
 from app.services.settings_service import SettingsService
 
@@ -128,3 +131,28 @@ async def delete_job(job_id: str, svc: SettingsService = Service) -> Response:
 @router.get("/placeholders", response_model=list[Placeholder])
 async def list_placeholders(svc: SettingsService = Service) -> list[Placeholder]:
     return svc.placeholders()
+
+
+# -- ElevenLabs -------------------------------------------------------------
+
+
+@router.get("/elevenlabs", response_model=ElevenLabsSettingsOut)
+async def get_elevenlabs(svc: SettingsService = Service) -> ElevenLabsSettingsOut:
+    return svc.get_elevenlabs()
+
+
+@router.patch("/elevenlabs", response_model=ElevenLabsSettingsOut)
+async def patch_elevenlabs(
+    patch: ElevenLabsSettingsPatch, svc: SettingsService = Service
+) -> ElevenLabsSettingsOut:
+    return await svc.patch_elevenlabs(patch)
+
+
+@router.get("/elevenlabs/voices", response_model=list[VoiceInfo])
+async def list_elevenlabs_voices(svc: SettingsService = Service) -> list[VoiceInfo]:
+    return svc.list_elevenlabs_voices()
+
+
+@router.post("/elevenlabs/voices/sync", response_model=list[VoiceInfo])
+async def sync_elevenlabs_voices(svc: SettingsService = Service) -> list[VoiceInfo]:
+    return await svc.sync_elevenlabs_voices()

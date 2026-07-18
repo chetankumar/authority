@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timezone
+from typing import Any
 
 from app.core.errors import ApiError, blocked, not_found, validation
 from app.models.book import Chapter, Part
@@ -299,6 +300,7 @@ class StructureService:
             for field in (
                 "age", "gender", "nationality", "ethnicity", "occupation",
                 "want", "need", "flaw", "arc", "personality", "history", "notes",
+                "voiceId", "voiceName",
             ):
                 if field in fields_set:
                     value = getattr(body, field)
@@ -335,6 +337,72 @@ class StructureService:
                 raise blocked(blockers)
             remaining = [c for c in characters if c.id != chr_id]
             mgr.save_characters(remaining)
+
+    async def suggest_voice(
+        self,
+        book_id: str,
+        chr_id: str,
+        settings: Any,
+        orch: Any,
+    ) -> Any:
+        """One-shot AI voice suggestion — writes nothing."""
+        from app.core.errors import ApiError, not_found
+        from app.models.audio import VoiceSuggestResponse
+        from app.services.output_parsers import extract_fenced_json
+
+        mgr = self._registry.get(book_id)
+        characters = mgr.get_characters()
+        record = next((c for c in characters if c.id == chr_id), None)
+        if record is None:
+            raise not_found("character", chr_id)
+
+        voices = settings.list_elevenlabs_voices()
+        if not voices:
+            raise ApiError(
+                422,
+                "No synced voices — sync the voice library in AI Settings first.",
+                {"code": "no-voices"},
+            )
+        model = settings.get_utility_model()
+        if model is None:
+            raise ApiError(422, "No model configured for voice suggestion.", {"code": "no-model"})
+
+        voice_lines = []
+        for v in voices[:80]:
+            bits = [v.name, v.voiceId]
+            for label in (v.gender, v.age, v.accent, v.description):
+                if label:
+                    bits.append(label)
+            voice_lines.append(" — ".join(bits))
+
+        craft = f"""Character: {record.name}
+Age: {record.age or "(unset)"}
+Gender: {record.gender or "(unset)"}
+Occupation: {record.occupation or "(unset)"}
+Personality: {record.personality or "(unset)"}
+Want: {record.want or "(unset)"}
+Need: {record.need or "(unset)"}
+Flaw: {record.flaw or "(unset)"}
+Arc: {record.arc or "(unset)"}
+Notes: {record.notes or "(unset)"}
+
+Available voices:
+{chr(10).join(voice_lines)}
+
+Pick the single best matching voiceId. End with:
+```json
+{{"voiceId": "...", "rationale": "one sentence"}}
+```
+"""
+        messages = [{"role": "user", "content": craft}]
+        reply = await orch.invoke_once(model, messages, timeout=45.0)
+        _, parsed = extract_fenced_json(reply or "")
+        if not isinstance(parsed, dict):
+            return VoiceSuggestResponse(voiceId=None, rationale="Could not parse suggestion.")
+        return VoiceSuggestResponse(
+            voiceId=parsed.get("voiceId") if isinstance(parsed.get("voiceId"), str) else None,
+            rationale=str(parsed.get("rationale") or ""),
+        )
 
     @staticmethod
     def _character_scene_counts(bookkeeping_by_scene) -> dict[str, int]:

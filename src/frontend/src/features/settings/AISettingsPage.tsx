@@ -4,11 +4,13 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "../../api/client";
 import { deleteModel, patchAI, testModel, type AISettings, type ModelConfig } from "../../api/settings";
+import { patchElevenLabs } from "../../api/audio";
 import { BlockedDeletionDialog, type BlockedRef } from "../../components/BlockedDeletionDialog";
-import { Button, Field, Select } from "../../components/ui";
+import { Button, Field, Input, Select } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { keys } from "../../queries/keys";
 import { useAI, useModels } from "../../queries/settings";
+import { useElevenLabs, useSyncElevenLabsVoices } from "../../queries/audio";
 import { ModelModal } from "./ModelModal";
 
 const MODEL_SLOTS: { key: keyof AISettings; label: string; hint: string }[] = [
@@ -217,10 +219,80 @@ export default function AISettingsPage() {
         ))}
       </div>
 
+      <ElevenLabsSection />
+
       {modalOpen && <ModelModal existing={editing} onClose={() => setModalOpen(false)} onSaved={onSaved} />}
       {blocked && (
         <BlockedDeletionDialog name={blocked.name} refs={blocked.refs} onClose={() => setBlocked(null)} />
       )}
+    </div>
+  );
+}
+
+function ElevenLabsSection() {
+  const toast = useToast();
+  const el = useElevenLabs();
+  const sync = useSyncElevenLabsVoices();
+  const [key, setKey] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function saveKey() {
+    setSaving(true);
+    try {
+      await patchElevenLabs({ apiKey: key.trim() || null });
+      setDirty(false);
+      setKey("");
+      toast.success("ElevenLabs settings saved");
+      void el.refetch();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="max-w-md space-y-3 border-t border-line pt-5">
+      <h2 className="text-[0.875rem] font-semibold text-ink">ElevenLabs</h2>
+      <p className="text-[0.8125rem] text-ink-soft">
+        Optional API key for scene audio. If left empty, the server uses the{" "}
+        <span className="font-mono">ELEVENLABS_API_KEY</span> environment variable.
+      </p>
+      <Field
+        label="API key"
+        hint={el.data?.apiKeyMasked ? `Stored: ${el.data.apiKeyMasked}` : "No key stored — using env if set"}
+      >
+        <Input
+          type="password"
+          value={key}
+          placeholder="Paste a key or leave blank for env"
+          onChange={(e) => {
+            setKey(e.target.value);
+            setDirty(true);
+          }}
+        />
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" disabled={!dirty || saving} onClick={() => void saveKey()}>
+          Save key
+        </Button>
+        <Button
+          variant="primary"
+          disabled={sync.isPending}
+          onClick={() =>
+            sync.mutate(undefined, {
+              onSuccess: (voices) => toast.success(`Synced ${voices.length} voices`),
+              onError: (e) => toast.error(e instanceof ApiError ? e.message : "Sync failed"),
+            })
+          }
+        >
+          {sync.isPending ? "Syncing…" : "Sync voice library"}
+        </Button>
+        {el.data?.voicesSyncedAt && (
+          <span className="text-[0.75rem] text-ink-faint">Last synced {el.data.voicesSyncedAt}</span>
+        )}
+      </div>
     </div>
   );
 }

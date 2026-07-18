@@ -5,7 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from starlette.responses import Response
 
-from app.api.deps import get_structure_service
+from app.api.deps import get_ai_orchestrator, get_settings_service, get_structure_service
+from app.models.audio import VoiceSuggestResponse
 from app.models.character import (
     Character,
     CharacterCreate,
@@ -14,6 +15,8 @@ from app.models.character import (
     CharacterRelationshipUpdate,
     CharacterUpdate,
 )
+from app.services.ai_orchestrator import AIOrchestrator
+from app.services.settings_service import SettingsService
 from app.services.structure_service import StructureService
 
 router = APIRouter(prefix="/books/{book_id}/characters", tags=["characters"])
@@ -43,6 +46,17 @@ async def update_character(
 async def delete_character(book_id: str, chr_id: str, svc: StructureService = Service) -> Response:
     await svc.delete_character(book_id, chr_id)
     return Response(status_code=204)
+
+
+@router.post("/{chr_id}/voice/suggest", response_model=VoiceSuggestResponse)
+async def suggest_voice(
+    book_id: str,
+    chr_id: str,
+    svc: StructureService = Service,
+    settings: SettingsService = Depends(get_settings_service),
+    orch: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> VoiceSuggestResponse:
+    return await svc.suggest_voice(book_id, chr_id, settings, orch)
 
 
 @rel_router.get("", response_model=list[CharacterRelationship])

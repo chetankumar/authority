@@ -12,9 +12,11 @@ from fastapi.responses import FileResponse
 
 from pydantic import BaseModel
 
-from app.api.deps import get_book_registry, get_book_scanner, get_book_service
+from app.api.deps import get_audio_service, get_book_registry, get_book_scanner, get_book_service
 from app.core.errors import not_found
+from app.models.audio import GitignoreBody
 from app.models.book import Book, Bookkeeping, BookSummary
+from app.services.audio_service import AudioService
 from app.services.book_registry import BookRegistry
 from app.services.book_scanner import BookScanner
 from app.services.book_service import BookService
@@ -23,6 +25,8 @@ from app.services.book_service import BookService
 class BookPatch(BaseModel):
     systemPrompt: str | None = None
     storySummary: str | None = None
+    narratorVoiceId: str | None = None
+    narratorVoiceName: str | None = None
     bookkeeping: Bookkeeping | None = None
 
 router = APIRouter(prefix="/books", tags=["books"])
@@ -67,6 +71,10 @@ async def patch_book(book_id: str, body: BookPatch, registry: BookRegistry = Reg
             config.systemPrompt = body.systemPrompt
         if body.storySummary is not None:
             config.storySummary = body.storySummary
+        if body.narratorVoiceId is not None:
+            config.narratorVoiceId = body.narratorVoiceId
+        if body.narratorVoiceName is not None:
+            config.narratorVoiceName = body.narratorVoiceName
         if body.bookkeeping is not None:
             config.bookkeeping = body.bookkeeping
         mgr.save_config()
@@ -96,3 +104,16 @@ async def patch_ui(book_id: str, patch: dict[str, Any], registry: BookRegistry =
     mgr = registry.get(book_id)
     async with mgr.lock:
         return mgr.merge_ui(patch)
+
+
+@router.get("/{book_id}/gitignore")
+async def get_gitignore(book_id: str, svc: AudioService = Depends(get_audio_service)) -> GitignoreBody:
+    return GitignoreBody(patterns=svc.get_gitignore(book_id))
+
+
+@router.put("/{book_id}/gitignore")
+async def put_gitignore(
+    book_id: str, body: GitignoreBody, svc: AudioService = Depends(get_audio_service)
+) -> GitignoreBody:
+    patterns = await svc.put_gitignore(book_id, body.patterns)
+    return GitignoreBody(patterns=patterns)

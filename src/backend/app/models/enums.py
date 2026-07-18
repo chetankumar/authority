@@ -27,6 +27,7 @@ class OutputType(str, Enum):
     chat = "chat"
     edit_proposals = "edit-proposals"
     metadata_proposals = "metadata-proposals"
+    audio_script = "audio-script"
 
 
 class SceneStatus(str, Enum):
@@ -103,6 +104,26 @@ class ProposalType(str, Enum):
     character_create = "character-create"
     character_relationship_create = "character-relationship-create"
     resource_create = "resource-create"
+    audio_script_create = "audio-script-create"
+
+
+class AudioSequenceItemType(str, Enum):
+    dialogue = "dialogue"
+    narration = "narration"
+    sfx = "sfx"
+
+
+class AudioLineStatus(str, Enum):
+    new = "new"
+    regenerate = "regenerate"
+    unchanged = "unchanged"
+
+
+class AudioSynthesisStatus(str, Enum):
+    idle = "idle"
+    running = "running"
+    done = "done"
+    failed = "failed"
 
 
 class ProposalStatus(str, Enum):

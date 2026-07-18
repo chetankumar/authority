@@ -39,6 +39,8 @@ class BookConfig(BaseModel):
     title: str
     systemPrompt: str = ""
     storySummary: str = ""
+    narratorVoiceId: str = ""
+    narratorVoiceName: str = ""
     bookkeeping: Bookkeeping = Field(default_factory=Bookkeeping)
 
 
@@ -52,6 +54,8 @@ class Book(BaseModel):
     hasCover: bool = False
     systemPrompt: str = ""
     storySummary: str = ""
+    narratorVoiceId: str = ""
+    narratorVoiceName: str = ""
     bookkeeping: Bookkeeping = Field(default_factory=Bookkeeping)
     parts: list[Part] = Field(default_factory=list)
     chapters: list[Chapter] = Field(default_factory=list)

@@ -119,3 +119,40 @@ When you propose metadata updates, end your reply with a fenced JSON array of ob
 ```
 Field must be a scene metadata field (never prose). Preceding commentary is fine.
 """.strip()
+
+AUDIO_SCRIPT_FORMAT_INSTRUCTIONS = """
+When you produce an audio-drama script, end your reply with a fenced JSON object matching this shape
+(speakers may be included but are ignored server-side — voice casting comes from the Character Sheet):
+```json
+{
+  "title": "Scene title",
+  "revision": 1,
+  "notes": { "removed_ids": [], "changelog": [] },
+  "sequence": [
+    {
+      "id": "1",
+      "type": "dialogue",
+      "speaker": "Name",
+      "speaker_id": "chr-xxxxxx",
+      "text": "[emotion] spoken line",
+      "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 },
+      "generation_status": "new"
+    }
+  ]
+}
+```
+Use generation_status values: new | regenerate | unchanged. Preceding analysis is fine.
+""".strip()
+
+
+def parse_audio_script(text: str, scene_id: str) -> tuple[str, list[Proposal]]:
+    display, parsed = extract_fenced_json(text)
+    if not isinstance(parsed, dict) or "sequence" not in parsed:
+        return text, []
+    proposal = Proposal(
+        id=new_id("prp"),
+        type=ProposalType.audio_script_create,
+        status=ProposalStatus.pending,
+        payload={"sceneId": scene_id, "manifest": parsed, "rationale": ""},
+    )
+    return display, [proposal]

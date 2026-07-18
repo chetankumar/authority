@@ -16,10 +16,12 @@ Authority is a local, browser-based, AI-assisted novel-writing studio. This docu
 | `05-ai-system.md` | LangChain, ContextAssembler vs PlaceholderRegistry (who calls what), models, AI-Jobs, enrichment, proposals, worker, SSE |
 | `06-frontend-pages.md` | Every page and modal: layout, contents, button behavior, which APIs each control calls |
 | `07-decisions-and-deferred.md` | Closed decisions (with defaults the author may veto), deferred features, glossary |
+| `08-user-journey.md` | End-to-end journeys traced through UI → API → services |
+| [`../audio-system.md`](../audio-system.md) | Phase 12 — Scene Audio Drama (ElevenLabs); self-contained build spec |
 
 ## Reading order for implementation
 
-Claude Code should read 01 → 02 → 03 → 05 → 04 → 06, then build in the phase order given at the end of `02-architecture-and-launcher.md`.
+Claude Code should read 01 → 02 → 03 → 05 → 04 → 06, then build in the phase order given at the end of `02-architecture-and-launcher.md`. For scene audio, also read [`../audio-system.md`](../audio-system.md) and Phase 12 in [`../BUILD-TODO.md`](../BUILD-TODO.md).
 
 ## Non-negotiable rules (repeated everywhere they matter)
 

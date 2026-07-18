@@ -187,6 +187,33 @@ class Placeholder(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# ElevenLabs (app-level; not a LangChain ModelConfig)
+# ---------------------------------------------------------------------------
+
+
+class VoiceInfo(BaseModel):
+    voiceId: str
+    name: str
+    category: str = ""
+    gender: str = ""
+    age: str = ""
+    accent: str = ""
+    description: str = ""
+    previewUrl: str = ""
+
+
+class ElevenLabsSettingsOut(BaseModel):
+    apiKeyMasked: str | None = None
+    voicesSyncedAt: str | None = None
+
+
+class ElevenLabsSettingsPatch(BaseModel):
+    """Omitted apiKey keeps the stored secret."""
+
+    apiKey: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # app.json root
 # ---------------------------------------------------------------------------
 
@@ -197,3 +224,6 @@ class AppData(BaseModel):
     ai: AISettings = Field(default_factory=AISettings)
     models: list[ModelConfig] = Field(default_factory=list)
     aiJobs: list[AIJobDefinition] = Field(default_factory=list)
+    elevenLabsApiKey: str | None = None
+    elevenLabsVoices: list[VoiceInfo] = Field(default_factory=list)
+    elevenLabsVoicesSyncedAt: str | None = None

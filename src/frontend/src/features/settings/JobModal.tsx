@@ -18,6 +18,7 @@ const OUTPUT_TYPES: { value: OutputType; label: string }[] = [
   { value: "chat", label: "Chat — free reply" },
   { value: "edit-proposals", label: "Edit proposals — returns applyable find-and-replace edits" },
   { value: "metadata-proposals", label: "Metadata proposals — returns applyable field updates" },
+  { value: "audio-script", label: "Audio script — returns a scene audio-drama script proposal" },
 ];
 
 export function JobModal({

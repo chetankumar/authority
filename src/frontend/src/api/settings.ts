@@ -1,7 +1,7 @@
 import { apiGet, apiSend } from "./client";
 
 export type Provider = "anthropic" | "openai" | "gemini" | "openai-compatible" | "ollama";
-export type OutputType = "chat" | "edit-proposals" | "metadata-proposals";
+export type OutputType = "chat" | "edit-proposals" | "metadata-proposals" | "audio-script";
 
 export interface UserSettings {
   name: string | null;

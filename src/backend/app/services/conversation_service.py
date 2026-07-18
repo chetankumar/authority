@@ -26,7 +26,7 @@ from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_tools import ToolRegistry
 from app.services.book_registry import BookRegistry
 from app.services.context_assembler import ContextAssembler, CurrentSceneRef
-from app.services.output_parsers import parse_edit_proposals, parse_metadata_proposals
+from app.services.output_parsers import parse_audio_script, parse_edit_proposals, parse_metadata_proposals
 from app.services.settings_service import SettingsService
 
 log = logging.getLogger("authority.conversations")
@@ -356,6 +356,11 @@ class ConversationService:
                     display, parsed = parse_metadata_proposals(content, scene_id)
                     if parsed:
                         content, proposals = display, [*parsed, *proposals]
+                elif definition is not None and definition.outputType == OutputType.audio_script:
+                    if conv.parentType == ParentType.scene and scene_id:
+                        display, parsed = parse_audio_script(content, scene_id)
+                        if parsed:
+                            content, proposals = display, [*parsed, *proposals]
 
             assistant = Message(
                 id=new_id("msg"),

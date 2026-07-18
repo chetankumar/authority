@@ -65,7 +65,7 @@ Type scale: 12 / 13 / 14 (base) / 16 / 20 / 24 / 30px. Page titles 20/semibold; 
 ### 1.5 Component conventions (used by every page below)
 
 - **Buttons:** *Primary* (accent fill, white text — one per view maximum); *Secondary* (surface, `--line` border); *Ghost* (text-only, for toolbars); *Danger* (danger fill — only inside confirm dialogs, never bare on a page). Icon-buttons get tooltips (600ms delay).
-- **Modals:** centered, 560px (forms) / 720px (Scene Modal) / 800px (Conversation); scrim via `--scrim` (§1.2); Esc closes unless streaming or unsaved fields (then confirm). Title left, × right, actions bottom-right (primary rightmost).
+- **Modals:** centered, 560px (forms) / 720px (Scene Modal) / 800px (Conversation) / ~880px (Audio Modal); scrim via `--scrim` (§1.2); Esc closes unless streaming or unsaved fields (then confirm). Title left, × right, actions bottom-right (primary rightmost).
 - **Popovers** (Bookkeeping, column chooser): anchored, 280px, close on outside-click/Esc.
 - **Toasts:** bottom-right, 4s, one line, past-tense confirmation ("Scene archived", "Committed 9f2c1a"). Errors persist until dismissed.
 - **Badges:** count pills; amber = pending decision, `--ink-faint` = neutral count.
@@ -158,6 +158,7 @@ Models table (AG Grid not needed — plain table): Label · Provider · Model na
 | [Add model] | Opens model modal | |
 | Model modal: Provider select | Drives contextual fields: cloud → Key required; `openai-compatible`/`ollama` → Base URL required, highlighted, placeholder shows LM Studio/Ollama example URLs | Provider rules (doc 04 §3) are taught by the form, not the error message |
 | Key input, hint "Paste a key or use ${ENV_VAR}" | `POST/PATCH /settings/models`; edit modal leaves the field blank-but-untouched (omit = keep stored key) | Secrets never round-trip to the client |
+| **ElevenLabs** section: optional API key (hint: falls back to env `ELEVENLABS_API_KEY`), [Sync voice library], last-synced timestamp | `GET/PATCH /settings/elevenlabs`; `POST .../voices/sync` | Scene audio casting needs a synced voice list; ElevenLabs is not a LangChain model config |
 | Row **Test** ↯ | `POST /settings/models/{id}/test` → button enters a spinner; success → green "OK · {latencyMs}ms" chip + toast "{label} replied"; failure → red "Failed" chip (reason on hover) + persistent error toast naming the fix (unset env var, bad key, unreachable base URL, timeout) | A model config that *looks* right isn't trustworthy until it has actually answered; the check turns "configured" into "works" without leaving Settings — especially for local `ollama`/`openai-compatible` servers that may simply be off |
 | Row edit ✎ / delete 🗑 | Delete → confirm → `DELETE`; 409 → blocked dialog listing AI-Jobs / any of the five AI-task-model references | A model in use can't silently vanish from under jobs |
 | **AI task models** — five selects: Default utility model, Commit message model, Scene summarization model, Character parsing model, AI chat default model | Below the table; each independently `PATCH /settings/ai {<field>}` | Every model that acts without a conversation must be an explicit, visible choice — and different bookkeeping tasks (summarizing vs. matching characters) may warrant different models. The utility model is the shared fallback for whichever of the other four are left unset, plus sundry tasks like chat-thread titling |
@@ -169,7 +170,7 @@ Jobs table: Name · Default model · Output type · actions. [Add AI-Job] → mo
 |---|---|---|
 | Name input | | Appears verbatim in the editor's dropdown |
 | **Prompt textarea with @-autocomplete** | Typing `@` opens an anchored menu fed by `GET /settings/placeholders` (name + description), filters as typed, Enter/Tab inserts | Placeholders are the API between author intent and scene context; autocomplete makes typos structurally unlikely and teaches the vocabulary in place |
-| Output type select with per-option captions: "Chat — free reply" / "Edit proposals — returns applyable find-and-replace edits" / "Metadata proposals — returns applyable field updates" | Stored on the definition; drives server-side parsing (doc 04 §2.1) | The author must understand this choice — it decides whether a job's answer is words or actions |
+| Output type select with per-option captions: "Chat — free reply" / "Edit proposals — returns applyable find-and-replace edits" / "Metadata proposals — returns applyable field updates" / "Audio script — returns a scene audio-drama script proposal" | Stored on the definition; drives server-side parsing (doc 04 §2.1) | The author must understand this choice — it decides whether a job's answer is words or actions |
 | Default model select · [Save job] | `POST/PATCH /settings/ai-jobs`; 422 unknown-placeholder → inline warning listing tokens + [Save anyway] (`force:true`) | Warn-don't-block: the registry will grow; authors may pre-write prompts |
 
 ---
@@ -227,7 +228,7 @@ Grid: default columns Seq · Title · Description · Characters · Chapter · Pa
 
 ## 8. Scene Modal (unified, tabbed) — component, not a route
 
-**Purpose:** everything *about* a scene that isn't its prose. Opened from: graph single-click, table ✎, editor's [Metadata], and create flows (create mode shows Basics only; other tabs appear after first save). 720px, tabs across the top: **Basics · Characters · Summary · Dependencies**.
+**Purpose:** everything *about* a scene that isn't its prose **or its audio**. Opened from: graph single-click, table ✎, editor's [Metadata], and create flows (create mode shows Basics only; other tabs appear after first save). 720px, tabs across the top: **Basics · Characters · Summary · Dependencies**. Audio lives in a separate Editor **Audio Modal**, not here.
 
 ### Basics
 Two-column form: left — Title*, Description* (textarea), Location, Date/Time, Mood, Emotional Arc (all free text). Right — **Sequence** fieldset (Previous / Next SearchableSelects, sentinels pinned top/bottom, hint "Inserting between scenes relinks them automatically"); **Soft placement** fieldset (rows: type select + scene select + ✕; [+ Add placement]); **Structure** fieldset (Chapter select / Part select — selecting one clears and disables the other, hint "A scene belongs to a chapter *or* directly to a part"). **Plotlines** fieldset (Primary plotline — SearchableSelect dropdown, nullable; Secondary plotlines — multi-select tag input for additional plotline assignments; hint "The main narrative thread this scene serves"). Footer: [Archive scene] (ghost, left) · [Cancel] [Save scene].
@@ -259,7 +260,7 @@ Top list — "This scene depends on": rows *{scene title} — {reason}* with ✎
 
 ```
 ┌─ icon rail ─┬────────────────────────────────────────────┬─ right pane 320px ─┐
-│ (auto-      │  tool panel: [AI-Jobs ▾][Metadata]         │ ▸ Notes        (3) │
+│ (auto-      │  tool panel: [AI-Jobs ▾][Audio][Metadata]   │ ▸ Notes        (3) │
 │  collapsed  │              [Bookkeeping][Chat]    [◫]    │ ▸ To-dos       (2)●│
 │  left nav)  ├────────────────────────────────────────────┤ ▸ AI Jobs      (1) │
 │             │  TipTap toolbar: B I H₁ H₂ " • …           │                    │
@@ -277,6 +278,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 | Control | Placement | Behavior | Why it exists |
 |---|---|---|---|
 | **AI-Jobs ▾** | Tool panel | Menu of saved jobs (`GET /settings/ai-jobs`). Pick → `POST /ai-jobs/run` with sceneId + scope: `selection` if the editor has an active selection (selectionText sent), else `full` → Conversation Modal opens on the new conversation, streaming | The author's own toolbox, one gesture from the prose; selection-awareness makes "fix this paragraph" and "review the scene" the same menu |
+| **Audio** | Tool panel | Opens the **Audio Modal** (separate from Scene Modal) — script edit, per-line regen, Play scene playlist | Listen to the scene as an audio drama without leaving the editor; metadata Scene Modal stays for facts only |
 | **Metadata** | Tool panel | Opens the Scene Modal | Facts about the scene without leaving the room |
 | **Bookkeeping** | Tool panel | Popover of toggles: "Update summary when leaving scene" / "Update character involvement when leaving scene" → `PATCH /books/{id} {bookkeeping}`; footer note "Applies to this whole book". Manual ↻ AI-redo lives on the Scene Modal Characters/Summary tabs | Standing consent must be inspectable and revocable exactly where its effects are felt; book-level scope is stated because the button sits on a scene page |
 | **Chat** | Tool panel | `POST /conversations {kind:"chat", parent: scene, aiParticipant: {enabled:true, modelId: chatDefaultModel}}` → Conversation Modal with AI on and the chat default model preselected (falls back to the utility model, then the first configured model). If a selection is active, it rides the first message as `context` and renders as a quoted block | The "I'm stuck" button; selection-as-context is the v1 answer to inline markers |
@@ -299,7 +301,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 
 **Header:** editable title (controlled; blur → `PATCH /conversations/{id}`; full title stored — list UIs truncate with hover; auto-filled from utility-model **3–5 word** semantic title when still Untitled after first send — SSE `title`) · relative timestamp · right cluster: **model select** + **"AI participant" switch** · **Delete** · ×.
 **Body:** message list. User messages right-aligned wash; context excerpts render as bordered quote blocks above the text, labeled "From {scene title}". Assistant messages left, model label in `--ink-faint` above, streaming text with a blinking cursor. Only a run's **first** system message (the resolved prompt) collapses to one line — "Job prompt · show" — expandable; other system messages (an escalation question, an error) render plainly, since the author needs to read them.
-**Proposal cards** inside assistant messages: bordered `--attn-wash` cards. Edit: side-by-side find (strikethrough) / replace + rationale line. Metadata: "Mood: ~~tense~~ → **elegiac**" + rationale. Todo: "☐ {action}". Buttons per card [Reject] [Accept]; message footer [Accept all ({n})] when >1 pending. Applied → `--ok-wash` + ✓; rejected → faded; not-found → amber "This text is no longer in the scene."
+**Proposal cards** inside assistant messages: bordered `--attn-wash` cards. Edit: side-by-side find (strikethrough) / replace + rationale line. Metadata: "Mood: ~~tense~~ → **elegiac**" + rationale. Todo: "☐ {action}". Audio-script: structured per-line table (speaker name, type, text preview, `generation_status` badge). Buttons per card [Reject] [Accept]; message footer [Accept all ({n})] when >1 pending. Applied → `--ok-wash` + ✓; rejected → faded; not-found → amber "This text is no longer in the scene."
 **Composer:** textarea (Enter sends, Shift+Enter newline) · [Send].
 
 | Control | Behavior | Why it exists |
@@ -313,13 +315,32 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 
 ---
 
+## 10.5 Audio Modal — component (Editor toolbar, not Scene Modal)
+
+**Purpose:** edit the saved audio script, synthesize lines, listen. **Layout:** wide modal (~880px); header actions [Generate script] [Generate all pending] [Play scene] [Stop] [Delete audio]; body = scrollable sequence rows. Full build: [`docs/audio-system.md`](../audio-system.md).
+
+| Control | Behavior | Why |
+|---|---|---|
+| Generate script | Runs the author's `audio-script` AI-Job → Conversation Modal | Script half reuses existing job/proposal machinery |
+| Row: text + stability slider | `PATCH .../audio/lines/{itemId}`; marks regenerate when content changes | Author fine-tunes without re-running the whole directing job |
+| Row: Play | `<audio>` → `GET .../audio/lines/{renderedFile}` | Hear one take |
+| Row: Regenerate | `POST .../audio/lines/{itemId}/generate` | Spend credits only on that line |
+| Generate all pending | `POST .../audio/generate`; progress via `audio-progress` SSE | Batch synth for new/regenerate lines |
+| Play scene | Client playlist: play each `renderedFile` in order with speaker/sfx gaps (no stream API) | Listen like a drama without requiring a stitched file |
+| Delete audio | Confirm → `DELETE .../audio` | Recover from a bad run |
+
+Empty state (404): invite to Generate script.
+
+---
+
 ## 11. Character Sheet — `/book/{id}/characters`
 
-**Purpose:** the who's-who dictionary; also the enrichment matcher's vocabulary. **Layout:** 640px column; rows = name (medium) + first line of personality (`--ink-soft`) + scene-count badge; click expands inline to the edit form, grouped **Identity** (Name*, Aliases tag-input, Age, Gender, Nationality, Ethnicity, Occupation), **Craft** (Want, Need, Flaw, Arc, Personality / History / Notes textareas), and **Relationships** (see below), with [Delete] ghost-danger left, [Save] right. [＋ Add character] primary, top-right.
+**Purpose:** the who's-who dictionary; also the enrichment matcher's vocabulary **and** ElevenLabs voice casting for scene audio. **Layout:** 640px column; rows = name (medium) + first line of personality (`--ink-soft`) + scene-count badge; click expands inline to the edit form, grouped **Identity** (Name*, Aliases tag-input, Age, Gender, Nationality, Ethnicity, Occupation), **Craft** (Want, Need, Flaw, Arc, Personality / History / Notes textareas), **Voice** (SearchableSelect over synced ElevenLabs voices + preview + [Suggest voice]), and **Relationships** (see below), with [Delete] ghost-danger left, [Save] right. [＋ Add character] primary, top-right.
 
 | Control | Behavior | Why |
 |---|---|---|
 | Aliases tag-input, hint "Nicknames and titles the prose uses — 'the Widow', 'Marlow'" | `POST/PATCH /characters`; 422 uniqueness conflict → inline "Already used by {name}" | Aliases are functional: they're how enrichment recognizes characters in prose; the hint teaches that |
+| Voice select + preview + [Suggest voice] | Options from `GET /settings/elevenlabs/voices`; preview uses `previewUrl`; Suggest → `POST .../characters/{id}/voice/suggest` pre-fills without saving; Save → `PATCH` `voiceId`/`voiceName` | Casting is a book-level decision; Accept on an audio script fails if a tagged speaker has no voice |
 | Want / Need / Flaw / Arc | Free text; `PATCH /characters/{id}` | The engine of character-driven fiction — an external goal in tension with an internal need, a flaw that generates conflict, and how the character changes |
 | Delete | `DELETE`; 409 → Blocked-deletion dialog listing referencing scenes **and** character-relationship rows as links | Same strict rule as structure: references are unwound by the author, never swept |
 | Scene-count badge | From `sceneCount` | Instantly shows who's load-bearing and who's vestigial |
@@ -341,7 +362,7 @@ A list of this character's relationships to others, each rendered as "*{this cha
 | **Parts tab:** ordered rows, drag-and-drop reorder, ✎, 🗑, [＋ Add part] | Drag-and-drop → `POST /parts/reorder` with new ID order; 🗑 → `DELETE`, 409 → Blocked dialog | Drag-and-drop for reorder: direct, tactile, seq-based ordering underneath |
 | **Chapters tab:** rows grouped under part headings + "Unassigned" group; each row has a Part select | Same CRUD; Part select → `PATCH {partId}` | The grouping *is* the book's table of contents taking shape; "Unassigned" keeps un-homed chapters visible, not lost |
 | **Plotlines tab:** rows with scene-count badges; CRUD modal (title*, description) | `DELETE` 409-blocked while scenes linked | Scene counts expose thin sideplots at a glance |
-| **Book tab:** Story summary textarea · Book system prompt textarea (hint: "Prepended to every AI request for this book — genre, voice, style rules") | [Save] → `PATCH /books/{id}` | The two book-level texts that shape every AI interaction deserve a deliberate, labeled home |
+| **Book tab:** Story summary · Book system prompt · Narrator voice (SearchableSelect) · **Git ignore** textarea (one pattern per line; `*.tmp`/`*.mp3` always kept) | [Save] → `PATCH /books/{id}` for texts/narrator; gitignore → `PUT /books/{id}/gitignore` | Book-level AI context, narrator casting for audio, and ignore rules for regenerable mp3s |
 
 ---
 

@@ -452,8 +452,18 @@ CLICK     [Compile book]
 
 ---
 
+## J19 — Scene audio drama
+
+*Full journey and UI/API contract: [`docs/audio-system.md`](../audio-system.md).*
+
+Setup once: AI Settings (ElevenLabs key optional — env `ELEVENLABS_API_KEY`; sync voices) → AI-Jobs (`audio-script`) → Character voices + Narrator → book gitignore includes `*.mp3`.
+
+Per scene: Editor **Audio** → Generate script (AI-Job → proposal → Accept merge) → Generate pending / per-line regen → **Play scene** (browser playlist over `FileResponse` mp3s; no streaming server).
+
+---
+
 ## The loop
 
-J11 → J12 → J13/J14 → J15 → J16 → J17 is the author's daily cycle: write, let the system keep the books, consult when stuck, apply what's accepted, honor the dependencies, commit the day. J18 is the horizon it all points at.
+J11 → J12 → J13/J14 → J15 → J16 → J17 is the author's daily cycle: write, let the system keep the books, consult when stuck, apply what's accepted, honor the dependencies, commit the day. J18 is the horizon it all points at. J19 (audio) is an optional listen path off the editor — script via the same proposal gate as J14/J15; synthesis is an explicit paid click.
 
 J12 and J16.5 are the two traces with no author waiting on them — the system keeping its own books while the prose gets written. Both follow the same discipline: the expensive work (a model call, a `git status`) is deferred (leave-scene for enrichment; 5s debounce for git) and never blocks the save, and the author is told only when there's something to decide.

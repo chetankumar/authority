@@ -121,6 +121,8 @@ class BookDataManager:
             hasCover=_find_cover(self._dir) is not None,
             systemPrompt=config.systemPrompt,
             storySummary=config.storySummary,
+            narratorVoiceId=config.narratorVoiceId,
+            narratorVoiceName=config.narratorVoiceName,
             bookkeeping=config.bookkeeping,
             parts=parts,
             chapters=chapters,

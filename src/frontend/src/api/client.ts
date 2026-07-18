@@ -85,7 +85,8 @@ export type BookEventType =
   | "scene-updated"
   | "todos-created"
   | "git-status"
-  | "compile-done";
+  | "compile-done"
+  | "audio-progress";
 
 export interface BookEvent<T = unknown> {
   type: BookEventType;
@@ -98,6 +99,7 @@ const SSE_EVENT_TYPES: BookEventType[] = [
   "todos-created",
   "git-status",
   "compile-done",
+  "audio-progress",
 ];
 
 const SSE_RETRY_BASE_MS = 1000;

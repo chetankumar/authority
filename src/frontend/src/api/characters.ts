@@ -25,6 +25,8 @@ export interface Character {
   personality: string;
   history: string;
   notes: string;
+  voiceId: string;
+  voiceName: string;
   sceneCount: number;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +47,8 @@ export interface CharacterInput {
   personality?: string;
   history?: string;
   notes?: string;
+  voiceId?: string;
+  voiceName?: string;
 }
 
 export interface CharacterRelationship {

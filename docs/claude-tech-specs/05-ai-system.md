@@ -102,8 +102,12 @@ Server-defined; exposed via `GET /api/settings/placeholders`; drives the `@` aut
 | `@all_scene_summaries` | Every active scene's title + summary in seq order |
 | `@story_summary` | book.json storySummary |
 | `@plotlines` | Plotline titles + descriptions, this scene's links flagged |
+| `@scene_speakers` | Available speaker_id values for audio-script jobs: `speaker_id "narrator" — Narrator` plus tagged characters as `speaker_id "chr-…" — Name`. **No voice ids.** Empty tags → only-narrator message |
+| `@existing_audio_script` | Current `scenes/{id}/audio/manifest.json` as indented JSON, or `"(none — first generation)"` |
 
 Unknown tokens are left literal at resolve time but flagged at AI-Job definition save.
+
+`@scene_characters` (full sheets) is not a substitute for `@scene_speakers` (casting id list).
 
 ## AI-Jobs: end-to-end run
 
@@ -114,6 +118,7 @@ Unknown tokens are left literal at resolve time but flagged at AI-Job definition
    - `chat` — reply is plain conversation.
    - `edit-proposals` — model instructed (via injected format instructions) to emit edits as structured find/replace items; parsed into `edit` proposals on the message.
    - `metadata-proposals` — same pattern for metadata-update proposals.
+   - `audio-script` — fenced JSON manifest → one `audio-script-create` proposal; Accept merges into `scenes/{id}/audio/manifest.json` (doc 04 §16). Scene-parented jobs only.
 5. Author continues the conversation freely; accepts/rejects proposals whenever. Status rides the book SSE channel (`conversation` events) and shows in the AI Jobs accordion pane.
 
 ## Enrichment (bookkeeping)

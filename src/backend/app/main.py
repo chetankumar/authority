@@ -17,11 +17,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import __version__
+from app.api.audio.router import router as audio_router
 from app.api.books.router import router as books_router
 from app.api.characters.router import rel_router as character_relationships_router
 from app.api.characters.router import router as characters_router
 from app.api.conversations.router import router as conversations_router
-from app.api.deps import get_conversation_worker, get_git_status_worker
+from app.api.deps import get_audio_worker, get_conversation_worker, get_git_status_worker
 from app.api.events.router import router as events_router
 from app.api.git.router import router as git_router
 from app.api.health.router import router as health_router
@@ -51,24 +52,30 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("Frontend build not found at %s — run the frontend build.", dist)
 
+    import shutil
+
+    if shutil.which("ffmpeg") is None:
+        log.warning(
+            "ffmpeg not found on PATH — scene audio stitching (pydub) will fail until it is installed."
+        )
+
     # Standing background task: keeps the git badge current without ever putting
     # git on a write path (doc 02 §backend-internal-architecture, doc 07 §25).
     git_worker = asyncio.create_task(get_git_status_worker().run())
     conversation_worker = asyncio.create_task(get_conversation_worker().run())
+    audio_worker = asyncio.create_task(get_audio_worker().run())
 
     try:
         yield
     finally:
+        audio_worker.cancel()
         conversation_worker.cancel()
         git_worker.cancel()
-        try:
-            await conversation_worker
-        except asyncio.CancelledError:
-            pass
-        try:
-            await git_worker
-        except asyncio.CancelledError:
-            pass
+        for task in (audio_worker, conversation_worker, git_worker):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         log.info("Authority shutting down")
 
 
@@ -103,6 +110,7 @@ app.include_router(todos_router, prefix="/api")
 app.include_router(conversations_router, prefix="/api")
 app.include_router(proposals_router, prefix="/api")
 app.include_router(resources_router, prefix="/api")
+app.include_router(audio_router, prefix="/api")
 app.include_router(git_router, prefix="/api")
 app.include_router(events_router, prefix="/api")
 

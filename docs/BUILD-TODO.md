@@ -23,7 +23,7 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | doc 07 | `docs/claude-tech-specs/07-decisions-and-deferred.md` |
 | doc 08 | `docs/claude-tech-specs/08-user-journey.md` |
 
-**Last audited:** 2026-07-18 (**Phase 11 — Book Resources & book-level AI chat added.** New `resources/` book-folder area (files kept beside the manuscript — no id, no index, scanned like the bookshelf itself) plus a book-parented (`parentType: "book"`) AI chat, reusing `ConversationModal` unchanged (`sceneId` was already optional there). The only real gap closed was a listing endpoint: `GET /books/{b}/conversations` for book-parented threads — every other part of the conversation stack (enums, `ContextAssembler`, read tools, the modal) was already parent-agnostic. AI can read resources freely (`list_resources`/`get_resource`, ordinary ungated read tools) but creates one only via a proposal (`propose_resource_create` → `resource-create` proposal type → author Accept → `ProposalService._apply_resource_create`) — a resource file is neither prose nor bookkeeping, so it gets no execute tool, per doc 01's write-permission table (a new row was added there). See Phase 11 below.)
+**Last audited:** 2026-07-18 (**Phase 12 — Scene Audio Drama implemented.** End-to-end: models/secrets, book `.gitignore` + Metadata editor, ElevenLabs settings + voice casting, AI-Job `audio-script` + Accept merge, AudioService/Worker + APIs, Editor Audio Modal + playlist, proposal card, SSE `audio-progress`. Spec: `docs/audio-system.md`.)
 
 **Previously:** 2026-07-18 (**`Job` entity collapsed into `Conversation`.** There is no more `Job`/`jobs.json`/`JobService`/`JobWorker`/`EscalationService`/`api/jobs`/frontend `api/jobs.ts` — a *run* (an AI-Job the author triggers, or an automatic bookkeeping pass) is now just a conversation, distinguished by `kind` (`ai-job`/`bookkeeping`) with its lifecycle in `ConversationStatus` (`open·queued·running·waiting·done·failed·archived`). AI-Job runs are *prepared* synchronously by the new `AiJobService` (resolve prompt → open conversation at `open`) and run when the author sends; automatic bookkeeping conversations are created `queued` by `EnrichmentService` and drained by the new `ConversationWorker`. Enrichment writes fields via new **execute tools** (`ai_tools/execute.py`: `set_scene_summary`/`set_scene_characters` through `SceneService.update_scene`), and asks the author in-thread (status `waiting`) instead of escalating to a separate chat. SSE `job` event → `conversation`. Legacy `db/jobs.json` is deleted on load. Rows below mentioning `JobService`/`job_service.py`/`api/jobs.ts`/`GET /jobs`/`EscalationService` are historical — the feature they describe now lives in the conversation surface. Docs 01–08 updated to match. Earlier note follows:) (Todos vertical slice landed — `TDO-API-*`, `TDO-SVC-01`, `SCN-API-08`, `TSK-FE-*`, `EDT-FE-23` — with a storage split that **deviates from doc 03/04's single flat `db/todos.json`**: scene-parented todos now live in `scenes/{id}/todos.json`, joining meta/bookkeeping/dependencies/relationships in the per-scene folder split, while chapter/part/book-parented todos stay in the book-level file; `TodoService` resolves either tier from a flat id, same pattern as soft relationships. The book-level `GET /todos` also takes `?includeScenes=true` to aggregate every scene's todos for the Tasks page's toggle — a plain per-request scan, not a maintained index, since it's a rare human-paced read rather than a hot path. Dependency-todo fanout is implemented (previously stubbed); open todos no longer block scene deletion (previously did). `docs/claude-tech-specs/03-data-storage.md` and `04-api-reference.md` still describe the old single-file design and have not yet been updated to match — flagged here, not fixed, since editing the tech spec wasn't requested.)
 
@@ -607,6 +607,68 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 
 ---
 
+## Phase 12 — Scene Audio Drama
+
+> **Read:** [`docs/audio-system.md`](audio-system.md) (authoritative build spec), doc 01 §write-permission, doc 03 §audio/, doc 04 §16, doc 05 placeholders + `audio-script` output type, doc 06 Editor / Characters / Metadata Book / Conversation Modal.
+
+### Data model & settings
+
+| ID | Status | Item | User story | Files |
+|---|---|---|---|---|
+| AUD-MODEL-01 | ✅ | `models/audio.py` — AudioManifest, Speaker, AudioSequenceItem, VoiceSettings | Persist a scene's audio script + synthesis links. | `src/backend/app/models/audio.py` |
+| AUD-MODEL-02 | ✅ | Enums: `OutputType.audio_script`, `ProposalType.audio_script_create`, line/synth status enums | Wire script jobs into existing AI output parsing. | `src/backend/app/models/enums.py` |
+| AUD-MODEL-03 | ✅ | `AudioScriptCreatePayload` | Accept a whole-script proposal. | `src/backend/app/models/proposal.py` |
+| AUD-MODEL-04 | ✅ | `voiceId`/`voiceName` on Character models | Cast each character once for the book. | `src/backend/app/models/character.py` |
+| AUD-MODEL-05 | ✅ | `narratorVoiceId`/`narratorVoiceName` on book config | Cast the narrator at book level. | `src/backend/app/models/book.py` |
+| AUD-SET-01 | ✅ | ElevenLabs fields on `AppData` + `VoiceInfo` | Store optional key + cached voice library. | `src/backend/app/models/settings.py` |
+| AUD-SET-02 | ✅ | `core/secrets.py` — `resolve_secret(..., default_env="ELEVENLABS_API_KEY")` | Env key works without UI paste; models still resolve `${ENV_VAR}`. | `src/backend/app/core/secrets.py`, `model_factory.py` |
+
+### Gitignore (book)
+
+| ID | Status | Item | User story | Files |
+|---|---|---|---|---|
+| AUD-GIT-01 | ✅ | Scaffold `.gitignore` with `*.tmp` + `*.mp3`; ensure-on-open | Generated mp3s never enter the book repo. | `book_service.py` |
+| AUD-GIT-02 | ✅ | `GET/PUT /books/{b}/gitignore` + Metadata Book UI | Author can see/edit ignore patterns; `*.mp3`/`*.tmp` always re-injected if missing. | books API, `MetadataPage.tsx` |
+
+### Services & worker
+
+| ID | Status | Item | User story | Files |
+|---|---|---|---|---|
+| AUD-SVC-01 | ✅ | `AudioService` — paths, merge `save_manifest`, synthesize_line, stitch, update_line | Single writer for ElevenLabs + audio folder. | `audio_service.py` |
+| AUD-SVC-02 | ✅ | `parse_audio_script` + `AUDIO_SCRIPT_FORMAT_INSTRUCTIONS` | Model reply → one script proposal. | `output_parsers.py` |
+| AUD-SVC-03 | ✅ | `AiJobService.prepare` audio-script branch | Format instructions appended like edit/metadata jobs. | `ai_job_service.py` |
+| AUD-SVC-04 | ✅ | Placeholders `@scene_speakers` + `@existing_audio_script` | Directing prompt gets casting ids + prior manifest. | `placeholder_registry.py` |
+| AUD-SVC-05 | ✅ | ConversationService dispatch for `audio_script` | Scene-parented job parses into proposals. | `conversation_service.py` |
+| AUD-SVC-06 | ✅ | `ProposalService._apply_audio_script_create` (merge) | Accept diff-applies; preserves unchanged `renderedFile`. | `proposal_service.py` |
+| AUD-SVC-07 | ✅ | SettingsService ElevenLabs key + voice sync | Sync library once; GET voices is cached. | `settings_service.py`, settings router |
+| AUD-SVC-08 | ✅ | `suggest_voice` one-shot | AI suggests a voice; author still Saves. | structure/characters API |
+| AUD-WRK-01 | ✅ | `AudioWorker` + SSE `audio-progress` | Batch/single-line synth with progress. | `audio_worker.py`, `main.py`, `deps.py` |
+| AUD-DEP-01 | ✅ | `elevenlabs`, `pydub` + ffmpeg warning | TTS + stitch deps; missing ffmpeg is legible. | `requirements.txt`, `main.py` |
+
+### API
+
+| ID | Status | Endpoint | User story | Files |
+|---|---|---|---|---|
+| AUD-API-01 | ✅ | Scene audio CRUD/generate/serve | Manifest, line edit, generate, FileResponse mp3s. | `api/audio/router.py` |
+| AUD-API-02 | ✅ | `/settings/elevenlabs` + voices sync/list | Configure key and sync library. | settings router |
+| AUD-API-03 | ✅ | `POST .../characters/{id}/voice/suggest` | Suggest without writing. | characters router |
+
+### Frontend
+
+| ID | Status | Control | User story | Files |
+|---|---|---|---|---|
+| AUD-FE-01 | ✅ | Editor toolbar **Audio** → Audio Modal | Listen/edit on the scene itself (not Scene Modal). | `EditorPage.tsx`, `features/audio/AudioModal.tsx` |
+| AUD-FE-02 | ✅ | `api/audio.ts` + `queries/audio.ts` + `keys.audio` | Typed client + cache. | frontend api/queries |
+| AUD-FE-03 | ✅ | Audio Modal: edit rows, per-line play/regen, Play scene playlist | Edit script; regen one line; playlist with gaps. | `features/audio/` |
+| AUD-FE-04 | ✅ | `audio-script-create` proposal card | Review merge preview before Accept. | `ConversationModal.tsx` |
+| AUD-FE-05 | ✅ | `audio-progress` in `useBookEvents` | Progress without refetch spam. | `useBookEvents.ts` |
+| AUD-FE-06 | ✅ | Character Sheet voice picker + preview + Suggest | Cast voices before Accept can succeed. | `CharactersPage.tsx` |
+| AUD-FE-07 | ✅ | Metadata Book — narrator voice + gitignore | Narrator casting + ignore editor. | `MetadataPage.tsx` |
+| AUD-FE-08 | ✅ | AI Settings — ElevenLabs + Sync | Optional key + voice library. | `AISettingsPage.tsx` |
+| AUD-FE-09 | ✅ | AI-Jobs — `audio-script` output type | Author can define the directing job. | `JobModal.tsx` |
+
+---
+
 ## Shared frontend infrastructure
 
 | ID | Status | Item | User story | Files |
@@ -648,24 +710,19 @@ Living checklist for the full Authority v1 spec (`docs/claude-tech-specs/`). Eve
 | J16.5 | Ambient — the badge keeps itself honest | ✅ | — |
 | J17 | Git deliberate save | ✅ | — |
 | J18 | Compilation | ⬜ | Phase 9 |
+| J19 | Scene audio drama | ✅ | Phase 12 |
 
 ---
 
 ## Recommended build order (next sessions)
 
-**Done:** ~~Phase 6a~~ (StructureService + parts/chapters/plotlines + Metadata page) · ~~Phase 8~~ (EventHub + SSE + GitService + GitStatusWorker + Git page + badge).
+**Done:** ~~Phase 6a~~ · ~~Phase 8~~ · ~~Phase 11~~ (Resources + book chat) · ~~Phase 12~~ (Scene Audio Drama).
 
-1. **Phase 6b** — Characters API + Character Sheet page + Scene Modal Characters tab
-2. **Phase 6c** — Dependencies API + Scene Modal Dependencies tab + todo fanout + Tasks page + Scene Modal Summary tab
-3. **Phase 3 gap** — `PATCH /api/books/{id}` + Edit Book modal + Bookkeeping popover
-4. **Phase 7a** — Conversations + messages + Conversation Modal (note/chat paths) — *the SSE channel already exists; wire `scene-updated`/`job` mappings into the existing `useBookEvents`*
-5. **Phase 7b** — Worker + JobService + EnrichmentService + AI-Jobs run + editor tool panel — *follow `GitStatusWorker`'s shape: a standing asyncio task started in `main.py`'s lifespan*
-6. **Phase 7c** — Proposals (accept/reject) + proposal cards in Conversation Modal
-7. **Phase 9** — CompileService + readiness strip + compile flow
-8. **Phase 1 finish** — Launchers + filelock
-9. **Phase 10** — Polish (nav collapse, Popover, Badge, confirm dialogs, reduced motion)
+1. **Phase 9** — CompileService + readiness strip + compile flow
+2. **Phase 1 finish** — Launchers + filelock
+3. **Phase 10** — Polish (nav collapse, Popover, Badge, confirm dialogs, reduced motion)
 
-> **Note on the old ordering:** this list previously put "EventHub + SSE endpoint + `useBookEvents`" inside Phase 7 (AI layer), which made the git badge look blocked on AI work. It never was — the hub is generic `core/` infrastructure (doc 07 §24). Phase 8 built it. Phase 7 now inherits it and only adds its own event mappings.
+> Older Phase 6b/7 items that remain open stay tracked in their phase tables above.
 
 ---
 

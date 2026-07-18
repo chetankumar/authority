@@ -53,6 +53,13 @@ export function useBookEvents(bookId: string | null): void {
             }
             break;
           }
+          case "audio-progress": {
+            const data = event.data as { sceneId?: string };
+            if (data.sceneId) {
+              void qc.invalidateQueries({ queryKey: keys.audio(bookId, data.sceneId) });
+            }
+            break;
+          }
           default:
             break;
         }
@@ -64,6 +71,7 @@ export function useBookEvents(bookId: string | null): void {
         qc.invalidateQueries({ queryKey: ["conversations", bookId] });
         qc.invalidateQueries({ queryKey: ["todos", bookId] });
         qc.invalidateQueries({ queryKey: ["sceneTodos", bookId] });
+        qc.invalidateQueries({ queryKey: ["audio", bookId] });
       },
     });
   }, [bookId, qc]);

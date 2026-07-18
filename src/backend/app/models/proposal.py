@@ -72,6 +72,12 @@ class ResourceCreatePayload(BaseModel):
     rationale: str = ""
 
 
+class AudioScriptCreatePayload(BaseModel):
+    sceneId: str
+    manifest: dict[str, Any]  # validated as AudioManifest inside ProposalService
+    rationale: str = ""
+
+
 class Proposal(BaseModel):
     id: str
     type: ProposalType

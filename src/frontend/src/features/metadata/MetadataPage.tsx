@@ -21,11 +21,14 @@ import {
   usePatchBook,
 } from "../../queries/structure";
 import { useBook } from "../../queries/books";
+import { useElevenLabsVoices, useGitignore, usePutGitignore } from "../../queries/audio";
 import { Modal } from "../../components/Modal";
 import {
   BlockedDeletionDialog,
   type BlockedRef,
 } from "../../components/BlockedDeletionDialog";
+import { SearchableSelect } from "../../components/SearchableSelect";
+import { useToast } from "../../components/Toast";
 import { Button, Field, Input, Select } from "../../components/ui";
 
 const TABS = [
@@ -710,34 +713,63 @@ function PlotlinesTab({
 function BookTab({ bookId }: { bookId: string }) {
   const { data: book } = useBook(bookId);
   const patchBook = usePatchBook(bookId);
+  const voicesQ = useElevenLabsVoices();
+  const gitignoreQ = useGitignore(bookId);
+  const putGitignore = usePutGitignore(bookId);
+  const toast = useToast();
 
   const [storySummary, setStorySummary] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
+  const [narratorVoiceId, setNarratorVoiceId] = useState("");
+  const [narratorVoiceName, setNarratorVoiceName] = useState("");
   const [summaryOnSave, setSummaryOnSave] = useState(false);
   const [charactersOnSave, setCharactersOnSave] = useState(false);
+  const [gitignoreText, setGitignoreText] = useState("");
 
   useEffect(() => {
     if (!book) return;
     setStorySummary(book.storySummary);
     setSystemPrompt(book.systemPrompt);
+    setNarratorVoiceId(book.narratorVoiceId ?? "");
+    setNarratorVoiceName(book.narratorVoiceName ?? "");
     setSummaryOnSave(book.bookkeeping.summaryOnSave);
     setCharactersOnSave(book.bookkeeping.charactersOnSave);
   }, [book]);
+
+  useEffect(() => {
+    if (gitignoreQ.data) setGitignoreText(gitignoreQ.data.patterns.join("\n"));
+  }, [gitignoreQ.data]);
 
   if (!book) return null;
 
   const isDirty =
     storySummary !== book.storySummary ||
     systemPrompt !== book.systemPrompt ||
+    narratorVoiceId !== (book.narratorVoiceId ?? "") ||
+    narratorVoiceName !== (book.narratorVoiceName ?? "") ||
     summaryOnSave !== book.bookkeeping.summaryOnSave ||
     charactersOnSave !== book.bookkeeping.charactersOnSave;
+
+  const gitignoreDirty =
+    gitignoreText.trim() !== (gitignoreQ.data?.patterns.join("\n") ?? "").trim();
 
   function handleSave() {
     patchBook.mutate({
       storySummary,
       systemPrompt,
+      narratorVoiceId,
+      narratorVoiceName,
       bookkeeping: { summaryOnSave, charactersOnSave },
     });
+    if (gitignoreDirty) {
+      putGitignore.mutate(
+        gitignoreText.split("\n").map((l) => l.trim()).filter(Boolean),
+        {
+          onSuccess: () => toast.success("Git ignore saved"),
+          onError: (e) => toast.error(e instanceof Error ? e.message : "Git ignore save failed"),
+        },
+      );
+    }
   }
 
   return (
@@ -763,6 +795,35 @@ function BookTab({ bookId }: { bookId: string }) {
         />
       </Field>
 
+      <Field label="Narrator voice" hint="ElevenLabs voice for narration lines in scene audio">
+        <SearchableSelect
+          options={(voicesQ.data ?? []).map((v) => ({
+            value: v.voiceId,
+            label: v.name,
+          }))}
+          value={narratorVoiceId || null}
+          onChange={(v) => {
+            const voice = (voicesQ.data ?? []).find((x) => x.voiceId === v);
+            setNarratorVoiceId(v ?? "");
+            setNarratorVoiceName(voice?.name ?? "");
+          }}
+          placeholder="Choose narrator voice…"
+          clearable
+        />
+      </Field>
+
+      <Field
+        label="Git ignore"
+        hint="*.mp3 keeps generated audio out of git. manifest.json is still tracked. *.tmp and *.mp3 are always kept."
+      >
+        <textarea
+          className="w-full rounded-control border border-line bg-surface px-2 py-2 font-mono text-[0.8125rem] text-ink outline-none focus:border-accent"
+          rows={4}
+          value={gitignoreText}
+          onChange={(e) => setGitignoreText(e.target.value)}
+        />
+      </Field>
+
       <div className="space-y-2">
         <label className="flex items-center gap-2 font-ui text-[0.875rem] text-ink">
           <input
@@ -782,7 +843,7 @@ function BookTab({ bookId }: { bookId: string }) {
         </label>
       </div>
 
-      <Button variant="primary" onClick={handleSave} disabled={!isDirty}>
+      <Button variant="primary" onClick={handleSave} disabled={!isDirty && !gitignoreDirty}>
         Save
       </Button>
     </div>

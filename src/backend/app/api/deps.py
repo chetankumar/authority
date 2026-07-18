@@ -9,6 +9,7 @@ from app.core.event_hub import EventHub
 from app.services.ai_job_service import AiJobService
 from app.services.ai_orchestrator import AIOrchestrator
 from app.services.ai_tools import ToolRegistry
+from app.services.audio_service import AudioService
 from app.services.book_registry import BookRegistry
 from app.services.book_scanner import BookScanner
 from app.services.book_service import BookService
@@ -22,6 +23,7 @@ from app.services.scene_service import SceneService
 from app.services.settings_service import SettingsService
 from app.services.structure_service import StructureService
 from app.services.todo_service import TodoService
+from app.worker.audio_worker import AudioWorker
 from app.worker.conversation_worker import ConversationWorker
 from app.worker.git_status_worker import GitStatusWorker
 
@@ -110,6 +112,16 @@ def get_conversation_service() -> ConversationService:
 
 
 @lru_cache(maxsize=1)
+def get_audio_service() -> AudioService:
+    return AudioService(get_book_registry(), get_settings_service())
+
+
+@lru_cache(maxsize=1)
+def get_audio_worker() -> AudioWorker:
+    return AudioWorker(get_audio_service(), get_event_hub())
+
+
+@lru_cache(maxsize=1)
 def get_proposal_service() -> ProposalService:
     return ProposalService(
         get_book_registry(),
@@ -118,6 +130,7 @@ def get_proposal_service() -> ProposalService:
         get_structure_service(),
         get_todo_service(),
         get_resource_service(),
+        get_audio_service(),
     )
 
 

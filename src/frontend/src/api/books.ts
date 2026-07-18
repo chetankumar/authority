@@ -34,6 +34,8 @@ export interface Book {
   hasCover: boolean;
   systemPrompt: string;
   storySummary: string;
+  narratorVoiceId: string;
+  narratorVoiceName: string;
   bookkeeping: Bookkeeping;
   parts: Part[];
   chapters: Chapter[];
@@ -42,6 +44,8 @@ export interface Book {
 export interface BookPatch {
   systemPrompt?: string;
   storySummary?: string;
+  narratorVoiceId?: string;
+  narratorVoiceName?: string;
   bookkeeping?: Bookkeeping;
 }
 

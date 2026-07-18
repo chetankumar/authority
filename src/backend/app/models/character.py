@@ -38,6 +38,8 @@ class CharacterRecord(BaseModel):
     personality: str = ""
     history: str = ""
     notes: str = ""
+    voiceId: str = ""
+    voiceName: str = ""
     createdAt: str
     updatedAt: str
 
@@ -80,6 +82,8 @@ class CharacterCreate(BaseModel):
     personality: str = ""
     history: str = ""
     notes: str = ""
+    voiceId: str = ""
+    voiceName: str = ""
 
 
 class CharacterUpdate(BaseModel):
@@ -99,6 +103,8 @@ class CharacterUpdate(BaseModel):
     personality: str | None = None
     history: str | None = None
     notes: str | None = None
+    voiceId: str | None = None
+    voiceName: str | None = None
 
 
 class CharacterRelationshipCreate(BaseModel):

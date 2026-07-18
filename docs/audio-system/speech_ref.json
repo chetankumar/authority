@@ -1,0 +1,710 @@
+{
+    "title": "Private Jet — San Francisco Arrival",
+    "speakers": {
+      "1": {
+        "name": "Narrator",
+        "role": "narration",
+        "voice_name": "Rachel",
+        "voice_id": "21m00Tcm4TlvDq8ikWAM",
+        "direction": "Close-third empath, not a neutral anchor. Mirrors the interiority of whoever holds the POV: Susan's disgust and dread, the man's anxiety, tenderness with the attendant, terror at the climax. One degree cooler than the character — feeling it, not performing it."
+      },
+      "2": {
+        "name": "Susan",
+        "role": "dialogue",
+        "voice_name": "Lily",
+        "voice_id": "pFZP5JQG7iQjIQuC4Bku",
+        "direction": "Flat polite mask over terror. The mask holds in spoken dialogue; it only cracks in whispered internals and at id 60/63/65."
+      },
+      "3": {
+        "name": "The man",
+        "role": "dialogue",
+        "voice_name": "Daniel",
+        "voice_id": "onwK4e9ZLuTAKqWW03F9",
+        "direction": "A bad actor. Warm mask leaks from line one, drops entirely on the phone, is smoothest during the lie, and cracks into impatience by the end. His four 'Susan?'s are his arc."
+      },
+      "4": {
+        "name": "Flight Attendant",
+        "role": "dialogue",
+        "voice_name": "Sarah",
+        "voice_id": "EXAVITQu4vr4xnSDxMaL",
+        "direction": "Whispered warmth throughout — the scene's only safe voice — until the scream shatters it."
+      }
+    },
+    "notes": {
+      "narration_principle": "The narrator tracks POV, not neutrality. Beat map: ids 2-5 Susan's trauma (somber/disgusted/trembling); 7-8 bitter spiral; 10 contempt; 13 whispered intimacy; 16-17, 24, 27-28 the man's POV (tense/conspiratorial); 29-31 numbness accelerating into escape-anxiety; 33 panic under planning; 35-41 the warm movement (tender, the emotional oasis); 42 countdown; 45+ jolts and dread; 67 dissociation; 74-83 horror. Tags shift at beat boundaries, not per line.",
+      "stability_legend": "Every non-sfx item carries voice_settings. stability 0.0 = Creative (max tag response, hallucination risk — use for interiority and mask-breaks, generate 2-3 takes and select); 0.5 = Natural (consistent — use for masked dialogue, anchor narration, and all very short lines); 1.0 = Robust (suppresses tags = machine-flat — reserved for the Lens texts, where tag-deafness IS the performance).",
+      "text_conventions": "v3 does not support SSML breaks; pacing via [short pause]/[long pause], ellipses for trailing dread, em-dashes for mid-sentence stress breaks. Numbers spelled for pronunciation (Thirty, Three-eighteen). Reaction tags ([gasps], [sighs]) let the narrator physically react before describing.",
+      "sfx": "Nodes marked 'sfx' are skipped in TTS and added in post-production."
+    },
+    "sequence": [
+      {
+        "id": 1,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[nervously][warmly] Susan?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 2,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] The woman kept looking out the window of the jet.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 3,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[somber] San Francisco. [short pause] Home. [long pause] That's what she wanted.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 4,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[somber] No. [short pause] What she wanted... was to get out of Cabo. From that hotel. From that room. [long pause] [disgusted] From that taste — that still lingered in her mouth.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 5,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[disgusted] She balked as her throat seized with the smell. [short pause] The memory of that smell. Of that taste. [quietly] That's what she wanted to get away from... [long pause] [voice trembling] But it wouldn't leave her alone.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 6,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[calmly] You haven't touched your champagne.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 7,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] She eyed the glass of champagne that lay in front of her. It could kill the taste... maybe just for a second. [bitter] But there was no way in hell she could drink that. [short pause] Not from him.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 8,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[bitter] But she did make a mental note. To buy a bottle of whiskey from Target on the way home, and flush it down her throat till it burned away every trace of the night from her mind. [long pause] [quietly] Till the only thing she could taste... was fumes.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 9,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[warmly][hesitant] Susan?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 10,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[flatly] She turned away from the window and looked at him. A pale, wiry man in khakis and polo. [short pause] [bitter] Those stupid sunglasses.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 11,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[warmly] Why don't we talk somewhere you'd feel more comfortable?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 12,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[flatly] I don't want to talk.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 13,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[whispers] It was true... [short pause] but she was terrified inside.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 14,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[calmly] It's been four hours. [short pause] You haven't said a word.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 15,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[flatly][tense] I'm fine.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 16,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] The man squirmed. He knew what that meant. He eyed the woman, trying to think of something to say. [short pause] The jet was taxiing towards the gate. [quietly] As soon as they stepped out... she'd be gone.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 17,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] He pulled up his phone.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 18,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[whispers][anxious] She's not talking.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 19,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] Lens... read the name of the contact.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 20,
+        "type": "dialogue",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[deadpan] Tell that bitch to shut up.",
+        "voice_settings": { "stability": 1.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 21,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[whispers][anxious] I'm handling it. We need to be cool, okay? Arthur is already waiting at the lounge. He'll fix it.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 22,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] The ellipses blinked... [short pause] and vanished... [short pause] then blinked again.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 23,
+        "type": "dialogue",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[deadpan] He better.",
+        "voice_settings": { "stability": 1.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 24,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] He took a breath.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 25,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[whispers][anxious] How far are you?",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 26,
+        "type": "dialogue",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[deadpan] Thirty minutes behind you. Don't let that bitch go home. We need to contain this. Now.",
+        "voice_settings": { "stability": 1.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 27,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] He sighed. Lens was right. But he didn't know how to do that. [short pause] Should he grab her arm and insist she comes with him? [short pause] Would that be legal?",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 28,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly][bitter] He looked at Susan and flashed a wide smile. [short pause] Best to keep it friendly... till the cavalry arrived.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 29,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[flatly] She didn't know how to respond to his smile. She was not smiling back — that was for sure. She nodded and turned her head towards the window, pretending something had caught her attention. [short pause] [somber] But nothing did. Just a flurry of ground vehicles... towing luggage, ladders, and ramps.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 30,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[somber] Airports were always a happy place for her. A promise of adventure. [long pause] [quietly] But she felt nothing. [short pause] Not even relief.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 31,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[anxious] All she wanted was to get off that private jet, rush out of the airport as fast as her feet would carry her, and throw herself into a cab.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 32,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[whispers][voice trembling] Three-eighteen Everett Court.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 33,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[anxious] She would tell the driver, and he'd floor it. She'd Uber if she could stand. [short pause] Standing still — waiting for something to arrive — would kill her, that she was sure of. She needed to rush out, grab the first thing that looked like a cab, and not look back.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 34,
+        "type": "dialogue",
+        "speaker": "Flight Attendant",
+        "speaker_id": "4",
+        "text": "[whispers][warmly] Would you like something else?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 35,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[warmly] She turned. [short pause] The flight attendant. The woman she'd locked eyes with as soon as she boarded... and immediately felt something like comfort.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 36,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[warmly] As if this woman knew. [short pause] Knew what she went through. Knew what would make her feel better. She offered the blanket when she shivered in her sundress — without asking. [long pause] [voice trembling] As if she knew how cold she felt. How alone she felt. How exposed she felt.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 37,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[warmly][quietly] She'd seen Susan avoid eye contact with the man. She'd seen her fidget, and offered a sleeping mask to put over her eyes and pretend she was asleep.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 38,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[whispers][sad] That sleeping mask had saved her life. [short pause] Soaking the tears... as she lay awake behind the satin.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 39,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[bitter][quietly] The hundred-million-dollar jet meant nothing to Susan. But she was envious — because of that woman. [long pause] Because he could buy this angel... and keep her in this golden cage.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 40,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[quietly][tired] No. [short pause] Thank you.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 41,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[warmly] She meant it. [short pause] And the attendant gazed into her eyes... to make sure she meant it.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 42,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] She felt the brakes tighten, and her body pressed into the seatbelt. [long pause] Seconds ticked by.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 43,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[whispers][tense] As soon as the door opens... get off the plane... and run.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 44,
+        "type": "sfx",
+        "speaker": null,
+        "speaker_id": null,
+        "text": "WZZIP!"
+      },
+      {
+        "id": 45,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[gasps][urgent] Her heart skipped a beat. A buzzing sound? She snapped to the window.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 46,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[whispers][stunned] What the hell?",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 47,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] The man narrowed his gaze.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 48,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[calmly] Everything okay?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 49,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[tense] Did you hear that?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 50,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[calmly] No. What?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 51,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[tense] Something buzzed us.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 52,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] The man looked confused. He peeked out his window — and then went back to his phone.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 53,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[casually] We'll drop you home.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 54,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[flatly] No. I'm good.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 55,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[casually] Are you sure? You're not going to get a cab.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 56,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[tense] What? [short pause] Why not?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 57,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly][bitter] He shrugged. [short pause] He was lying, of course.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 58,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[nervous][hesitates] Umm... yeah. [short pause] There's a strike.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 59,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly][tense] Her mouth went dry.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 60,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[quietly][voice trembling] I'll take an Uber.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 61,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[flatly] That's what the strike's about.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 62,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] Her heart pounded.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 63,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[whispers][voice trembling] No. No. Please no... [short pause] Not today.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 64,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[anxious] Maybe she could walk a little further out? Call her friend to pick her up.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 65,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[whispers][despairing] Anything. [short pause] Fuck.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 66,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly][coldly] He didn't push. It was clear his lie had worked. [short pause] He just hoped Arthur was waiting at the lounge.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 67,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[flatly][quietly] The pilot's voice crackled over the radio — but it was noise to her. A noise that signaled to the flight attendant to open the hatch, and lower the ladder.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 68,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] The man rose from the seat, but Susan didn't budge. She sat there... breathing. [short pause] The hatch opened behind her — and a warm draft hit her cheeks.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 69,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[warmly] Come.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 70,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly][tense] She didn't move. She couldn't. [short pause] The flight attendant stood by the door as the man walked to the foot of the stairs.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 71,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[firmly][tense] You can't stay here. We need to leave.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 72,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] She nodded, and rose from the sofa. [short pause] Grabbed her bag.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 73,
+        "type": "sfx",
+        "speaker": null,
+        "speaker_id": null,
+        "text": "WZZIP!"
+      },
+      {
+        "id": 74,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[gasps][urgent] She snapped to the window again. A white flash. [short pause] She swore she saw it.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 75,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[warmly][tense] Susan?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 76,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] But her eyes were glued to the sky, trying to find a speck of white against the blue. [long pause] [quietly] There was none.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 77,
+        "type": "dialogue",
+        "speaker": "The man",
+        "speaker_id": "3",
+        "text": "[annoyed] Susan?",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 78,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tired][quietly] She pressed her lips. Probably nothing. She was tired. Her mind was playing tricks.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 79,
+        "type": "dialogue",
+        "speaker": "Susan",
+        "speaker_id": "2",
+        "text": "[sighs][flatly] Coming.",
+        "voice_settings": { "stability": 0.5, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 80,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[quietly] She breathed, then walked to the door. The man smiled nervously and stepped onto the ladder. [long pause] [tense] That's when the flight attendant... froze.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 81,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[tense] She stared at the sky for just a second... [short pause] [terrified] and screamed.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 82,
+        "type": "dialogue",
+        "speaker": "Flight Attendant",
+        "speaker_id": "4",
+        "text": "[terrified][screams] AHH!",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 83,
+        "type": "narration",
+        "speaker": "Narrator",
+        "speaker_id": "1",
+        "text": "[urgent][breathless] And then — in that millisecond that seemed to last a full minute — she looked at Susan. Susan stared back. The attendant coiled herself and launched at Susan like a charging bear, throwing her arms around her — shielding her as a fireball expanded behind her.",
+        "voice_settings": { "stability": 0.0, "similarity_boost": 0.75 }
+      },
+      {
+        "id": 84,
+        "type": "sfx",
+        "speaker": null,
+        "speaker_id": null,
+        "text": "BOOM!"
+      }
+    ]
+  }

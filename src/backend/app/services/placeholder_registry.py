@@ -32,6 +32,14 @@ _REGISTRY: list[Placeholder] = [
     Placeholder(name="@all_scene_summaries", description="Every active scene's title + summary in seq order"),
     Placeholder(name="@story_summary", description="The book's story summary"),
     Placeholder(name="@plotlines", description="Plotline titles + descriptions, this scene's links flagged"),
+    Placeholder(
+        name="@scene_speakers",
+        description="Available speaker_id values for this scene's audio script — name only, no voice data",
+    ),
+    Placeholder(
+        name="@existing_audio_script",
+        description="Current audio-script manifest JSON for this scene, if one exists, else '(none — first generation)'",
+    ),
 ]
 
 _NAMES = {p.name for p in _REGISTRY}
@@ -212,6 +220,40 @@ class PlaceholderRegistry:
                 lines.append(f"{p.title}: {p.description or ''}{flag}".rstrip())
             return "\n".join(lines)
 
+        def scene_speakers() -> str:
+            lines = ['speaker_id "narrator" — Narrator']
+            if scene is None:
+                return "\n".join(lines) + "\n(no characters tagged on this scene yet — only the narrator is available)"
+            refs = all_bookkeeping.get(scene.id, SceneBookkeeping()).characters
+            if not refs:
+                return (
+                    "\n".join(lines)
+                    + "\n(no characters tagged on this scene yet — only the narrator is available)"
+                )
+            getter = getattr(mgr, "get_characters", None)
+            if getter is None:
+                return "\n".join(lines)
+            by_id = {c.id: c for c in getter()}
+            for ref in refs:
+                c = by_id.get(ref.characterId)
+                if c is None:
+                    continue
+                lines.append(f'speaker_id "{c.id}" — {c.name}')
+            return "\n".join(lines)
+
+        def existing_audio_script() -> str:
+            from app.services.audio_service import read_manifest_if_exists
+
+            book_dir = getattr(mgr, "book_dir", None)
+            if book_dir is None:
+                return "(none — first generation)"
+            manifest = read_manifest_if_exists(book_dir, scene_id)
+            if manifest is None:
+                return "(none — first generation)"
+            import json
+
+            return json.dumps(manifest.model_dump(mode="json"), indent=2)
+
         replacements = {
             "@current_scene": prose,
             "@selection": selection,
@@ -223,6 +265,8 @@ class PlaceholderRegistry:
             "@all_scene_summaries": all_summaries(),
             "@story_summary": mgr.config.storySummary or "(no story summary)",
             "@plotlines": plotlines(),
+            "@scene_speakers": scene_speakers(),
+            "@existing_audio_script": existing_audio_script(),
         }
 
         def repl(match: re.Match[str]) -> str:

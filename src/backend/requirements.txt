@@ -16,3 +16,7 @@ langchain-anthropic==1.4.8
 langchain-openai==1.3.5
 langchain-ollama==1.1.0
 langchain-google-genai==4.2.7
+
+# Scene audio drama (ElevenLabs TTS + pydub stitch; needs system ffmpeg for mp3).
+elevenlabs==2.16.0
+pydub==0.25.1

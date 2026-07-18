@@ -29,6 +29,8 @@ from app.models.settings import (
     Appearance,
     AppearancePatch,
     AppData,
+    ElevenLabsSettingsOut,
+    ElevenLabsSettingsPatch,
     ModelConfig,
     ModelConfigOut,
     ModelCreate,
@@ -37,6 +39,7 @@ from app.models.settings import (
     Placeholder,
     UserPatch,
     UserSettings,
+    VoiceInfo,
     to_model_out,
 )
 from app.services.model_factory import KeyResolutionError, ModelFactory
@@ -422,3 +425,82 @@ class SettingsService:
     @staticmethod
     def placeholders() -> list[Placeholder]:
         return PlaceholderRegistry.all()
+
+    # -- ElevenLabs ----------------------------------------------------------
+
+    def get_raw_elevenlabs_key(self) -> str | None:
+        return self._load().elevenLabsApiKey
+
+    def get_elevenlabs(self) -> ElevenLabsSettingsOut:
+        from app.models.settings import mask_key
+
+        data = self._load()
+        return ElevenLabsSettingsOut(
+            apiKeyMasked=mask_key(data.elevenLabsApiKey),
+            voicesSyncedAt=data.elevenLabsVoicesSyncedAt,
+        )
+
+    async def patch_elevenlabs(self, patch: ElevenLabsSettingsPatch) -> ElevenLabsSettingsOut:
+        from app.models.settings import mask_key
+
+        async with self._lock:
+            data = self._load()
+            if "apiKey" in patch.model_fields_set:
+                data.elevenLabsApiKey = patch.apiKey
+            self._save(data)
+            return ElevenLabsSettingsOut(
+                apiKeyMasked=mask_key(data.elevenLabsApiKey),
+                voicesSyncedAt=data.elevenLabsVoicesSyncedAt,
+            )
+
+    def list_elevenlabs_voices(self) -> list[VoiceInfo]:
+        return list(self._load().elevenLabsVoices)
+
+    async def sync_elevenlabs_voices(self) -> list[VoiceInfo]:
+        from datetime import datetime, timezone
+
+        from app.core.secrets import KeyResolutionError, resolve_secret
+
+        try:
+            key = resolve_secret(self.get_raw_elevenlabs_key(), default_env="ELEVENLABS_API_KEY")
+        except KeyResolutionError as exc:
+            raise ApiError(422, str(exc), {"code": "no-key"}) from exc
+        if not key:
+            raise ApiError(422, "ElevenLabs API key not configured.", {"code": "no-key"})
+
+        def _fetch() -> list[VoiceInfo]:
+            from elevenlabs.client import ElevenLabs
+
+            client = ElevenLabs(api_key=key)
+            response = client.voices.get_all()
+            voices_raw = getattr(response, "voices", response) or []
+            out: list[VoiceInfo] = []
+            for v in voices_raw:
+                labels = getattr(v, "labels", None) or {}
+                if not isinstance(labels, dict):
+                    labels = {}
+                out.append(
+                    VoiceInfo(
+                        voiceId=getattr(v, "voice_id", None) or getattr(v, "voiceId", "") or "",
+                        name=getattr(v, "name", "") or "",
+                        category=str(getattr(v, "category", "") or ""),
+                        gender=str(labels.get("gender") or ""),
+                        age=str(labels.get("age") or ""),
+                        accent=str(labels.get("accent") or ""),
+                        description=str(
+                            getattr(v, "description", None)
+                            or labels.get("description")
+                            or ""
+                        ),
+                        previewUrl=str(getattr(v, "preview_url", None) or getattr(v, "previewUrl", "") or ""),
+                    )
+                )
+            return [x for x in out if x.voiceId]
+
+        voices = await asyncio.to_thread(_fetch)
+        async with self._lock:
+            data = self._load()
+            data.elevenLabsVoices = voices
+            data.elevenLabsVoicesSyncedAt = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            self._save(data)
+            return list(data.elevenLabsVoices)

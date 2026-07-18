@@ -39,15 +39,19 @@ Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` char
     { "id": "aij-9x8y7z", "name": "Check Grammar",
       "prompt": "Proofread @selection_or_scene ...",
       "defaultModelId": "mdl-a1b2c3", "outputType": "edit-proposals" }
-  ]
+  ],
+  "elevenLabsApiKey": null,
+  "elevenLabsVoices": [],
+  "elevenLabsVoicesSyncedAt": null
 }
 ```
 
-- `ai.utilityModelId` is the general-purpose fallback for sundry system tasks (chat-thread auto-titling) **and** the fallback every task-specific slot below degrades to when its own slot is unset or dangling. The four task-specific slots (`commitMessageModelId`, `characterParsingModelId`, `sceneSummaryModelId`, `chatDefaultModelId`) each resolve independently: own slot if set and known → else `utilityModelId` → else `null` (degrade, never fail). More slots may be appended the same way as new AI-assisted tasks need their own model choice.
+- `ai.utilityModelId` is the general-purpose fallback for sundry system tasks (chat-thread auto-titling) **and** the fallback every task-specific slot below degrades to when its own slot is unset or dangling. The four task-specific slots (`commitMessageModelId`, `characterParsingModelId`, `sceneSummaryModelId`, `chatDefaultModelId`) each resolve independently: own slot if set and known → else `utilityModelId` → else `null` (degrade, never fail). More slots may be appended the same way as new AI-assisted tasks need their own model choice. Voice suggestion for characters also uses this utility-model fallback.
 - `appearance.theme` ∈ `light | dark | system` (default `system`) — the app-wide color theme (doc 06 §1.2). App-level only; never stored per book. Missing/unknown → `system`.
 - `provider` ∈ `anthropic | openai | gemini | openai-compatible | ollama`. `baseUrl` required for the latter two (LM Studio: `http://localhost:1234/v1`; Ollama: `http://localhost:11434`).
 - `apiKey` may be a literal or `${ENV_VAR}` reference, resolved at call time. Keys live only at app level — never inside a book folder, so they can never be committed/pushed.
-- `outputType` ∈ `chat | edit-proposals | metadata-proposals`.
+- `elevenLabsApiKey` follows the same literal / `${ENV_VAR}` / empty convention. Empty or omitted resolves to env `ELEVENLABS_API_KEY` at call time. ElevenLabs is **not** a LangChain `ModelConfig` provider. `elevenLabsVoices` is a cached sync of the author's available voices (id, name, labels, previewUrl); `GET /settings/elevenlabs/voices` returns this cache without a live network call.
+- `outputType` ∈ `chat | edit-proposals | metadata-proposals | audio-script`.
 - **No bookshelf registry.** The shelf is a live scan of `booksHome` for subfolders containing `config/book.json`. Subfolders without it are silently ignored.
 
 ## Book folder
@@ -66,6 +70,9 @@ a3f9c2-my-great-novel/
       dependencies.json          # this scene's outgoing depends-on edges
       relationships.json         # this scene's outgoing soft edges
       todos.json                 # this scene's own todos — see "Todos storage split" below
+      audio/                     # optional scene audio drama — see "scenes/{id}/audio/" below
+        manifest.json
+        lines/*.mp3              # gitignored
   db/
     scenes.json  parts.json  chapters.json
     characters.json  character_relationships.json  plotlines.json  todos.json  ui.json
@@ -79,11 +86,13 @@ a3f9c2-my-great-novel/
     reference-map.png
   compiled-book/                 # build artifact; committed; wiped each compile
     part-1-beginnings/chapter-1-the-arrival.md
-  .gitignore                     # *.tmp
+  .gitignore                     # *.tmp + *.mp3 (editable via Metadata → Book; mp3s are regenerable artifacts)
   .git/
 ```
 
 Scene filenames: `{sceneHash}-{slug}.md`. Slug follows title renames; hash never changes. The per-scene folder is named by the **full scene id** (`scn-1f2e9b`, not the bare hex) — matches the `conversations/cnv-*.json` naming convention and stays self-describing without cross-referencing `db/scenes.json`. Empty scaffold folders carry `.gitkeep`.
+
+**`.gitignore`:** seeded on book create with `*.tmp` and `*.mp3`. Source of truth is the file itself (not `book.json`). `GET/PUT /api/books/{b}/gitignore` exposes patterns to Metadata → Book; required patterns are re-injected on save if missing. Existing books get `*.mp3` appended via `ensure_gitignore_patterns` on open.
 
 ## config/book.json
 
@@ -93,10 +102,13 @@ Scene filenames: `{sceneHash}-{slug}.md`. Slug follows title renames; hash never
   "title": "My Great Novel",
   "systemPrompt": "Book-level style/genre notes prepended to every AI call for this book.",
   "storySummary": "Editable book-level summary (Metadata page).",
+  "narratorVoiceId": "",
+  "narratorVoiceName": "",
   "bookkeeping": { "summaryOnSave": true, "charactersOnSave": true }
 }
 ```
 
+`narratorVoiceId` / `narratorVoiceName` are the book-level ElevenLabs casting for scene audio narration (empty until the author assigns one on Metadata → Book).
 Bookkeeping toggles default **on** for new books; unknown future keys default off.
 
 ## db/scenes.json — the master table, array of
@@ -254,10 +266,11 @@ with the rest of the folder, same as its dependencies/relationships.
   "age": "", "gender": "", "nationality": "", "ethnicity": "", "occupation": "",
   "want": "", "need": "", "flaw": "", "arc": "",
   "personality": "", "history": "", "notes": "",
+  "voiceId": "", "voiceName": "",
   "createdAt": "...", "updatedAt": "..." }
 ```
 
-The character collection is the master name list. Aliases feed the enrichment matcher.
+The character collection is the master name list. Aliases feed the enrichment matcher. `voiceId` / `voiceName` are the persistent ElevenLabs voice assignment for scene audio (Character Sheet); empty until assigned.
 
 Fields beyond name/aliases are grouped by intent: **identity** (age, gender,
 nationality, ethnicity, occupation — free text throughout; `age` is a string
@@ -350,6 +363,23 @@ Files the author keeps beside the manuscript: research PDFs, reference images, w
 Any file type is accepted, up to 25 MB. A name collision on upload or on an accepted `resource-create` proposal never overwrites — the incoming file is suffixed (`notes.md` → `notes-2.md`) instead. Deletion moves the file to `.trash/`, matching scene deletion — never a physical unlink.
 
 The AI can read resources (`list_resources`, `get_resource` — ordinary, ungated read tools; text-ish extensions only, capped at ~100k characters) but cannot write one directly. `propose_resource_create` emits a proposal; only an accepted proposal calls the write path, per doc 01's write-permission table.
+
+## scenes/{id}/audio/ — script + regenerable mp3s
+
+Scene audio drama artifacts (see [`docs/audio-system.md`](../audio-system.md)):
+
+```
+scenes/{id}/audio/
+  manifest.json              # tracked in git — script, speakers, synthesisStatus, per-line renderedFile
+  lines/
+    001-narrator-{itemId}.mp3
+    002-chr-xxxx-{itemId}.mp3
+  scene_stitched.mp3         # optional batch stitch; Play scene does not require it
+```
+
+- **`manifest.json`** is the single source of truth for the script and links. Each sequence item's **`renderedFile`** attribute points at a filename under `lines/`.
+- **Mp3s are gitignored** (`*.mp3` in the book `.gitignore`). After clone, the author re-runs generate for missing files. Manifest stays committed so casting and line text travel with the book.
+- Accepting an `audio-script-create` proposal **merges** into the manifest (unchanged lines keep prior text + `renderedFile`). Synthesis is a separate author action and writes binaries via `atomic_write_bytes`. Deletion moves the whole `audio/` folder to `.trash/`.
 
 ## No jobs.json
 

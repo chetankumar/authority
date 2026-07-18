@@ -23,6 +23,7 @@ import { useSceneConversations } from "../../queries/conversations";
 import { useJobs as useAiJobDefinitions } from "../../queries/settings";
 import { usePatchBook } from "../../queries/structure";
 import { useCreateSceneTodo, useDeleteTodo, useSceneTodos, useUpdateTodo } from "../../queries/todos";
+import { AudioModal } from "../audio/AudioModal";
 import { SceneModal } from "../sceneModal/SceneModal";
 import { ConversationModal } from "../conversation/ConversationModal";
 
@@ -57,6 +58,7 @@ export default function EditorPage() {
   const [sourceText, setSourceText] = useState("");
   const [jobsMenuOpen, setJobsMenuOpen] = useState(false);
   const [bookkeepingOpen, setBookkeepingOpen] = useState(false);
+  const [audioOpen, setAudioOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [chatContext, setChatContext] = useState<{ sceneId: string; excerpt: string } | null>(null);
   const [newTodoText, setNewTodoText] = useState("");
@@ -364,6 +366,7 @@ export default function EditorPage() {
             )}
           </div>
           <ToolButton label="Metadata" onClick={() => setModalOpen(true)} />
+          <ToolButton label="Audio" onClick={() => setAudioOpen(true)} title="Scene audio drama" />
           <div className="relative" ref={bookkeepingRef}>
             <ToolButton
               label="Bookkeeping"
@@ -604,6 +607,17 @@ export default function EditorPage() {
       )}
 
       {modalOpen && <SceneModal bookId={bookId} sceneId={sceneId} onClose={() => setModalOpen(false)} />}
+      {audioOpen && (
+        <AudioModal
+          bookId={bookId}
+          sceneId={sceneId}
+          onClose={() => setAudioOpen(false)}
+          onOpenConversation={(id) => {
+            setAudioOpen(false);
+            setConversationId(id);
+          }}
+        />
+      )}
       {createNext && (
         <SceneModal
           bookId={bookId}

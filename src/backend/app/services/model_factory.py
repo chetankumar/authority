@@ -9,14 +9,14 @@ provider SDKs.
 
 from __future__ import annotations
 
-import os
-import re
 from typing import Any
 
+from app.core.secrets import KeyResolutionError, resolve_secret
 from app.models.enums import Provider
 from app.models.settings import ModelConfig
 
-_ENV_RE = re.compile(r"^\$\{(\w+)\}$")
+# Re-export for callers that imported KeyResolutionError from here.
+__all__ = ["KeyResolutionError", "ModelFactory", "resolve_api_key"]
 
 # Cloud providers read these environment variables when no key is entered.
 _DEFAULT_ENV: dict[Provider, str] = {
@@ -24,10 +24,6 @@ _DEFAULT_ENV: dict[Provider, str] = {
     Provider.openai: "OPENAI_API_KEY",
     Provider.gemini: "GOOGLE_API_KEY",
 }
-
-
-class KeyResolutionError(Exception):
-    """A key reference couldn't be resolved (unset ``${VAR}`` or missing default)."""
 
 
 def resolve_api_key(cfg: ModelConfig) -> str | None:
@@ -38,23 +34,7 @@ def resolve_api_key(cfg: ModelConfig) -> str | None:
     - **Empty** falls back to the provider's default env var (e.g.
       ``ANTHROPIC_API_KEY``); for providers that don't need a key, returns None.
     """
-    raw = (cfg.apiKey or "").strip()
-    if raw:
-        match = _ENV_RE.match(raw)
-        if not match:
-            return raw
-        value = os.environ.get(match.group(1))
-        if not value:
-            raise KeyResolutionError(f"Environment variable {match.group(1)} is not set.")
-        return value
-
-    default_env = _DEFAULT_ENV.get(cfg.provider)
-    if default_env:
-        value = os.environ.get(default_env)
-        if not value:
-            raise KeyResolutionError(f"No API key set — enter a key or set {default_env}.")
-        return value
-    return None
+    return resolve_secret(cfg.apiKey, default_env=_DEFAULT_ENV.get(cfg.provider))
 
 
 class ModelFactory:

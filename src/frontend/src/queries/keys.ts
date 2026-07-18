@@ -25,4 +25,6 @@ export const keys = {
   resources: (bookId: string) => ["resources", bookId] as const,
   git: (bookId: string) => ["git", bookId] as const,
   compileCheck: (bookId: string) => ["compileCheck", bookId] as const,
+  audio: (bookId: string, sceneId: string) => ["audio", bookId, sceneId] as const,
+  gitignore: (bookId: string) => ["gitignore", bookId] as const,
 };

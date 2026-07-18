@@ -194,6 +194,9 @@ export function ConversationModal({
       if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
       void qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
       void qc.invalidateQueries({ queryKey: keys.resources(bookId) });
+      if (p.type === "audio-script-create" && sceneId) {
+        void qc.invalidateQueries({ queryKey: keys.audio(bookId, sceneId) });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't accept.");
     }
@@ -215,6 +218,9 @@ export function ConversationModal({
     await refresh();
     if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
     void qc.invalidateQueries({ queryKey: keys.resources(bookId) });
+    if (sceneId && pending.some((p) => p.type === "audio-script-create")) {
+      void qc.invalidateQueries({ queryKey: keys.audio(bookId, sceneId) });
+    }
   }
 
   if (!conv) {
@@ -479,6 +485,7 @@ function ProposalCard({
           {p.rationale ? <p className="mt-1 text-ink-faint">{String(p.rationale)}</p> : null}
         </div>
       )}
+      {proposal.type === "audio-script-create" && <AudioScriptProposalBody payload={p} />}
       {proposal.status === "not-found" && (
         <p className="mt-1 text-attn">This text is no longer in the scene.</p>
       )}
@@ -491,6 +498,65 @@ function ProposalCard({
           <Button variant="primary" onClick={() => onAccept(proposal)}>
             Accept
           </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const AUDIO_STATUS_BADGE: Record<string, string> = {
+  new: "bg-attn-wash text-attn",
+  regenerate: "bg-attn-wash text-attn",
+  unchanged: "bg-ok-wash text-ok",
+};
+
+function AudioScriptProposalBody({ payload }: { payload: Record<string, unknown> }) {
+  const manifest = payload.manifest as
+    | { title?: string; sequence?: Array<Record<string, unknown>> }
+    | undefined;
+  const sequence = Array.isArray(manifest?.sequence) ? manifest.sequence : [];
+  const title = typeof manifest?.title === "string" ? manifest.title : "Audio script";
+
+  return (
+    <div>
+      <div className="font-medium">{title}</div>
+      <p className="mt-0.5 text-ink-faint">
+        {sequence.length} line{sequence.length === 1 ? "" : "s"} — Accept merges into the scene
+        manifest (unchanged lines keep existing audio).
+      </p>
+      {payload.rationale ? <p className="mt-1 text-ink-faint">{String(payload.rationale)}</p> : null}
+      {sequence.length > 0 && (
+        <div className="mt-2 max-h-72 overflow-auto rounded-control border border-line">
+          <table className="w-full text-left text-[0.75rem]">
+            <thead className="sticky top-0 bg-surface text-ink-faint">
+              <tr>
+                <th className="px-2 py-1 font-medium">#</th>
+                <th className="px-2 py-1 font-medium">Speaker</th>
+                <th className="px-2 py-1 font-medium">Type</th>
+                <th className="px-2 py-1 font-medium">Status</th>
+                <th className="px-2 py-1 font-medium">Text</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sequence.map((item, i) => {
+                const status = String(item.generation_status ?? "new");
+                const badge = AUDIO_STATUS_BADGE[status] ?? "bg-surface-2 text-ink-soft";
+                return (
+                  <tr key={String(item.id ?? i)} className="border-t border-line align-top">
+                    <td className="px-2 py-1 text-ink-faint">{i + 1}</td>
+                    <td className="px-2 py-1">{String(item.speaker ?? item.speaker_id ?? "—")}</td>
+                    <td className="px-2 py-1">{String(item.type ?? "")}</td>
+                    <td className="px-2 py-1">
+                      <span className={`inline-block rounded px-1.5 py-0.5 ${badge}`}>{status}</span>
+                    </td>
+                    <td className="max-w-[20rem] px-2 py-1 whitespace-pre-wrap text-ink-soft">
+                      {String(item.text ?? "")}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

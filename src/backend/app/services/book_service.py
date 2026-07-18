@@ -146,7 +146,7 @@ class BookService:
         atomic_write_text(book_dir / "scenes" / ".gitkeep", "")
         atomic_write_text(book_dir / "resources" / ".gitkeep", "")
         atomic_write_text(book_dir / "compiled-book" / ".gitkeep", "")
-        atomic_write_text(book_dir / ".gitignore", "*.tmp\n")
+        atomic_write_text(book_dir / ".gitignore", "*.tmp\n*.mp3\n")
 
         if cover_bytes is not None:
             ext = _cover_ext(cover_filename, cover_content_type)

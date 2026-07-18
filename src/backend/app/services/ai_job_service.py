@@ -19,7 +19,11 @@ from app.models.conversation import AiJobRunRequest, Conversation
 from app.models.enums import OutputType
 from app.services.book_registry import BookRegistry
 from app.services.conversation_service import ConversationService
-from app.services.output_parsers import EDIT_FORMAT_INSTRUCTIONS, METADATA_FORMAT_INSTRUCTIONS
+from app.services.output_parsers import (
+    AUDIO_SCRIPT_FORMAT_INSTRUCTIONS,
+    EDIT_FORMAT_INSTRUCTIONS,
+    METADATA_FORMAT_INSTRUCTIONS,
+)
 from app.services.placeholder_registry import PlaceholderRegistry
 from app.services.settings_service import SettingsService
 
@@ -60,6 +64,8 @@ class AiJobService:
             resolved = resolved + "\n\n" + EDIT_FORMAT_INSTRUCTIONS
         elif definition.outputType == OutputType.metadata_proposals:
             resolved = resolved + "\n\n" + METADATA_FORMAT_INSTRUCTIONS
+        elif definition.outputType == OutputType.audio_script:
+            resolved = resolved + "\n\n" + AUDIO_SCRIPT_FORMAT_INSTRUCTIONS
 
         conv = self._conversations.create_ai_job_conversation(
             book_id,

@@ -75,6 +75,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 - `chat` — freeform reply; stored as a plain assistant message; no parsing, no proposals.
 - `edit-proposals` — the server appends **format instructions** to the resolved prompt requiring the model to end its reply with a fenced JSON array of `{find, replace, rationale}` objects. The fenced block is parsed into `edit` **Proposal** objects attached to the assistant message (and stripped from the displayed content); the preceding prose remains as commentary. Unparseable → message degrades to `chat` and the job record carries a warning.
 - `metadata-proposals` — same mechanism; items are `{field, newValue, rationale}` targeting the job's scene; parsed into `metadata-update` proposals (`oldValue` filled server-side from current state).
+- `audio-script` — format instructions require a fenced JSON audio manifest (`title`, `revision`, `notes`, `sequence`, …). Parsed into one `audio-script-create` proposal. Accept **merges** into `scenes/{id}/audio/manifest.json` (speakers from Character Sheet / Narrator; unchanged lines preserve `renderedFile`). Does not call ElevenLabs.
 
 **`placement`** — computed scene classification (ChainService): `trunk` (on the chain connected to Start) · `unanchored` (on a hard chain not connected to Start) · `floating` (soft relationships only) · `orphan` (no relationships) · `archived`.
 
@@ -84,7 +85,8 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 **`conversationKind`**: `note` · `chat` · `ai-job` · `bookkeeping` · `task-discussion`.
 **`conversationStatus`**: `open` · `queued` · `running` · `waiting` · `done` · `failed` · `archived`. This *is* the run lifecycle — there is no separate Job. `open` = idle (a note/chat, or an AI-Job whose prompt awaits the author's Send); `queued` = the worker will run it unattended (automatic bookkeeping); `running` = model in flight; `waiting` = a bookkeeping run asked the author something and stopped; `done`/`failed` terminal.
 **`enrichScope`** (POST /scenes/{id}/enrich): `summary` · `characters` · `both`. `both` is resolved at creation into two conversations (one per field), never a persisted state.
-**`proposalType`**: `edit` · `metadata-update` · `todo-create` · `character-create` · `character-relationship-create` · `resource-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`. **`characterRelationshipCategory`**: `family` · `romantic` · `friendship` · `rivalry` · `professional` · `mentorship` · `other`.
+**`proposalType`**: `edit` · `metadata-update` · `todo-create` · `character-create` · `character-relationship-create` · `resource-create` · `audio-script-create`. **`proposalStatus`**: `pending` · `applied` · `rejected` · `not-found`. **`characterRelationshipCategory`**: `family` · `romantic` · `friendship` · `rivalry` · `professional` · `mentorship` · `other`.
+**`audioLineStatus`**: `new` · `regenerate` · `unchanged`. **`audioSynthesisStatus`**: `idle` · `running` · `done` · `failed`.
 **`parentType`** (conversations, todos): `scene` · `chapter` · `part` · `book`.
 **`gitFileStatus`**: `modified` · `added` · `deleted` · `untracked` · `renamed`.
 
@@ -256,7 +258,7 @@ Removes the definition. Historical job records/conversations keep the id + a nam
 
 ### POST /api/books — multipart
 **Fields:** `title` (string, required) · `cover` (image file, optional).
-**Logic (BookService):** 1) 422 empty title / booksHome unset; 403 booksHome unwritable. 2) Generate `bok-{6hex}`; slugify title; create `{6hex}-{slug}/` (409 `already-exists` on impossible collision). 3) Scaffold: `config/book.json` (id, title, empty systemPrompt/storySummary, bookkeeping both **true**, empty parts/chapters), `scenes/.gitkeep`, `db/` seeded empty collections + `conversations/index.json`, `assets/cover.{ext}` if uploaded (stored as-is), `compiled-book/.gitkeep`, `.gitignore` (`*.tmp`). 4) GitService: `git init` (folder is fresh by construction) → `add -A` → commit `"initialized"`. 5) BookScanner cache add. **Response** BookSummary, 201.
+**Logic (BookService):** 1) 422 empty title / booksHome unset; 403 booksHome unwritable. 2) Generate `bok-{6hex}`; slugify title; create `{6hex}-{slug}/` (409 `already-exists` on impossible collision). 3) Scaffold: `config/book.json` (id, title, empty systemPrompt/storySummary, empty narrator voice fields, bookkeeping both **true**, empty parts/chapters), `scenes/.gitkeep`, `db/` seeded empty collections + `conversations/index.json`, `assets/cover.{ext}` if uploaded (stored as-is), `compiled-book/.gitkeep`, `.gitignore` (`*.tmp` + `*.mp3`). 4) GitService: `git init` (folder is fresh by construction) → `add -A` → commit `"initialized"`. 5) BookScanner cache add. **Response** BookSummary, 201.
 
 *Discovered books* (folder dropped into booksHome, e.g. cloned): never re-initialized; existing `.git` and settings left completely untouched; they simply appear on the next scan.
 
@@ -268,7 +270,12 @@ Removes the definition. Historical job records/conversations keep the id + a nam
 **Logic:** under the book lock — 1) title: update book.json; compute new slug; `os.rename` the book folder (403 on failure, e.g. folder locked by another program; title change rolled back); BookScanner cache update. 2) cover/removeCover: replace or delete `assets/cover.*`. 3) Text/bookkeeping fields merged and persisted. 4) Git dirty-check + `git-status` emit; **title renames additionally auto-commit** `"renamed to {title}"` (folder+config must stay consistent in history). **Response** updated Book.
 
 ### PATCH /api/books/{id} — JSON
-**Request** `{ "systemPrompt"?, "storySummary"?, "bookkeeping"?: { "summaryOnSave"?, "charactersOnSave"? } }` — JSON-only alternative for the Book tab on the Metadata page (no title rename or cover handling). Same merge/persist logic as the multipart variant for these fields. **Response** updated Book.
+**Request** `{ "systemPrompt"?, "storySummary"?, "narratorVoiceId"?, "narratorVoiceName"?, "bookkeeping"?: { "summaryOnSave"?, "charactersOnSave"? } }` — JSON-only alternative for the Book tab on the Metadata page (no title rename or cover handling). Same merge/persist logic as the multipart variant for these fields. **Response** updated Book.
+
+### GET /api/books/{id}/gitignore · PUT /api/books/{id}/gitignore
+**GET Response** `{ "patterns": string[] }` parsed from the book root `.gitignore` (missing/empty → `[]`).
+**PUT Request** `{ "patterns": string[] }` — normalized (trim, drop blanks); always re-injects required defaults `*.tmp` and `*.mp3` if absent; atomic write to `.gitignore`; `notify_changed`. **Response** `{ "patterns": string[] }`.
+Source of truth is the file (not `book.json`). See doc 03.
 
 ### GET /api/books/{id}/cover
 Streams the cover with correct content-type; **404** if none (client renders placeholder).
@@ -467,7 +474,7 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 { "aiJobId": "aij-..", "sceneId": "scn-..",
   "scope": "full" | "selection", "selectionText"?: "required when scope=selection" }
 ```
-**Logic (AiJobService.prepare, synchronous — no model call):** 1) 422: unknown job/scene; scope `selection` without selectionText. 2) Resolve the definition's prompt template against the scene (`@placeholders`; selectionText feeds `@selection`), appending format instructions (§2.1) for `edit-proposals`/`metadata-proposals`. 3) Create a Conversation: kind `ai-job`, parent = the scene, title = **definition name**, aiParticipant `{enabled:true, modelId: definition.defaultModelId}`, `aiJobId` + name snapshot, status `open`, with the resolved prompt as its first (system-authored) message. **Response 201** `{ "conversationId" }`. The client opens the modal on it; the prompt is already there to review and **nothing runs** until the author sends. That send is an ordinary §9.3 message; the definition's `outputType` (looked up via `conv.aiJobId`) drives fenced-JSON → proposal parsing (parse failure → plain chat). Follow-ups are plain §9.3 sends.
+**Logic (AiJobService.prepare, synchronous — no model call):** 1) 422: unknown job/scene; scope `selection` without selectionText. 2) Resolve the definition's prompt template against the scene (`@placeholders`; selectionText feeds `@selection`), appending format instructions (§2.1) for `edit-proposals`/`metadata-proposals`/`audio-script`. 3) Create a Conversation: kind `ai-job`, parent = the scene, title = **definition name**, aiParticipant `{enabled:true, modelId: definition.defaultModelId}`, `aiJobId` + name snapshot, status `open`, with the resolved prompt as its first (system-authored) message. **Response 201** `{ "conversationId" }`. The client opens the modal on it; the prompt is already there to review and **nothing runs** until the author sends. That send is an ordinary §9.3 message; the definition's `outputType` (looked up via `conv.aiJobId`) drives fenced-JSON → proposal parsing (parse failure → plain chat). Follow-ups are plain §9.3 sends.
 
 ---
 
@@ -480,6 +487,7 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 - **todo-create:** create the Todo via `TodoService.create`, origin `ai`, routed to whichever storage tier `parentType` calls for (§8). `conversationId` is set automatically to the proposing conversation, so the todo's 💬 opens straight back into it.
 - **character-create:** create the Character via StructureService uniqueness rules; optionally tag `sceneId` on the scene. 422 if Characters layer not loaded.
 - **resource-create:** write `payload.content` into `resources/{payload.filename}` via `ResourceService.create_text_file` (§15). Name collision → suffixed, never overwritten; the response's filename may differ from the proposed one. This is the *only* write path for an AI-drafted resource file — there is no execute tool for it (doc 01 write-permission table).
+- **audio-script-create:** merge `payload.manifest` into `scenes/{payload.sceneId}/audio/manifest.json` via `AudioService.save_manifest` (§16). Speakers overwritten from Character Sheet / Narrator; unchanged lines preserve prior `renderedFile`. **422** if a non-sfx speaker lacks a voice assignment. Does **not** call ElevenLabs — synthesis is a separate §16 generate call.
 Stamp status `applied` (or `not-found`) + resolvedAt; persist conversation; emit `scene-updated`/`todos-created` as applicable.
 **Response** `{ "proposal": Proposal, "result": { "wordCount"?, "contentHash"?, "todo"?: Todo, "resource"?: ResourceFile } }`.
 
@@ -563,3 +571,41 @@ Moves the file to `.trash/`, never unlinks — same rule as scene deletion. **20
 
 ### AI access
 Read tools `list_resources()` / `get_resource(filename)` are ordinary, ungated read tools (§9.3 step 4) available in every conversation, scene-parented or book-parented alike. Text-ish extensions only (`.md .markdown .txt .csv .json .yml .yaml`); anything else reports as binary. Writes never happen directly — `propose_resource_create` (a propose tool) only emits a proposal; §10's `resource-create` accept branch is the sole write path.
+
+---
+
+## 16. Scene audio
+
+Per-scene audio drama (manifest + regenerable mp3s). Full build spec: [`docs/audio-system.md`](../audio-system.md). Handled by `AudioService` + `AudioWorker`. Prefix: `/api/books/{b}/scenes/{s}/audio`.
+
+### GET /api/books/{b}/scenes/{s}/audio
+**Response** `AudioManifest`. **404** if no `manifest.json` yet.
+
+### PATCH /api/books/{b}/scenes/{s}/audio/lines/{itemId}
+**Request** `{ "text"?, "voice_settings"?: { "stability", "similarity_boost" } }`. Marks `generation_status=regenerate` when synthesized content changed; keeps prior `renderedFile` until regen. **Response** updated manifest.
+
+### POST /api/books/{b}/scenes/{s}/audio/lines/{itemId}/generate
+Enqueue single-line synthesis. Emits `audio-progress` SSE. **Response** updated manifest (may still be `running`).
+
+### POST /api/books/{b}/scenes/{s}/audio/generate
+Validate manifest exists and `synthesisStatus != running` (**409** if running). Flip to `running`, enqueue batch job for all `new`/`regenerate` lines. **Response** manifest.
+
+### GET /api/books/{b}/scenes/{s}/audio/lines/{filename}
+`FileResponse` `audio/mpeg`. Path validated (`safe_audio_filename`). **404** if absent.
+
+### GET /api/books/{b}/scenes/{s}/audio/stitched
+Optional stitched mp3. **404** if unset. Play-scene UI does not require this — browser playlist over per-line URLs.
+
+### DELETE /api/books/{b}/scenes/{s}/audio
+Move `scenes/{s}/audio/` to `.trash/`. **204**.
+
+### Settings — ElevenLabs
+- `GET /api/settings/elevenlabs` → `{ apiKeyMasked }`
+- `PATCH /api/settings/elevenlabs` → `{ apiKey? }` (omit = keep)
+- `POST /api/settings/elevenlabs/voices/sync` → refresh cached voice list
+- `GET /api/settings/elevenlabs/voices` → cached list (no live network call)
+
+Empty key resolves to env `ELEVENLABS_API_KEY`.
+
+### POST /api/books/{b}/characters/{id}/voice/suggest
+One-shot utility-model suggestion from craft fields + cached voices. **Response** `{ voiceId, rationale }`. Writes nothing.

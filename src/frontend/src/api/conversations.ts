@@ -16,7 +16,8 @@ export type ProposalType =
   | "todo-create"
   | "character-create"
   | "character-relationship-create"
-  | "resource-create";
+  | "resource-create"
+  | "audio-script-create";
 export type ProposalStatus = "pending" | "applied" | "rejected" | "not-found";
 
 export interface AiParticipant {

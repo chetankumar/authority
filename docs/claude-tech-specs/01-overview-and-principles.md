@@ -25,6 +25,8 @@ A zen writing environment wrapped in a book-management system. The author writes
 | Todos created by AI | AI proposes → author confirms | Same proposal gate. |
 | Todos created by the dependency system | System, automatic | No gate — a mechanical consequence of a content change; the todo is itself only a prompt to the author. |
 | Resource files (`resources/`) created by AI | AI proposes → author confirms | Same proposal gate. A resource file is neither prose nor bookkeeping, so it gets no execute tool — only `propose_resource_create`, applied on Accept. |
+| Scene audio script (`scenes/{id}/audio/manifest.json`) | AI proposes → author confirms | `audio-script` AI-Job → `audio-script-create` proposal → Accept **merges** into the manifest (speakers overwritten from Character Sheet / Narrator). Never writes prose. |
+| Scene audio mp3s (`scenes/{id}/audio/lines/*.mp3`) | Author explicit action | Separate from Accept: `POST .../audio/generate` or per-line generate spends ElevenLabs credits. Mp3s are gitignored (`*.mp3`). |
 | Everything the author does directly in the UI | Author | No gate. |
 
 ## Core domain concepts

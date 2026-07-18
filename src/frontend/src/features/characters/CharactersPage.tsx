@@ -6,6 +6,7 @@ import type {
   CharacterRelationship,
   CharacterRelationshipCategory,
 } from "../../api/characters";
+import { suggestVoice } from "../../api/audio";
 import { ApiError } from "../../api/client";
 import {
   useCharacters,
@@ -17,8 +18,10 @@ import {
   useUpdateCharacterRelationship,
   useDeleteCharacterRelationship,
 } from "../../queries/characters";
+import { useElevenLabsVoices } from "../../queries/audio";
 import { BlockedDeletionDialog, type BlockedRef } from "../../components/BlockedDeletionDialog";
 import { SearchableSelect } from "../../components/SearchableSelect";
+import { useToast } from "../../components/Toast";
 import { Button, Field, Input, Select } from "../../components/ui";
 
 const CATEGORY_LABELS: Record<CharacterRelationshipCategory, string> = {
@@ -48,6 +51,8 @@ const EMPTY_FORM: CharacterInput = {
   personality: "",
   history: "",
   notes: "",
+  voiceId: "",
+  voiceName: "",
 };
 
 function toForm(c: Character): CharacterInput {
@@ -66,6 +71,8 @@ function toForm(c: Character): CharacterInput {
     personality: c.personality,
     history: c.history,
     notes: c.notes,
+    voiceId: c.voiceId,
+    voiceName: c.voiceName,
   };
 }
 
@@ -390,10 +397,14 @@ function CharacterRow({
 }) {
   const updateCharacter = useUpdateCharacter(bookId);
   const deleteCharacter = useDeleteCharacter(bookId);
+  const voicesQ = useElevenLabsVoices();
+  const toast = useToast();
 
   const [form, setForm] = useState<CharacterInput>(() => toForm(character));
   const [conflict, setConflict] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<{ name: string; refs: BlockedRef[] } | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestRationale, setSuggestRationale] = useState<string | null>(null);
 
   useEffect(() => {
     if (expanded) setForm(toForm(character));
@@ -528,6 +539,69 @@ function CharacterRow({
             value={form.notes}
             onChange={(e) => set("notes", e.target.value)}
           />
+        </Field>
+      </div>
+
+      <h4 className="mb-2 mt-4 font-ui text-[0.75rem] uppercase tracking-wider text-ink-soft">
+        Voice
+      </h4>
+      <div className="space-y-2">
+        <Field label="ElevenLabs voice" hint="Used when generating scene audio for this character">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-[14rem] flex-1">
+              <SearchableSelect
+                options={(voicesQ.data ?? []).map((v) => ({
+                  value: v.voiceId,
+                  label: `${v.name}${v.gender || v.age || v.accent ? ` (${[v.gender, v.age, v.accent].filter(Boolean).join(", ")})` : ""}`,
+                  hint: v.description || undefined,
+                }))}
+                value={form.voiceId || null}
+                onChange={(v) => {
+                  const voice = (voicesQ.data ?? []).find((x) => x.voiceId === v);
+                  setForm((f) => ({ ...f, voiceId: v ?? "", voiceName: voice?.name ?? "" }));
+                }}
+                placeholder="Choose a voice…"
+                clearable
+              />
+            </div>
+            {form.voiceId && (voicesQ.data ?? []).find((v) => v.voiceId === form.voiceId)?.previewUrl && (
+              <audio
+                controls
+                className="h-8 max-w-[12rem]"
+                src={(voicesQ.data ?? []).find((v) => v.voiceId === form.voiceId)?.previewUrl}
+              />
+            )}
+            <Button
+              variant="secondary"
+              disabled={suggesting}
+              onClick={() => {
+                setSuggesting(true);
+                void suggestVoice(bookId, character.id)
+                  .then((res) => {
+                    if (res.voiceId) {
+                      const voice = (voicesQ.data ?? []).find((x) => x.voiceId === res.voiceId);
+                      setForm((f) => ({
+                        ...f,
+                        voiceId: res.voiceId!,
+                        voiceName: voice?.name ?? f.voiceName ?? "",
+                      }));
+                      setSuggestRationale(res.rationale || null);
+                    } else {
+                      toast.error(res.rationale || "No suggestion returned");
+                    }
+                  })
+                  .catch((err) =>
+                    toast.error(err instanceof ApiError ? err.message : "Suggest failed"),
+                  )
+                  .finally(() => setSuggesting(false));
+              }}
+            >
+              {suggesting ? "Suggesting…" : "Suggest voice"}
+            </Button>
+          </div>
+          {suggestRationale && (
+            <p className="mt-1 text-[0.75rem] text-ink-faint">{suggestRationale}</p>
+          )}
         </Field>
       </div>
 

@@ -12,6 +12,7 @@ const OUTPUT_LABEL: Record<string, string> = {
   chat: "Chat",
   "edit-proposals": "Edit proposals",
   "metadata-proposals": "Metadata proposals",
+  "audio-script": "Audio script",
 };
 
 export default function AIJobsPage() {

@@ -15,6 +15,7 @@ from app.core.ids import new_id
 from app.models.character import CharacterCreate, CharacterUpdate
 from app.models.enums import ProposalStatus, ProposalType
 from app.models.proposal import (
+    AudioScriptCreatePayload,
     CharacterCreatePayload,
     CharacterRelationshipCreatePayload,
     Proposal,
@@ -23,6 +24,7 @@ from app.models.proposal import (
     TodoCreatePayload,
 )
 from app.models.scene import SceneUpdate
+from app.services.audio_service import AudioService
 from app.services.book_registry import BookRegistry
 from app.services.resource_service import ResourceService
 from app.services.scene_service import SceneService, _content_metrics, _now as scene_now
@@ -76,6 +78,7 @@ class ProposalService:
         structure_service: StructureService,
         todo_service: TodoService,
         resource_service: ResourceService,
+        audio_service: AudioService,
     ) -> None:
         self._registry = registry
         self._scenes = scene_service
@@ -83,6 +86,7 @@ class ProposalService:
         self._structure = structure_service
         self._todos = todo_service
         self._resources = resource_service
+        self._audio = audio_service
 
     def reject(self, book_id: str, proposal_id: str) -> Proposal:
         mgr = self._registry.get(book_id)
@@ -127,6 +131,8 @@ class ProposalService:
             result = await self._apply_character_relationship(book_id, prop)
         elif prop.type == ProposalType.resource_create:
             result = await self._apply_resource_create(book_id, prop)
+        elif prop.type == ProposalType.audio_script_create:
+            result = await self._apply_audio_script_create(book_id, prop)
         else:
             raise validation({"type": f"Unsupported proposal type: {prop.type}"})
 
@@ -228,6 +234,17 @@ class ProposalService:
         payload = ResourceCreatePayload.model_validate(prop.payload)
         resource = await self._resources.create_text_file(book_id, payload.filename, payload.content)
         return {"resource": resource.model_dump(mode="json")}
+
+    async def _apply_audio_script_create(self, book_id: str, prop: Proposal) -> dict:
+        from app.models.audio import AudioManifest
+
+        payload = AudioScriptCreatePayload.model_validate(prop.payload)
+        try:
+            manifest = AudioManifest.from_raw(payload.manifest)
+        except Exception as exc:
+            raise validation({"manifest": f"Invalid audio script: {exc}"}) from exc
+        saved = await self._audio.save_manifest(book_id, payload.sceneId, manifest, merge=True)
+        return {"manifest": saved.model_dump(mode="json")}
 
     async def _apply_character(self, book_id: str, prop: Proposal) -> dict:
         payload = CharacterCreatePayload.model_validate(prop.payload)
