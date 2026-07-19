@@ -132,7 +132,7 @@ export function AudioModal({
     setActiveItemId(item.id);
     const el = audioRef.current ?? new Audio();
     audioRef.current = el;
-    el.src = audioLineUrl(bookId, sceneId, item.renderedFile);
+    el.src = audioLineUrl(bookId, sceneId, item.renderedFile, manifest?.updatedAt);
     el.onended = () => {
       const next = index + 1;
       if (next >= playlist.length) {
@@ -156,7 +156,7 @@ export function AudioModal({
     setActiveItemId(item.id);
     const el = audioRef.current ?? new Audio();
     audioRef.current = el;
-    el.src = audioLineUrl(bookId, sceneId, item.renderedFile);
+    el.src = audioLineUrl(bookId, sceneId, item.renderedFile, manifest?.updatedAt);
     el.onended = () => setActiveItemId(null);
     void el.play().catch(() => {
       setActiveItemId(null);

@@ -79,11 +79,21 @@ export const generateAudioAll = (bookId: string, sceneId: string) =>
 export const deleteAudio = (bookId: string, sceneId: string) =>
   apiSend<void>("DELETE", `/books/${bookId}/scenes/${sceneId}/audio`);
 
-export const audioLineUrl = (bookId: string, sceneId: string, filename: string) =>
-  `/api/books/${bookId}/scenes/${sceneId}/audio/lines/${encodeURIComponent(filename)}`;
+export const audioLineUrl = (
+  bookId: string,
+  sceneId: string,
+  filename: string,
+  /** Bust browser media cache after regenerate (same path, new bytes). */
+  version?: string,
+) => {
+  const base = `/api/books/${bookId}/scenes/${sceneId}/audio/lines/${encodeURIComponent(filename)}`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+};
 
-export const audioStitchedUrl = (bookId: string, sceneId: string) =>
-  `/api/books/${bookId}/scenes/${sceneId}/audio/stitched`;
+export const audioStitchedUrl = (bookId: string, sceneId: string, version?: string) => {
+  const base = `/api/books/${bookId}/scenes/${sceneId}/audio/stitched`;
+  return version ? `${base}?v=${encodeURIComponent(version)}` : base;
+};
 
 export const getGitignore = (bookId: string) =>
   apiGet<{ patterns: string[] }>(`/books/${bookId}/gitignore`);

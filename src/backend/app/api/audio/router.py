@@ -80,13 +80,23 @@ async def get_line_file(
     book_id: str, scene_id: str, filename: str, svc: AudioService = Audio
 ) -> FileResponse:
     path = svc.path_for_line(book_id, scene_id, filename)
-    return FileResponse(path, media_type="audio/mpeg", filename=path.name)
+    return FileResponse(
+        path,
+        media_type="audio/mpeg",
+        filename=path.name,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/stitched")
 async def get_stitched(book_id: str, scene_id: str, svc: AudioService = Audio) -> FileResponse:
     path = svc.path_for_stitched(book_id, scene_id)
-    return FileResponse(path, media_type="audio/mpeg", filename=path.name)
+    return FileResponse(
+        path,
+        media_type="audio/mpeg",
+        filename=path.name,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.delete("", status_code=204, response_class=Response)
