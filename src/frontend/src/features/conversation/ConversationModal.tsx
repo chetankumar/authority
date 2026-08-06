@@ -18,6 +18,7 @@ import { Modal } from "../../components/Modal";
 import { Button } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { keys } from "../../queries/keys";
+import { MarkdownBody } from "./MarkdownBody";
 
 export function ConversationModal({
   bookId,
@@ -393,7 +394,7 @@ function MessageBubble({
     // thread — the author needs to actually see this one.
     return (
       <div className="rounded-control border border-line bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        <MarkdownBody>{message.content}</MarkdownBody>
       </div>
     );
   }
@@ -420,7 +421,11 @@ function MessageBubble({
             From {c.sceneId}: {c.excerpt}
           </blockquote>
         ))}
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{message.content}</div>
+        ) : (
+          <MarkdownBody>{message.content}</MarkdownBody>
+        )}
       </div>
       {message.proposals.length > 0 && (
         <div className="mt-2 space-y-2">

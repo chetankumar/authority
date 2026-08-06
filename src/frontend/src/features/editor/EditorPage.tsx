@@ -26,12 +26,16 @@ import { useCreateSceneTodo, useDeleteTodo, useSceneTodos, useUpdateTodo } from 
 import { AudioModal } from "../audio/AudioModal";
 import { SceneModal } from "../sceneModal/SceneModal";
 import { ConversationModal } from "../conversation/ConversationModal";
+import { EmDash, applyEmDashInSource } from "./emDash";
 
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: string } | { kind: "error" };
 
 // tiptap-markdown augments editor.storage at runtime but ships no types for it.
 const getMarkdown = (editor: Editor): string =>
   (editor.storage as unknown as { markdown: { getMarkdown(): string } }).markdown.getMarkdown();
+
+/** TipTap destroys leave a truthy object with commandManager=null — never call commands on it. */
+const isLiveEditor = (ed: Editor | null | undefined): ed is Editor => !!ed && !ed.isDestroyed;
 
 export default function EditorPage() {
   const { bookId = "", sceneId = "" } = useParams();
@@ -89,45 +93,44 @@ export default function EditorPage() {
         setSave({ kind: "error" });
         // Back off and retry the current document.
         setTimeout(() => {
-          if (editor) void doSave(getMarkdown(editor));
+          if (isLiveEditor(editor)) void doSave(getMarkdown(editor));
         }, 4000);
       }
     },
     [bookId, sceneId],
   );
 
-  const editor = useEditor(
-    {
-      extensions: [StarterKit, Markdown.configure({ html: false, transformPastedText: true })],
-      editorProps: { attributes: { class: "prose-sheet focus:outline-none" } },
-      onUpdate: ({ editor }) => {
-        setWords(editor.getText().trim() ? editor.getText().trim().split(/\s+/).length : 0);
-        dirty.current = true;
-        if (debounce.current) clearTimeout(debounce.current);
-        debounce.current = setTimeout(() => void doSave(getMarkdown(editor)), 2000);
-      },
-      onBlur: ({ editor }) => {
-        if (dirty.current) void doSave(getMarkdown(editor));
-      },
+  // Stable instance across Prev/Next — scene switches only setContent. Putting
+  // sceneId in deps destroyed the editor mid-commit; the load effect then hit
+  // editor.commands on commandManager=null.
+  const editor = useEditor({
+    extensions: [StarterKit, Markdown.configure({ html: false, transformPastedText: true }), EmDash],
+    editorProps: { attributes: { class: "prose-sheet focus:outline-none" } },
+    onUpdate: ({ editor: ed }) => {
+      setWords(ed.getText().trim() ? ed.getText().trim().split(/\s+/).length : 0);
+      dirty.current = true;
+      if (debounce.current) clearTimeout(debounce.current);
+      debounce.current = setTimeout(() => void doSave(getMarkdown(ed)), 2000);
     },
-    [sceneId],
-  );
+    onBlur: ({ editor: ed }) => {
+      if (dirty.current) void doSave(getMarkdown(ed));
+    },
+  });
 
   // Load content into the editor once per scene.
   // emitUpdate: false — TipTap's default setContent fires onUpdate, which would
   // mark dirty and autosave identical prose, bumping bookkeeping.updatedAt.
   useEffect(() => {
-    if (editor && sceneQ.data && loadedScene.current !== sceneId) {
-      loadedScene.current = sceneId;
-      entryHash.current = sceneQ.data.contentHash;
-      contentChangedThisVisit.current = false;
-      dirty.current = false;
-      if (debounce.current) clearTimeout(debounce.current);
-      editor.commands.setContent(sceneQ.data.content || "", { emitUpdate: false });
-      setTitle(sceneQ.data.title);
-      setWords(sceneQ.data.wordCount);
-      setSave({ kind: "idle" });
-    }
+    if (!isLiveEditor(editor) || !sceneQ.data || loadedScene.current === sceneId) return;
+    loadedScene.current = sceneId;
+    entryHash.current = sceneQ.data.contentHash;
+    contentChangedThisVisit.current = false;
+    dirty.current = false;
+    if (debounce.current) clearTimeout(debounce.current);
+    editor.commands.setContent(sceneQ.data.content || "", { emitUpdate: false });
+    setTitle(sceneQ.data.title);
+    setWords(sceneQ.data.wordCount);
+    setSave({ kind: "idle" });
   }, [editor, sceneQ.data, sceneId]);
 
   // Hydrate the right-pane preference from ui.json.
@@ -155,7 +158,11 @@ export default function EditorPage() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        const md = sourceModeRef.current ? sourceTextRef.current : editor ? getMarkdown(editor) : null;
+        const md = sourceModeRef.current
+          ? sourceTextRef.current
+          : isLiveEditor(editor)
+            ? getMarkdown(editor)
+            : null;
         if (md != null) void doSave(md);
       }
     };
@@ -164,7 +171,11 @@ export default function EditorPage() {
       window.removeEventListener("keydown", onKey);
       if (dirty.current) {
         contentChangedThisVisit.current = true;
-        const md = sourceModeRef.current ? sourceTextRef.current : editor ? getMarkdown(editor) : null;
+        const md = sourceModeRef.current
+          ? sourceTextRef.current
+          : isLiveEditor(editor)
+            ? getMarkdown(editor)
+            : null;
         if (md != null) void doSave(md);
       }
       leaveEnrich({ keepalive: true });
@@ -187,7 +198,7 @@ export default function EditorPage() {
   sourceTextRef.current = sourceText;
 
   const toggleSource = () => {
-    if (!editor) return;
+    if (!isLiveEditor(editor)) return;
     if (!sourceMode) {
       if (dirty.current) void doSave(getMarkdown(editor));
       setSourceText(getMarkdown(editor));
@@ -202,8 +213,19 @@ export default function EditorPage() {
     }
   };
 
-  const onSourceChange = (value: string) => {
-    setSourceText(value);
+  const onSourceChange = (el: HTMLTextAreaElement) => {
+    let value = el.value;
+    const replaced = applyEmDashInSource(value, el.selectionStart);
+    if (replaced) {
+      value = replaced.value;
+      const caret = replaced.caret;
+      setSourceText(value);
+      requestAnimationFrame(() => {
+        sourceRef.current?.setSelectionRange(caret, caret);
+      });
+    } else {
+      setSourceText(value);
+    }
     const wc = value.trim() ? value.trim().split(/\s+/).length : 0;
     setWords(wc);
     dirty.current = true;
@@ -231,7 +253,7 @@ export default function EditorPage() {
   const flushBeforeNav = () => {
     if (dirty.current) {
       contentChangedThisVisit.current = true;
-      const md = sourceMode ? sourceText : editor ? getMarkdown(editor) : null;
+      const md = sourceMode ? sourceText : isLiveEditor(editor) ? getMarkdown(editor) : null;
       if (md != null) void doSave(md);
     }
     leaveEnrich();
@@ -419,7 +441,7 @@ export default function EditorPage() {
         </div>
 
         {/* TipTap toolbar */}
-        {editor && (
+        {isLiveEditor(editor) && (
           <div className="flex items-center gap-1 border-b border-line px-4 py-1.5 text-[0.8125rem]">
             {!sourceMode && (
               <>
@@ -452,7 +474,7 @@ export default function EditorPage() {
               <textarea
                 ref={sourceRef}
                 value={sourceText}
-                onChange={(e) => onSourceChange(e.target.value)}
+                onChange={(e) => onSourceChange(e.target)}
                 onBlur={() => { if (dirty.current) void doSave(sourceText); }}
                 className="min-h-[60vh] w-full resize-none bg-transparent font-mono text-[0.875rem] leading-relaxed text-ink outline-none"
                 spellCheck={false}
@@ -467,7 +489,7 @@ export default function EditorPage() {
         <div className="flex items-center justify-between border-t border-line px-6 py-2 text-[0.8125rem] text-ink-soft">
           <span className="font-mono">
             {words.toLocaleString()} words
-            <span className="ml-3">{saveLabel(save)}</span>
+            <SaveStatus save={save} />
           </span>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={goPrev} disabled={!hasPrev} title={hasPrev ? undefined : "This is the first scene"}>
@@ -660,11 +682,24 @@ export default function EditorPage() {
   );
 }
 
-function saveLabel(s: SaveState): string {
-  if (s.kind === "saving") return "· Saving…";
-  if (s.kind === "saved") return `· Saved ${s.at}`;
-  if (s.kind === "error") return "· Not saved — retrying";
-  return "";
+function SaveStatus({ save }: { save: SaveState }) {
+  if (save.kind === "idle") return null;
+  if (save.kind === "saving") {
+    return <span className="ml-3 text-ink-soft">Saving…</span>;
+  }
+  if (save.kind === "error") {
+    return <span className="ml-3 text-attn">Not saved — retrying</span>;
+  }
+  return (
+    <span className="ml-3 inline-flex items-center gap-1.5 text-ink-soft">
+      <span className="text-ok" aria-hidden>
+        ✓
+      </span>
+      <span>
+        Saved · {save.at}
+      </span>
+    </span>
+  );
 }
 
 function ToolButton({ label, onClick, disabled, soon, title }: { label: string; onClick?: () => void; disabled?: boolean; soon?: boolean; title?: string }) {

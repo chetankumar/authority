@@ -2,6 +2,8 @@
 
 **Status:** ✅ **implemented** (Phase 12, 2026-07-18). Authoritative product/behavior spec for scene audio. Tech specs 01/03/04/05/06 and [`BUILD-TODO.md`](BUILD-TODO.md) Phase 12 are in sync. Do not invent a parallel persistence or AI stack — extend the paths listed in §0.
 
+**How to use it (step-by-step):** [`audio-system-user-journey.md`](audio-system-user-journey.md) — plain-language walkthrough of every shipped feature.
+
 **Product decisions (locked):**
 
 - Voices live on the **Character Sheet** / book **Narrator** — never invented by the LLM.

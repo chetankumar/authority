@@ -13,7 +13,7 @@ Auto-collapsed left nav (icon rail) · center writing column · right pane (320p
 
 ## Writing surface
 
-TipTap + tiptap-markdown, contenteditable (Grammarly-compatible). Inline editable title → `PATCH {title}` (slug-renames the file). Autosave: 2s debounce + blur + route-leave → `PUT content`; Ctrl/Cmd+S immediate. On leave (if prose changed this visit) → `POST …/enrich/auto`. Save indicator: "Saving…" → "Saved · 2:41pm"; failure → persistent amber "Not saved — retrying". Live local word count.
+TipTap + tiptap-markdown, contenteditable (Grammarly-compatible). Inline editable title → `PATCH {title}` (slug-renames the file). Autosave: 2s debounce + blur + route-leave → `PUT content`; Ctrl/Cmd+S immediate. On leave (if prose changed this visit) → `POST …/enrich/auto`. Save indicator: "Saving…" → "Saved · 2:41pm"; failure → persistent amber "Not saved — retrying". Live local word count. Typing `--` inserts an em dash (rich mode and markdown source).
 
 ## Prev / Next
 
