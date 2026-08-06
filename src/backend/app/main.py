@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 
 from app import __version__
 from app.api.audio.router import router as audio_router
@@ -42,6 +43,30 @@ config = load_config()
 setup_logging(config.log_file)
 log = logging.getLogger("authority")
 
+# Set by start.bat / start.sh so a fresh `npm run build` reloads the open tab
+# without restarting the API. dev.bat uses Vite HMR instead.
+_UI_LIVE_RELOAD = os.environ.get("AUTHORITY_UI_RELOAD", "").strip().lower() in {"1", "true", "yes"}
+
+_LIVE_RELOAD_SNIPPET = """
+<script>
+(function () {
+  var prev = null;
+  function check() {
+    fetch("/__authority_ui_build", { cache: "no-store" })
+      .then(function (r) { return r.text(); })
+      .then(function (t) {
+        if (!t || t === "0") return;
+        if (prev !== null && t !== prev) location.reload();
+        prev = t;
+      })
+      .catch(function () {});
+  }
+  check();
+  setInterval(check, 1500);
+})();
+</script>
+"""
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +76,8 @@ async def lifespan(app: FastAPI):
         log.info("Serving SPA from %s", dist)
     else:
         log.warning("Frontend build not found at %s — run the frontend build.", dist)
+    if _UI_LIVE_RELOAD:
+        log.info("UI live-reload on: rebuild frontend, open tab refreshes automatically")
 
     import shutil
 
@@ -116,10 +143,37 @@ app.include_router(events_router, prefix="/api")
 
 _DIST = config.frontend_dist
 
-# Built assets (hashed JS/CSS) live under dist/assets; mount them if present so
-# StaticFiles can set correct content types and caching.
-if (_DIST / "assets").is_dir():
-    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+# Serve dist/ from disk on every request (no StaticFiles mount). That way a
+# fresh `npm run build` is visible without an API restart. index.html must not
+# be cached: it points at the current hashed asset names.
+_NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
+_IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+
+def _spa_headers(path: Path) -> dict[str, str]:
+    return _IMMUTABLE if path.parent.name == "assets" else _NO_CACHE
+
+
+def _index_response(index: Path) -> FileResponse | HTMLResponse:
+    headers = _NO_CACHE
+    if not _UI_LIVE_RELOAD:
+        return FileResponse(index, headers=headers)
+    html = index.read_text(encoding="utf-8")
+    if "</body>" in html:
+        html = html.replace("</body>", _LIVE_RELOAD_SNIPPET + "</body>", 1)
+    else:
+        html = html + _LIVE_RELOAD_SNIPPET
+    return HTMLResponse(html, headers=headers)
+
+
+@app.get("/__authority_ui_build", include_in_schema=False)
+async def authority_ui_build_token():
+    """mtime token for the live-reload poller injected into index.html."""
+    index = _DIST / "index.html"
+    try:
+        return PlainTextResponse(str(index.stat().st_mtime_ns), headers=_NO_CACHE)
+    except OSError:
+        return PlainTextResponse("0", headers=_NO_CACHE)
 
 
 @app.get("/{full_path:path}", include_in_schema=False)
@@ -138,11 +192,13 @@ async def spa_fallback(full_path: str):
         candidate = (_DIST / full_path).resolve()
         # Guard against path traversal outside dist.
         if candidate.is_file() and _DIST.resolve() in candidate.parents:
-            return FileResponse(candidate)
+            if candidate.name == "index.html":
+                return _index_response(candidate)
+            return FileResponse(candidate, headers=_spa_headers(candidate))
 
         index = _DIST / "index.html"
         if index.is_file():
-            return FileResponse(index)
+            return _index_response(index)
 
     return JSONResponse(
         status_code=503,

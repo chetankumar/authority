@@ -3,6 +3,10 @@ set -euo pipefail
 
 # Authority — Mac/Linux launcher
 # Starts the backend server. Run ./setup.sh first if dependencies changed.
+#
+# Frontend: dist/ is served live from disk. After `npm run build` in
+# src/frontend, the open browser tab reloads on its own — no need to
+# stop/restart this server. (For HMR while editing React, use ./dev.sh.)
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
@@ -10,6 +14,10 @@ cd "$ROOT"
 PORT=8700
 ENV_NAME="authority"
 BACKEND="$ROOT/src/backend"
+
+# Enable SPA live-reload: poll dist/index.html mtime and refresh the tab
+# when `npm run build` finishes.
+export AUTHORITY_UI_RELOAD=1
 
 # -------------------------------------------------------------------
 # 1. Already running?
@@ -39,6 +47,7 @@ fi
 # 3. Start the backend
 # -------------------------------------------------------------------
 echo "[Authority] Starting on port $PORT..."
+echo "[Authority] UI live-reload on — after npm run build, the browser refreshes itself."
 
 cleanup() {
     echo ""
@@ -49,12 +58,15 @@ cleanup() {
 }
 trap cleanup INT TERM
 
+# No --reload here: open SSE / AI streams would hang a WatchFiles restart
+# ("Waiting for connections to close"). Frontend rebuilds still live-reload
+# via AUTHORITY_UI_RELOAD. Use ./dev.sh when editing Python.
 if [ "$USE_CONDA" = 1 ]; then
     conda run -n "$ENV_NAME" --no-capture-output python -m uvicorn app.main:app \
-        --host 127.0.0.1 --port "$PORT" --workers 1 --reload --app-dir "$BACKEND" &
+        --host 127.0.0.1 --port "$PORT" --workers 1 --app-dir "$BACKEND" &
 else
     python -m uvicorn app.main:app \
-        --host 127.0.0.1 --port "$PORT" --workers 1 --reload --app-dir "$BACKEND" &
+        --host 127.0.0.1 --port "$PORT" --workers 1 --app-dir "$BACKEND" &
 fi
 BACKEND_PID=$!
 
