@@ -121,8 +121,18 @@ export const updateScene = (bookId: string, sceneId: string, body: SceneUpdate) 
 export const deleteScene = (bookId: string, sceneId: string) =>
   apiSend<void>("DELETE", `/books/${bookId}/scenes/${sceneId}`);
 
-export const saveContent = (bookId: string, sceneId: string, content: string) =>
-  apiSend<ContentSaveResult>("PUT", `/books/${bookId}/scenes/${sceneId}/content`, { content });
+export const saveContent = (
+  bookId: string,
+  sceneId: string,
+  content: string,
+  opts?: { keepalive?: boolean },
+) =>
+  apiSend<ContentSaveResult>(
+    "PUT",
+    `/books/${bookId}/scenes/${sceneId}/content`,
+    { content },
+    opts,
+  );
 
 export type EnrichScope = "summary" | "characters" | "both";
 

@@ -1,7 +1,7 @@
 // Scene Editor (doc 06 §9) — the room where the book gets written; everything else
-// recedes. TipTap + tiptap-markdown on a 68ch Literata sheet; autosave (2s debounce +
-// blur + route-leave, Ctrl/Cmd+S immediate); inline title; live word count; Prev/Next.
-// Tool-panel AI buttons and the right-pane lists arrive with phases 6–7 (shown "soon").
+// recedes. TipTap + tiptap-markdown on a 68ch Literata sheet; Google Docs–paranoid
+// autosave (every keystroke, serialized queue, keepalive unload flush); inline title;
+// live word count; Prev/Next.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
@@ -29,6 +29,8 @@ import { ConversationModal } from "../conversation/ConversationModal";
 import { EmDash, applyEmDashInSource } from "./emDash";
 
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: string } | { kind: "error" };
+
+const RETRY_MS = 1000;
 
 // tiptap-markdown augments editor.storage at runtime but ships no types for it.
 const getMarkdown = (editor: Editor): string =>
@@ -70,35 +72,114 @@ export default function EditorPage() {
   const sourceRef = useRef<HTMLTextAreaElement>(null);
 
   const loadedScene = useRef<string | null>(null);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dirty = useRef(false);
   const sourceModeRef = useRef(false);
   const sourceTextRef = useRef("");
   const entryHash = useRef<string>("");
   const contentChangedThisVisit = useRef(false);
   const bookkeepingRef = useRef<HTMLDivElement>(null);
 
-  const doSave = useCallback(
-    async (markdown: string) => {
-      dirty.current = false;
-      setSave({ kind: "saving" });
-      try {
-        const res = await saveContent(bookId, sceneId, markdown);
-        setWords(res.wordCount);
-        if (res.contentHash !== entryHash.current) {
-          contentChangedThisVisit.current = true;
-        }
-        setSave({ kind: "saved", at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
-      } catch {
-        setSave({ kind: "error" });
-        // Back off and retry the current document.
-        setTimeout(() => {
-          if (isLiveEditor(editor)) void doSave(getMarkdown(editor));
-        }, 4000);
+  const bookIdRef = useRef(bookId);
+  const sceneIdRef = useRef(sceneId);
+  bookIdRef.current = bookId;
+  sceneIdRef.current = sceneId;
+
+  const latestMarkdown = useRef("");
+  const lastAckedMarkdown = useRef("");
+  const inFlight = useRef(false);
+  const pending = useRef(false);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestSaveRef = useRef<(opts?: { keepalive?: boolean }) => void>(() => {});
+
+  const clearRetry = useCallback(() => {
+    if (retryTimer.current) {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
+  }, []);
+
+  const syncLatestFromEditor = useCallback((editor: Editor | null) => {
+    if (sourceModeRef.current) {
+      latestMarkdown.current = sourceTextRef.current;
+      return latestMarkdown.current;
+    }
+    if (isLiveEditor(editor)) {
+      latestMarkdown.current = getMarkdown(editor);
+      return latestMarkdown.current;
+    }
+    return latestMarkdown.current;
+  }, []);
+
+  const requestSave = useCallback(
+    (opts?: { keepalive?: boolean }) => {
+      const markdown = latestMarkdown.current;
+      if (markdown === lastAckedMarkdown.current) {
+        return;
       }
+      setSave((prev) => (prev.kind === "error" ? prev : { kind: "saving" }));
+
+      // Unload path: fire-and-forget so the browser can finish the request.
+      if (opts?.keepalive) {
+        void saveContent(bookIdRef.current, sceneIdRef.current, markdown, { keepalive: true }).catch(
+          () => undefined,
+        );
+        return;
+      }
+
+      if (inFlight.current) {
+        pending.current = true;
+        return;
+      }
+
+      inFlight.current = true;
+      clearRetry();
+
+      void (async () => {
+        const sentBookId = bookIdRef.current;
+        const sentSceneId = sceneIdRef.current;
+        const sent = latestMarkdown.current;
+        try {
+          const res = await saveContent(sentBookId, sentSceneId, sent);
+          if (sceneIdRef.current !== sentSceneId) return;
+          lastAckedMarkdown.current = sent;
+          setWords(res.wordCount);
+          if (res.contentHash !== entryHash.current) {
+            contentChangedThisVisit.current = true;
+          }
+          if (latestMarkdown.current !== lastAckedMarkdown.current) {
+            pending.current = true;
+            setSave({ kind: "saving" });
+          } else {
+            setSave({
+              kind: "saved",
+              at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+            });
+          }
+        } catch {
+          if (sceneIdRef.current !== sentSceneId) return;
+          setSave({ kind: "error" });
+          clearRetry();
+          retryTimer.current = setTimeout(() => {
+            retryTimer.current = null;
+            requestSaveRef.current();
+          }, RETRY_MS);
+        } finally {
+          if (sceneIdRef.current === sentSceneId) {
+            inFlight.current = false;
+            if (pending.current) {
+              pending.current = false;
+              requestSaveRef.current();
+            }
+          } else {
+            inFlight.current = false;
+            pending.current = false;
+          }
+        }
+      })();
     },
-    [bookId, sceneId],
+    [clearRetry],
   );
+
+  requestSaveRef.current = requestSave;
 
   // Stable instance across Prev/Next — scene switches only setContent. Putting
   // sceneId in deps destroyed the editor mid-commit; the load effect then hit
@@ -107,31 +188,36 @@ export default function EditorPage() {
     extensions: [StarterKit, Markdown.configure({ html: false, transformPastedText: true }), EmDash],
     editorProps: { attributes: { class: "prose-sheet focus:outline-none" } },
     onUpdate: ({ editor: ed }) => {
+      const md = getMarkdown(ed);
+      latestMarkdown.current = md;
       setWords(ed.getText().trim() ? ed.getText().trim().split(/\s+/).length : 0);
-      dirty.current = true;
-      if (debounce.current) clearTimeout(debounce.current);
-      debounce.current = setTimeout(() => void doSave(getMarkdown(ed)), 2000);
+      requestSaveRef.current();
     },
     onBlur: ({ editor: ed }) => {
-      if (dirty.current) void doSave(getMarkdown(ed));
+      latestMarkdown.current = getMarkdown(ed);
+      requestSaveRef.current();
     },
   });
 
   // Load content into the editor once per scene.
   // emitUpdate: false — TipTap's default setContent fires onUpdate, which would
-  // mark dirty and autosave identical prose, bumping bookkeeping.updatedAt.
+  // re-save identical prose and bump bookkeeping.updatedAt.
   useEffect(() => {
     if (!isLiveEditor(editor) || !sceneQ.data || loadedScene.current === sceneId) return;
     loadedScene.current = sceneId;
     entryHash.current = sceneQ.data.contentHash;
     contentChangedThisVisit.current = false;
-    dirty.current = false;
-    if (debounce.current) clearTimeout(debounce.current);
-    editor.commands.setContent(sceneQ.data.content || "", { emitUpdate: false });
+    clearRetry();
+    inFlight.current = false;
+    pending.current = false;
+    const content = sceneQ.data.content || "";
+    latestMarkdown.current = content;
+    lastAckedMarkdown.current = content;
+    editor.commands.setContent(content, { emitUpdate: false });
     setTitle(sceneQ.data.title);
     setWords(sceneQ.data.wordCount);
     setSave({ kind: "idle" });
-  }, [editor, sceneQ.data, sceneId]);
+  }, [editor, sceneQ.data, sceneId, clearRetry]);
 
   // Hydrate the right-pane preference from ui.json.
   useEffect(() => {
@@ -153,34 +239,46 @@ export default function EditorPage() {
     [bookId, sceneId],
   );
 
-  // Ctrl/Cmd+S = save now. Save + leave-enrich on unmount (route-leave).
+  // Ctrl/Cmd+S = save now. Flush + leave-enrich on unmount (route-leave).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        const md = sourceModeRef.current
-          ? sourceTextRef.current
-          : isLiveEditor(editor)
-            ? getMarkdown(editor)
-            : null;
-        if (md != null) void doSave(md);
+        syncLatestFromEditor(editor);
+        requestSave();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      if (dirty.current) {
+      syncLatestFromEditor(editor);
+      if (latestMarkdown.current !== lastAckedMarkdown.current) {
         contentChangedThisVisit.current = true;
-        const md = sourceModeRef.current
-          ? sourceTextRef.current
-          : isLiveEditor(editor)
-            ? getMarkdown(editor)
-            : null;
-        if (md != null) void doSave(md);
       }
+      requestSave({ keepalive: true });
       leaveEnrich({ keepalive: true });
+      clearRetry();
     };
-  }, [editor, doSave, leaveEnrich]);
+  }, [editor, requestSave, leaveEnrich, syncLatestFromEditor, clearRetry]);
+
+  // Paranoid flush when the tab hides or unloads.
+  useEffect(() => {
+    const flush = () => {
+      syncLatestFromEditor(editor);
+      requestSave({ keepalive: true });
+    };
+    const onVisibility = () => {
+      if (document.hidden) flush();
+    };
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [editor, requestSave, syncLatestFromEditor]);
 
   // Close bookkeeping popover on outside click.
   useEffect(() => {
@@ -200,16 +298,17 @@ export default function EditorPage() {
   const toggleSource = () => {
     if (!isLiveEditor(editor)) return;
     if (!sourceMode) {
-      if (dirty.current) void doSave(getMarkdown(editor));
-      setSourceText(getMarkdown(editor));
+      const md = getMarkdown(editor);
+      latestMarkdown.current = md;
+      requestSave();
+      setSourceText(md);
       setSourceMode(true);
       setTimeout(() => sourceRef.current?.focus(), 0);
     } else {
       editor.commands.setContent(sourceText);
       setSourceMode(false);
-      dirty.current = true;
-      if (debounce.current) clearTimeout(debounce.current);
-      debounce.current = setTimeout(() => void doSave(sourceText), 2000);
+      latestMarkdown.current = sourceText;
+      requestSave();
     }
   };
 
@@ -228,9 +327,9 @@ export default function EditorPage() {
     }
     const wc = value.trim() ? value.trim().split(/\s+/).length : 0;
     setWords(wc);
-    dirty.current = true;
-    if (debounce.current) clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => void doSave(value), 2000);
+    latestMarkdown.current = value;
+    sourceTextRef.current = value;
+    requestSave();
   };
 
   const togglePane = () => {
@@ -251,11 +350,11 @@ export default function EditorPage() {
   const hasNext = !!scene?.nextSceneId && scene.nextSceneId !== END_ID;
 
   const flushBeforeNav = () => {
-    if (dirty.current) {
+    syncLatestFromEditor(editor);
+    if (latestMarkdown.current !== lastAckedMarkdown.current) {
       contentChangedThisVisit.current = true;
-      const md = sourceMode ? sourceText : isLiveEditor(editor) ? getMarkdown(editor) : null;
-      if (md != null) void doSave(md);
     }
+    requestSave();
     leaveEnrich();
   };
   const goPrev = () => {
@@ -475,7 +574,10 @@ export default function EditorPage() {
                 ref={sourceRef}
                 value={sourceText}
                 onChange={(e) => onSourceChange(e.target)}
-                onBlur={() => { if (dirty.current) void doSave(sourceText); }}
+                onBlur={() => {
+                  latestMarkdown.current = sourceTextRef.current;
+                  requestSave();
+                }}
                 className="min-h-[60vh] w-full resize-none bg-transparent font-mono text-[0.875rem] leading-relaxed text-ink outline-none"
                 spellCheck={false}
               />

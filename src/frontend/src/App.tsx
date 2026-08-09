@@ -7,6 +7,7 @@ import { useBook } from "./queries/books";
 import { useGitStatus } from "./queries/git";
 import { useBookEvents } from "./events/useBookEvents";
 import { useTheme } from "./theme";
+import { useTabCloseGuard } from "./hooks/useTabCloseGuard";
 import type { ThemePref } from "./api/settings";
 
 // Global shell (doc 06 §3): top bar + left nav + disconnected banner + outlet.
@@ -22,6 +23,8 @@ export default function App() {
 
   // One event channel per open book; feeds the git badge (doc 06 §2).
   useBookEvents(bookId);
+
+  useTabCloseGuard();
 
   return (
     <div className="flex h-full flex-col bg-paper text-ink">

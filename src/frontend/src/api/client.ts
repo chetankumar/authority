@@ -61,12 +61,18 @@ export async function apiGet<T>(path: string): Promise<T> {
   return parse<T>(await fetch(`/api${path}`));
 }
 
-export async function apiSend<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function apiSend<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts?: { keepalive?: boolean },
+): Promise<T> {
   return parse<T>(
     await fetch(`/api${path}`, {
       method,
       headers: { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
+      keepalive: opts?.keepalive,
     }),
   );
 }
