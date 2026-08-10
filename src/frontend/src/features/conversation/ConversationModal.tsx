@@ -99,6 +99,7 @@ export function ConversationModal({
     setConv(c);
     if (!titleFocused.current) setTitleDraft(c.title);
     if (sceneId) void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId) });
+    return c;
   }
 
   async function onTitleBlur() {
@@ -138,22 +139,23 @@ export function ConversationModal({
     setConv(updated);
   }
 
-  function send() {
-    const content = draft.trim();
-    if (!content || busy || !conv) return;
+  function sendContent(content: string, activeConv?: Conversation | null) {
+    const text = content.trim();
+    const current = activeConv ?? conv;
+    if (!text || busy || !current) return;
     setBusy(true);
     setError(null);
     setStreaming("");
     setStreamPhase("Working…");
     setToolLog([]);
-    setDraft("");
+    if (!activeConv) setDraft("");
     const context = pendingContext.current ? [pendingContext.current] : undefined;
     pendingContext.current = null;
 
     abortRef.current = sendMessageStream(
       bookId,
       conversationId,
-      { content, context },
+      { content: text, context },
       {
         onToken: (t) => {
           setStreamPhase(null);
@@ -198,6 +200,10 @@ export function ConversationModal({
         },
       },
     );
+  }
+
+  function send() {
+    sendContent(draft);
   }
 
   async function onDelete() {

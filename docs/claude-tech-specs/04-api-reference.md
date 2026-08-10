@@ -494,11 +494,11 @@ Concurrent sends to one conversation are rejected 409 `generation-in-progress`.
 - **character-create:** create the Character via StructureService uniqueness rules; optionally tag `sceneId` on the scene. 422 if Characters layer not loaded.
 - **resource-create:** write `payload.content` into `resources/{payload.filename}` via `ResourceService.create_text_file` (§15). Name collision → suffixed, never overwritten; the response's filename may differ from the proposed one. This is the *only* write path for an AI-drafted resource file — there is no execute tool for it (doc 01 write-permission table).
 - **audio-script-create:** merge `payload.manifest` into `scenes/{payload.sceneId}/audio/manifest.json` via `AudioService.save_manifest` (§16). Speakers overwritten from Character Sheet / Narrator; unchanged lines preserve prior `renderedFile`. **422** if a non-sfx speaker lacks a voice assignment. Does **not** call ElevenLabs — synthesis is a separate §16 generate call.
-Stamp status `applied` (or `not-found`) + resolvedAt; persist conversation; emit `scene-updated`/`todos-created` as applicable.
+Stamp status `applied` (or `not-found`) + resolvedAt; persist conversation; append a **system** resolution message to the thread (accepted/rejected + type summary); emit `scene-updated`/`todos-created` as applicable.
 **Response** `{ "proposal": Proposal, "result": { "wordCount"?, "contentHash"?, "todo"?: Todo, "resource"?: ResourceFile } }`.
 
 ### POST /api/books/{b}/proposals/{id}/reject
-Marks `rejected` + resolvedAt; touches nothing else. **Response** the Proposal. *(Accept-all = client loops accept sequentially, stopping to display any `not-found`s; deliberately no batch endpoint — no batch atomicity.)*
+Marks `rejected` + resolvedAt; touches nothing else; appends a system resolution message to the conversation. **Response** the Proposal. *(Accept-all = client loops accept sequentially, stopping to display any `not-found`s; deliberately no batch endpoint — no batch atomicity.)*
 
 ---
 

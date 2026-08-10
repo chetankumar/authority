@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.models.conversation import Conversation, Message
-from app.models.enums import MessageAuthor, ParentType
+from app.models.enums import MessageAuthor, ParentType, ProposalStatus
+from app.models.proposal import Proposal
 
 ASSISTANT_FRAMING = """
 You are assisting a novelist in Authority, a local writing studio.
@@ -72,6 +73,8 @@ class ContextAssembler:
         messages: list[Any] = self.system_messages(book_system_prompt, current_scene=scene_ref)
         for msg in conv.messages:
             content = self._message_content(msg)
+            if msg.author == MessageAuthor.assistant and msg.proposals:
+                content = self._append_proposals_block(content, msg.proposals)
             if (
                 msg.author == MessageAuthor.user
                 and mgr is not None
@@ -105,6 +108,16 @@ class ContextAssembler:
 
     def for_structured(self, user_prompt: str, book_system_prompt: str = "") -> list[Any]:
         return self.for_once(user_prompt, book_system_prompt)
+
+    @staticmethod
+    def _append_proposals_block(content: str, proposals: list[Proposal]) -> str:
+        lines = ["[Proposals]"]
+        for prop in proposals:
+            status = prop.status.value if isinstance(prop.status, ProposalStatus) else str(prop.status)
+            ptype = prop.type.value if hasattr(prop.type, "value") else str(prop.type)
+            lines.append(f"- {prop.id} {ptype}: {status}")
+        block = "\n".join(lines)
+        return f"{content}\n\n{block}" if content else block
 
     @staticmethod
     def _message_content(msg: Message) -> str:

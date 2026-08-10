@@ -13,7 +13,8 @@ from app.core.errors import ApiError, not_found, validation
 from app.core.event_hub import EventHub
 from app.core.ids import new_id
 from app.models.character import CharacterCreate, CharacterUpdate
-from app.models.enums import ProposalStatus, ProposalType
+from app.models.conversation import Conversation, Message
+from app.models.enums import MessageAuthor, ProposalStatus, ProposalType
 from app.models.proposal import (
     AudioScriptCreatePayload,
     CharacterCreatePayload,
@@ -69,6 +70,56 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_PREVIEW_MAX = 80
+
+
+def _truncate(text: str, max_len: int = _PREVIEW_MAX) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def _proposal_payload_summary(prop: Proposal) -> str:
+    payload = prop.payload
+    if prop.type == ProposalType.edit:
+        find = _truncate(str(payload.get("find") or ""))
+        replace = _truncate(str(payload.get("replace") or ""))
+        return f'replaced "{find}" with "{replace}"'
+    if prop.type == ProposalType.metadata_update:
+        field = payload.get("field") or "field"
+        new_value = _truncate(str(payload.get("newValue") or ""))
+        return f"{field} → {new_value}"
+    if prop.type == ProposalType.todo_create:
+        return _truncate(str(payload.get("action") or "todo"))
+    if prop.type == ProposalType.character_create:
+        return _truncate(str(payload.get("name") or "character"))
+    if prop.type == ProposalType.character_relationship_create:
+        return f"{payload.get('characterAId')} / {payload.get('characterBId')}"
+    if prop.type == ProposalType.resource_create:
+        return _truncate(str(payload.get("filename") or "file"))
+    if prop.type == ProposalType.audio_script_create:
+        scene_id = payload.get("sceneId") or "scene"
+        return f"audio script for {scene_id}"
+    return prop.type.value
+
+
+def _proposal_resolution_text(prop: Proposal, action: str) -> str:
+    summary = _proposal_payload_summary(prop)
+    return f"Author {action} {prop.type.value} proposal {prop.id}: {summary}"
+
+
+def _append_resolution_message(conv: Conversation, prop: Proposal, action: str) -> None:
+    conv.messages.append(
+        Message(
+            id=new_id("msg"),
+            author=MessageAuthor.system,
+            content=_proposal_resolution_text(prop, action),
+            createdAt=_now(),
+        )
+    )
+    conv.updatedAt = _now()
+
+
 class ProposalService:
     def __init__(
         self,
@@ -99,7 +150,8 @@ class ProposalService:
             raise ApiError(409, "Proposal already resolved.", {"code": "already-resolved"})
         prop.status = ProposalStatus.rejected
         prop.resolvedAt = _now()
-        conv.updatedAt = _now()
+        conv.messages[mi].proposals[pi] = prop
+        _append_resolution_message(conv, prop, "rejected")
         mgr.save_conversation(conv)
         return prop
 
@@ -118,7 +170,9 @@ class ProposalService:
             result = await self._apply_edit(book_id, prop)
             if prop.status == ProposalStatus.not_found:
                 conv.messages[mi].proposals[pi] = prop
-                conv.updatedAt = _now()
+                _append_resolution_message(
+                    conv, prop, "accepted (text no longer found in scene)"
+                )
                 mgr.save_conversation(conv)
                 return ProposalAcceptResult(proposal=prop, result=result)
         elif prop.type == ProposalType.metadata_update:
@@ -139,7 +193,7 @@ class ProposalService:
         prop.status = ProposalStatus.applied
         prop.resolvedAt = _now()
         conv.messages[mi].proposals[pi] = prop
-        conv.updatedAt = _now()
+        _append_resolution_message(conv, prop, "accepted")
         mgr.save_conversation(conv)
         return ProposalAcceptResult(proposal=prop, result=result)
 

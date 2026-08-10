@@ -15,5 +15,5 @@ The universal thread: notes, chats, AI-Job runs, and bookkeeping runs are all th
 - **AI participant switch** → `PATCH {aiParticipant.enabled}`; on-with-no-model → model select pulses + inline 422 "Pick a model to bring the AI in".
 - Model select → `PATCH {aiParticipant.modelId}` (defaults: the run's model on AI-Job/bookkeeping runs, else last-used).
 - Send → `POST /messages`: switch off = plain append (note path); switch on = SSE stream (tokens live → final `message` with proposal cards; `error` → inline danger row). While generating, ephemeral SSE `status` events may show waiting heartbeats, thinking, and a live tool log — not persisted in the thread.
-- Accept/Reject/Accept-all → `POST /proposals/{id}/accept|reject` (Accept-all loops sequentially, halting on not-found).
+- Accept/Reject/Accept-all → `POST /proposals/{id}/accept|reject`. Each resolution appends a system message to the thread (e.g. "Author accepted edit proposal …"). No auto-send after Accept — the author continues the thread manually when ready.
 - Close/click-out just closes — every message persists on send; pending proposals survive and badge the accordion.

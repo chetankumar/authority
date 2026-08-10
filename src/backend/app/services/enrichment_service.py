@@ -140,6 +140,7 @@ class EnrichmentService:
                 "You maintain scene bookkeeping for a novel.",
                 "Read the scene below and record a concise summary of what happens in it",
                 "by calling set_scene_summary.",
+                "Also update the scene's metadata by calling set_scene_metadata with your best guess at the scene's time and location, mood, and setting.",
                 "If the scene is empty or too fragmentary to summarize, don't call the tool —",
                 "say so instead and the author will pick it up.",
                 "",
