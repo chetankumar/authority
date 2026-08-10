@@ -69,7 +69,7 @@ Two SSE producers: the **book event channel** (§12) and **message streaming** (
 ### 2.1 Enums
 
 **`provider`** — which LangChain adapter ModelFactory constructs:
-`anthropic` (ChatAnthropic; apiKey optional — defaults to `ANTHROPIC_API_KEY`) · `openai` (ChatOpenAI; apiKey optional — defaults to `OPENAI_API_KEY`) · `gemini` (ChatGoogleGenerativeAI; apiKey optional — defaults to `GOOGLE_API_KEY`) · `openai-compatible` (ChatOpenAI with `base_url`; baseUrl required, apiKey optional — LM Studio etc.) · `ollama` (ChatOllama; baseUrl required).
+`anthropic` (ChatAnthropic; apiKey optional — defaults to `ANTHROPIC_API_KEY`) · `openai` (ChatOpenAI; apiKey optional — defaults to `OPENAI_API_KEY`) · `gemini` (ChatGoogleGenerativeAI; apiKey optional — defaults to `GOOGLE_API_KEY`) · `openrouter` (ChatOpenRouter; apiKey optional — defaults to `OPENROUTER_API_KEY`) · `openai-compatible` (ChatOpenAI with `base_url`; baseUrl required, apiKey optional — LM Studio etc.) · `ollama` (ChatOllama; baseUrl required).
 
 **`outputType`** — how an AI-Job's model response is treated by ConversationService after streaming completes:
 - `chat` — freeform reply; stored as a plain assistant message; no parsing, no proposals.
@@ -207,7 +207,7 @@ Launcher readiness poll; frontend disconnect detection. **Response** `{ "status"
 **Request** `{ "label": string, "provider": provider, "modelName": string, "apiKey"?: string, "baseUrl"?: string }`
 - `apiKey` — literal secret or `${ENV_VAR}`; stored as given, resolved at call time by ModelFactory.
 
-**Logic:** 1) Provider rules: `openai-compatible`/`ollama` require baseUrl (422; baseUrl must parse as http(s) URL). `apiKey` is **optional for every provider** — an empty key means "use the provider's default environment variable" (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`), resolved by ModelFactory at call time; a `${ENV_VAR}` reference or a literal are also accepted. 2) Generate `mdl-` id; persist. **Response:** the ModelConfig (masked). No connectivity test at save (models may be offline local servers); the model-test endpoint or first real use surfaces a missing/invalid key.
+**Logic:** 1) Provider rules: `openai-compatible`/`ollama` require baseUrl (422; baseUrl must parse as http(s) URL). `apiKey` is **optional for every provider** — an empty key means "use the provider's default environment variable" (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`, `openrouter` → `OPENROUTER_API_KEY`), resolved by ModelFactory at call time; a `${ENV_VAR}` reference or a literal are also accepted. 2) Generate `mdl-` id; persist. **Response:** the ModelConfig (masked). No connectivity test at save (models may be offline local servers); the model-test endpoint or first real use surfaces a missing/invalid key.
 
 ### PATCH /api/settings/models/{id}
 **Request:** same fields, all optional. Omitted `apiKey` keeps the stored secret (clients round-trip the masked form by *not* sending the field). Re-validates provider rules against the merged result. 404 unknown id.
@@ -216,7 +216,13 @@ Launcher readiness poll; frontend disconnect detection. **Response** `{ "status"
 **Logic:** SettingsService collects references — AI-Job `defaultModelId`s and every `ai.*ModelId` slot. Any → **409** `{ "blockedBy": { "aiJobs": [{id,name}], "utilityModel"?: true, "commitMessageModel"?: true, "characterParsingModel"?: true, "sceneSummaryModel"?: true, "chatDefaultModel"?: true } }` (only the slots actually referencing this model are present). Else remove. (Conversations referencing it historically are unaffected; a later message-send with a deleted model → 422 at send time.)
 
 ### POST /api/settings/models/{id}/test
-**Logic:** SettingsService loads the stored config and asks ModelFactory to build the LangChain chat model, resolving a `${ENV_VAR}` key at call time; it then sends a single `"hello model"` chat completion (guarded by a ~30s timeout). **Response** 200 `ModelTestResult`: `ok:true` with a short reply excerpt + `latencyMs`, or `ok:false` with a human-readable `error` (unset env var, auth failure, unreachable base URL, timeout). **404** unknown id. This is the only settings endpoint that performs network I/O and it never mutates `app.json`; failures are results, not error responses (still 200), so the client renders them inline. No connectivity test happens on model create/patch — this endpoint is the explicit, on-demand check.
+Live check: SettingsService loads the stored config and asks ModelFactory to build the LangChain chat model, resolving a `${ENV_VAR}` key at call time; it then sends a single `"hello model"` chat completion (guarded by a ~30s timeout). **Response** 200 `ModelTestResult`: `ok:true` with a short reply excerpt + `latencyMs`, or `ok:false` with a human-readable `error` (unset env var, auth failure, unreachable base URL, timeout). **404** unknown id. This is the only settings endpoint that performs network I/O against a saved model and it never mutates `app.json`; failures are results, not error responses (still 200), so the client renders them inline. No connectivity test happens on model create/patch — this endpoint is the explicit, on-demand check.
+
+### GET /api/settings/provider-models?provider=&baseUrl=
+Cached `{ syncedAt, models:[{id,name}] }` for Model modal autocomplete. Reads `{appDataRoot}/provider-models-cache.json` only — never `app.json`, never network.
+
+### POST /api/settings/provider-models/sync
+`{ provider, baseUrl?, apiKey? }` — live list from the provider API, atomic write to `provider-models-cache.json` only. Cloud providers resolve empty/draft key via the same default env vars as ModelFactory. `openai-compatible`/`ollama` require `baseUrl`. **422** missing key/baseUrl; **502** provider unreachable.
 
 ### GET /api/settings/ai
 **Response** `{ "utilityModelId": "mdl-..|null", "commitMessageModelId": "mdl-..|null", "characterParsingModelId": "mdl-..|null", "sceneSummaryModelId": "mdl-..|null", "chatDefaultModelId": "mdl-..|null" }`. `utilityModelId` is the general-purpose fallback; each of the other four is a task-specific model that independently resolves to its own value if set, else `utilityModelId`, else unset (doc 05).

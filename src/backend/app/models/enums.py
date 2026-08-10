@@ -11,12 +11,18 @@ class Provider(str, Enum):
     anthropic = "anthropic"
     openai = "openai"
     gemini = "gemini"
+    openrouter = "openrouter"
     openai_compatible = "openai-compatible"
     ollama = "ollama"
 
     @property
     def requires_api_key(self) -> bool:
-        return self in (Provider.anthropic, Provider.openai, Provider.gemini)
+        return self in (
+            Provider.anthropic,
+            Provider.openai,
+            Provider.gemini,
+            Provider.openrouter,
+        )
 
     @property
     def requires_base_url(self) -> bool:

@@ -290,11 +290,14 @@ class ConversationService:
                 conv, book.systemPrompt, current_scene=current, mgr=mgr
             )
 
-            queue: asyncio.Queue[str | None] = asyncio.Queue()
+            queue: asyncio.Queue[tuple[str, Any] | None] = asyncio.Queue()
             tool_calls = 0
 
             async def on_token(text: str) -> None:
-                await queue.put(text)
+                await queue.put(("token", text))
+
+            async def on_status(data: dict) -> None:
+                await queue.put(("status", data))
 
             async def on_tool(name: str, args: dict, result: str) -> None:
                 nonlocal tool_calls
@@ -303,7 +306,13 @@ class ConversationService:
             async def run() -> None:
                 try:
                     turn = await self._orch.invoke_stream(
-                        cfg, messages, tools=tools, accumulator=acc, on_token=on_token, on_tool=on_tool
+                        cfg,
+                        messages,
+                        tools=tools,
+                        accumulator=acc,
+                        on_token=on_token,
+                        on_tool=on_tool,
+                        on_status=on_status,
                     )
                     await queue.put(None)
                     # Stash turn on the queue sentinel via attribute.
@@ -315,10 +324,14 @@ class ConversationService:
 
             task = asyncio.create_task(run())
             while True:
-                piece = await queue.get()
-                if piece is None:
+                item = await queue.get()
+                if item is None:
                     break
-                yield {"event": "token", "data": {"text": piece}}
+                kind, payload = item
+                if kind == "token":
+                    yield {"event": "token", "data": {"text": payload}}
+                elif kind == "status":
+                    yield {"event": "status", "data": payload}
 
             await task
             turn = getattr(queue, "turn", None)

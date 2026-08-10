@@ -214,6 +214,27 @@ class ElevenLabsSettingsPatch(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Provider model catalogs (separate cache file — not app.json)
+# ---------------------------------------------------------------------------
+
+
+class ProviderModelInfo(BaseModel):
+    id: str
+    name: str
+
+
+class ProviderModelCatalog(BaseModel):
+    syncedAt: str | None = None
+    models: list[ProviderModelInfo] = Field(default_factory=list)
+
+
+class ProviderModelSyncRequest(BaseModel):
+    provider: Provider
+    baseUrl: str | None = None
+    apiKey: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # app.json root
 # ---------------------------------------------------------------------------
 

@@ -105,8 +105,16 @@ export function listBookConversations(bookId: string) {
   return apiGet<ConversationSummary[]>(`/books/${bookId}/conversations`);
 }
 
+export interface StreamStatus {
+  phase: string;
+  name?: string;
+  argsPreview?: string;
+  elapsedSec?: number;
+}
+
 export interface StreamHandlers {
   onToken?: (text: string) => void;
+  onStatus?: (status: StreamStatus) => void;
   onMessage?: (message: Message, ai?: boolean) => void;
   onTitle?: (title: string) => void;
   onError?: (error: string) => void;
@@ -154,7 +162,16 @@ export function sendMessageStream(
           try {
             const parsed = JSON.parse(data) as Record<string, unknown>;
             if (event === "token") handlers.onToken?.(String(parsed.text ?? ""));
-            else if (event === "title") handlers.onTitle?.(String(parsed.title ?? ""));
+            else if (event === "status") {
+              handlers.onStatus?.({
+                phase: String(parsed.phase ?? ""),
+                name: parsed.name != null ? String(parsed.name) : undefined,
+                argsPreview:
+                  parsed.argsPreview != null ? String(parsed.argsPreview) : undefined,
+                elapsedSec:
+                  typeof parsed.elapsedSec === "number" ? parsed.elapsedSec : undefined,
+              });
+            } else if (event === "title") handlers.onTitle?.(String(parsed.title ?? ""));
             else if (event === "message") {
               const msg = parsed.message as Message;
               handlers.onMessage?.(msg, parsed.ai === false ? false : true);

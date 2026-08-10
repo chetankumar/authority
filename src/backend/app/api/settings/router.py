@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Response
 
-from app.api.deps import get_settings_service
+from app.api.deps import get_provider_model_catalog_service, get_settings_service
+from app.models.enums import Provider
 from app.models.settings import (
     AIJobCreate,
     AIJobDefinition,
@@ -22,15 +23,19 @@ from app.models.settings import (
     ModelPatch,
     ModelTestResult,
     Placeholder,
+    ProviderModelCatalog,
+    ProviderModelSyncRequest,
     UserPatch,
     UserSettings,
     VoiceInfo,
 )
+from app.services.provider_model_catalog import ProviderModelCatalogService
 from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 Service = Depends(get_settings_service)
+Catalog = Depends(get_provider_model_catalog_service)
 
 
 # -- user -------------------------------------------------------------------
@@ -73,6 +78,26 @@ async def delete_model(model_id: str, svc: SettingsService = Service) -> Respons
 @router.post("/models/{model_id}/test", response_model=ModelTestResult)
 async def test_model(model_id: str, svc: SettingsService = Service) -> ModelTestResult:
     return await svc.test_model(model_id)
+
+
+# -- provider model catalogs (separate cache file; not app.json) ------------
+
+
+@router.get("/provider-models", response_model=ProviderModelCatalog)
+async def get_provider_models(
+    provider: Provider,
+    baseUrl: str | None = None,
+    catalog: ProviderModelCatalogService = Catalog,
+) -> ProviderModelCatalog:
+    return catalog.get(provider, baseUrl)
+
+
+@router.post("/provider-models/sync", response_model=ProviderModelCatalog)
+async def sync_provider_models(
+    body: ProviderModelSyncRequest,
+    catalog: ProviderModelCatalogService = Catalog,
+) -> ProviderModelCatalog:
+    return await catalog.sync(body)
 
 
 # -- appearance -------------------------------------------------------------

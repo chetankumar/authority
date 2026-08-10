@@ -3,6 +3,8 @@
 export const keys = {
   health: ["health"] as const,
   settings: (section: string) => ["settings", section] as const,
+  providerModels: (provider: string, baseUrl: string | null) =>
+    ["settings", "provider-models", provider, baseUrl] as const,
   books: ["books"] as const,
   book: (id: string) => ["book", id] as const,
   bookUi: (id: string) => ["bookUi", id] as const,

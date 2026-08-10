@@ -18,6 +18,7 @@ from app.services.conversation_service import ConversationService
 from app.services.enrichment_service import EnrichmentService
 from app.services.git_service import GitService
 from app.services.proposal_service import ProposalService
+from app.services.provider_model_catalog import ProviderModelCatalogService
 from app.services.resource_service import ResourceService
 from app.services.scene_service import SceneService
 from app.services.settings_service import SettingsService
@@ -31,6 +32,11 @@ from app.worker.git_status_worker import GitStatusWorker
 @lru_cache(maxsize=1)
 def get_settings_service() -> SettingsService:
     return SettingsService(load_config())
+
+
+@lru_cache(maxsize=1)
+def get_provider_model_catalog_service() -> ProviderModelCatalogService:
+    return ProviderModelCatalogService(load_config())
 
 
 @lru_cache(maxsize=1)

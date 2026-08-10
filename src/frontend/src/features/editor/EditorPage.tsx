@@ -89,12 +89,20 @@ export default function EditorPage() {
   const pending = useRef(false);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSaveRef = useRef<(opts?: { keepalive?: boolean }) => void>(() => {});
+  const saveWaiters = useRef<Array<() => void>>([]);
 
   const clearRetry = useCallback(() => {
     if (retryTimer.current) {
       clearTimeout(retryTimer.current);
       retryTimer.current = null;
     }
+  }, []);
+
+  const resolveSaveWaiters = useCallback(() => {
+    if (latestMarkdown.current !== lastAckedMarkdown.current) return;
+    const waiters = saveWaiters.current;
+    saveWaiters.current = [];
+    for (const w of waiters) w();
   }, []);
 
   const syncLatestFromEditor = useCallback((editor: Editor | null) => {
@@ -113,6 +121,7 @@ export default function EditorPage() {
     (opts?: { keepalive?: boolean }) => {
       const markdown = latestMarkdown.current;
       if (markdown === lastAckedMarkdown.current) {
+        resolveSaveWaiters();
         return;
       }
       setSave((prev) => (prev.kind === "error" ? prev : { kind: "saving" }));
@@ -145,6 +154,7 @@ export default function EditorPage() {
           if (res.contentHash !== entryHash.current) {
             contentChangedThisVisit.current = true;
           }
+          entryHash.current = res.contentHash;
           if (latestMarkdown.current !== lastAckedMarkdown.current) {
             pending.current = true;
             setSave({ kind: "saving" });
@@ -153,6 +163,7 @@ export default function EditorPage() {
               kind: "saved",
               at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
             });
+            resolveSaveWaiters();
           }
         } catch {
           if (sceneIdRef.current !== sentSceneId) return;
@@ -176,7 +187,7 @@ export default function EditorPage() {
         }
       })();
     },
-    [clearRetry],
+    [clearRetry, resolveSaveWaiters],
   );
 
   requestSaveRef.current = requestSave;
@@ -199,25 +210,63 @@ export default function EditorPage() {
     },
   });
 
-  // Load content into the editor once per scene.
-  // emitUpdate: false — TipTap's default setContent fires onUpdate, which would
-  // re-save identical prose and bump bookkeeping.updatedAt.
+  // Load / reload scene prose into TipTap.
+  // - Scene change: always load.
+  // - Same scene, server contentHash changed, local fully acked: reload (e.g. after
+  //   Accept) so the editor matches disk. Unacked local typing skips reload.
+  // emitUpdate: false — setContent must not re-trigger autosave.
   useEffect(() => {
-    if (!isLiveEditor(editor) || !sceneQ.data || loadedScene.current === sceneId) return;
+    if (!isLiveEditor(editor) || !sceneQ.data) return;
+
+    const sceneChanged = loadedScene.current !== sceneId;
+    const hashChanged = sceneQ.data.contentHash !== entryHash.current;
+    const clean = latestMarkdown.current === lastAckedMarkdown.current;
+    if (!sceneChanged && !(hashChanged && clean)) return;
+
+    if (sceneChanged) {
+      contentChangedThisVisit.current = false;
+      clearRetry();
+      inFlight.current = false;
+      pending.current = false;
+      saveWaiters.current = [];
+    } else if (hashChanged) {
+      contentChangedThisVisit.current = true;
+    }
+
     loadedScene.current = sceneId;
     entryHash.current = sceneQ.data.contentHash;
-    contentChangedThisVisit.current = false;
-    clearRetry();
-    inFlight.current = false;
-    pending.current = false;
     const content = sceneQ.data.content || "";
     latestMarkdown.current = content;
     lastAckedMarkdown.current = content;
     editor.commands.setContent(content, { emitUpdate: false });
+    if (sourceModeRef.current) {
+      setSourceText(content);
+      sourceTextRef.current = content;
+    }
     setTitle(sceneQ.data.title);
     setWords(sceneQ.data.wordCount);
-    setSave({ kind: "idle" });
-  }, [editor, sceneQ.data, sceneId, clearRetry]);
+    setSave(
+      sceneChanged
+        ? { kind: "idle" }
+        : {
+            kind: "saved",
+            at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+          },
+    );
+    resolveSaveWaiters();
+  }, [editor, sceneQ.data, sceneId, clearRetry, resolveSaveWaiters]);
+
+  const awaitSave = useCallback(async () => {
+    syncLatestFromEditor(editor);
+    if (latestMarkdown.current === lastAckedMarkdown.current) return;
+    await new Promise<void>((resolve) => {
+      saveWaiters.current.push(resolve);
+      requestSave();
+      if (latestMarkdown.current === lastAckedMarkdown.current) {
+        resolveSaveWaiters();
+      }
+    });
+  }, [editor, syncLatestFromEditor, requestSave, resolveSaveWaiters]);
 
   // Hydrate the right-pane preference from ui.json.
   useEffect(() => {
@@ -757,6 +806,7 @@ export default function EditorPage() {
           conversationId={conversationId}
           sceneId={sceneId}
           initialContext={chatContext}
+          awaitSave={awaitSave}
           onClose={() => {
             setConversationId(null);
             setChatContext(null);

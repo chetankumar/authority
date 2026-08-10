@@ -48,9 +48,10 @@ Prefixes: `bok` book · `scn` scene · `chp` chapter · `prt` part · `chr` char
 
 - `ai.utilityModelId` is the general-purpose fallback for sundry system tasks (chat-thread auto-titling) **and** the fallback every task-specific slot below degrades to when its own slot is unset or dangling. The four task-specific slots (`commitMessageModelId`, `characterParsingModelId`, `sceneSummaryModelId`, `chatDefaultModelId`) each resolve independently: own slot if set and known → else `utilityModelId` → else `null` (degrade, never fail). More slots may be appended the same way as new AI-assisted tasks need their own model choice. Voice suggestion for characters also uses this utility-model fallback.
 - `appearance.theme` ∈ `light | dark | system` (default `system`) — the app-wide color theme (doc 06 §1.2). App-level only; never stored per book. Missing/unknown → `system`.
-- `provider` ∈ `anthropic | openai | gemini | openai-compatible | ollama`. `baseUrl` required for the latter two (LM Studio: `http://localhost:1234/v1`; Ollama: `http://localhost:11434`).
+- `provider` ∈ `anthropic | openai | gemini | openrouter | openai-compatible | ollama`. `baseUrl` required for the latter two (LM Studio: `http://localhost:1234/v1`; Ollama: `http://localhost:11434`). `openrouter` uses `ChatOpenRouter`; empty apiKey → `OPENROUTER_API_KEY`.
 - `apiKey` may be a literal or `${ENV_VAR}` reference, resolved at call time. Keys live only at app level — never inside a book folder, so they can never be committed/pushed.
 - `elevenLabsApiKey` follows the same literal / `${ENV_VAR}` / empty convention. Empty or omitted resolves to env `ELEVENLABS_API_KEY` at call time. ElevenLabs is **not** a LangChain `ModelConfig` provider. `elevenLabsVoices` is a cached sync of the author's available voices (id, name, labels, previewUrl); `GET /settings/elevenlabs/voices` returns this cache without a live network call.
+- Provider model-name suggestions for the Settings Model modal live in a **separate** file `{appDataRoot}/provider-models-cache.json` (not inside `app.json`). Disposable sync data must never share a write path with secrets/settings.
 - `outputType` ∈ `chat | edit-proposals | metadata-proposals | audio-script`.
 - **No bookshelf registry.** The shelf is a live scan of `booksHome` for subfolders containing `config/book.json`. Subfolders without it are silently ignored.
 

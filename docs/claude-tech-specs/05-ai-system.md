@@ -6,13 +6,16 @@ One factory: `model_config → BaseChatModel`.
 
 | provider | LangChain class | Notes |
 |---|---|---|
-| `anthropic` | `ChatAnthropic` | apiKey required |
-| `openai` | `ChatOpenAI` | apiKey required |
+| `anthropic` | `ChatAnthropic` | apiKey optional — defaults to `ANTHROPIC_API_KEY` |
+| `openai` | `ChatOpenAI` | apiKey optional — defaults to `OPENAI_API_KEY` |
 | `gemini` | `ChatGoogleGenerativeAI` | apiKey optional — defaults to `GOOGLE_API_KEY` |
+| `openrouter` | `ChatOpenRouter` | apiKey optional — defaults to `OPENROUTER_API_KEY` |
 | `openai-compatible` | `ChatOpenAI(base_url=...)` | LM Studio etc.; baseUrl required, key optional |
 | `ollama` | `ChatOllama(base_url=...)` | baseUrl required |
 
-Key resolution at call time: a literal key is used verbatim; `${ENV_VAR}` reads that environment variable; an **empty** key falls back to the provider's default environment variable (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`), so authors who already export the standard variable need not enter anything. A missing/unset variable surfaces as a clear error (at model-test or first use). Everything downstream (chat, jobs, streaming, tool-calling) is provider-agnostic.
+Key resolution at call time: a literal key is used verbatim; `${ENV_VAR}` reads that environment variable; an **empty** key falls back to the provider's default environment variable (`anthropic` → `ANTHROPIC_API_KEY`, `openai` → `OPENAI_API_KEY`, `gemini` → `GOOGLE_API_KEY`, `openrouter` → `OPENROUTER_API_KEY`), so authors who already export the standard variable need not enter anything. A missing/unset variable surfaces as a clear error (at model-test or first use). Everything downstream (chat, jobs, streaming, tool-calling) is provider-agnostic.
+
+Provider model-name suggestions (Settings autocomplete) are cached in `{appDataRoot}/provider-models-cache.json`, **not** in `app.json`.
 
 **AI task models** (`app.json → ai.*`): rather than one model for every system task, each task has its own slot, so (for example) scene summarization and character parsing can run on different models:
 

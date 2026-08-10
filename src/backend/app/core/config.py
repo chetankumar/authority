@@ -60,6 +60,15 @@ class Config:
         """App-level settings store (user, models, ai, aiJobs) — doc 03."""
         return self.app_data_root / "app.json"
 
+    @property
+    def provider_models_cache(self) -> Path:
+        """Per-provider model-name catalogs for Settings autocomplete.
+
+        Separate from ``app.json`` on purpose — disposable sync data must never
+        share a write path with secrets and user settings.
+        """
+        return self.app_data_root / "provider-models-cache.json"
+
 
 def load_config() -> Config:
     """Load ``launcher.config.json``, writing defaults if it is absent."""

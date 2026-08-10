@@ -9,3 +9,11 @@ export const useAI = () => useQuery({ queryKey: keys.settings("ai"), queryFn: ap
 export const useJobs = () => useQuery({ queryKey: keys.settings("ai-jobs"), queryFn: api.listJobs });
 export const usePlaceholders = () =>
   useQuery({ queryKey: keys.settings("placeholders"), queryFn: api.listPlaceholders, staleTime: Infinity });
+
+export const useProviderModels = (provider: api.Provider, baseUrl: string | null, enabled = true) =>
+  useQuery({
+    queryKey: keys.providerModels(provider, baseUrl),
+    queryFn: () => api.getProviderModels(provider, baseUrl),
+    enabled,
+    staleTime: 60_000,
+  });

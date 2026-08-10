@@ -25,12 +25,15 @@ export function ConversationModal({
   conversationId,
   sceneId,
   initialContext,
+  awaitSave,
   onClose,
 }: {
   bookId: string;
   conversationId: string;
   sceneId?: string;
   initialContext?: { sceneId: string; excerpt: string } | null;
+  /** Flush open editor to disk before applying edit proposals. */
+  awaitSave?: () => Promise<void>;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -40,6 +43,8 @@ export function ConversationModal({
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState("");
+  const [streamPhase, setStreamPhase] = useState<string | null>(null);
+  const [toolLog, setToolLog] = useState<{ name: string; argsPreview?: string; at: number }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -67,7 +72,7 @@ export function ConversationModal({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conv?.messages, streaming]);
+  }, [conv?.messages, streaming, streamPhase, toolLog]);
 
   // A bookkeeping run is driven by the background worker, not by this modal —
   // so if the author opens it mid-run, nothing here would notice it finishing.
@@ -139,6 +144,8 @@ export function ConversationModal({
     setBusy(true);
     setError(null);
     setStreaming("");
+    setStreamPhase("Working…");
+    setToolLog([]);
     setDraft("");
     const context = pendingContext.current ? [pendingContext.current] : undefined;
     pendingContext.current = null;
@@ -148,7 +155,25 @@ export function ConversationModal({
       conversationId,
       { content, context },
       {
-        onToken: (t) => setStreaming((s) => s + t),
+        onToken: (t) => {
+          setStreamPhase(null);
+          setStreaming((s) => s + t);
+        },
+        onStatus: (status) => {
+          if (status.phase === "waiting") {
+            const sec = status.elapsedSec ?? 0;
+            setStreamPhase(sec > 0 ? `Waiting… ${sec}s` : "Waiting…");
+          } else if (status.phase === "thinking") {
+            setStreamPhase("Thinking…");
+          } else if (status.phase === "tool" && status.name) {
+            setToolLog((log) => [
+              ...log,
+              { name: status.name!, argsPreview: status.argsPreview, at: Date.now() },
+            ]);
+          } else if (status.phase) {
+            setStreamPhase("Working…");
+          }
+        },
         onTitle: (title) => applyTitle(title),
         onMessage: (msg) => {
           if (msg.author === "user") {
@@ -161,10 +186,14 @@ export function ConversationModal({
         onError: (e) => {
           setError(e);
           setBusy(false);
+          setStreamPhase(null);
+          setToolLog([]);
         },
         onDone: () => {
           setBusy(false);
           setStreaming("");
+          setStreamPhase(null);
+          setToolLog([]);
           void refresh();
         },
       },
@@ -186,6 +215,9 @@ export function ConversationModal({
 
   async function onAccept(p: Proposal) {
     try {
+      if (p.type === "edit" && awaitSave) {
+        await awaitSave();
+      }
       const res = await acceptProposal(bookId, p.id);
       if (res.proposal.status === "not-found") {
         toast.error("This text is no longer in the scene.");
@@ -220,18 +252,26 @@ export function ConversationModal({
   }
 
   async function acceptAll(pending: Proposal[]) {
-    for (const p of pending) {
-      const res = await acceptProposal(bookId, p.id);
-      if (res.proposal.status === "not-found") {
-        toast.error("A proposal's text is no longer in the scene.");
-        break;
+    try {
+      if (awaitSave && pending.some((p) => p.type === "edit")) {
+        await awaitSave();
       }
-    }
-    await refresh();
-    if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
-    void qc.invalidateQueries({ queryKey: keys.resources(bookId) });
-    if (sceneId && pending.some((p) => p.type === "audio-script-create")) {
-      void qc.invalidateQueries({ queryKey: keys.audio(bookId, sceneId) });
+      for (const p of pending) {
+        const res = await acceptProposal(bookId, p.id);
+        if (res.proposal.status === "not-found") {
+          toast.error("A proposal's text is no longer in the scene.");
+          break;
+        }
+      }
+      await refresh();
+      if (sceneId) void qc.invalidateQueries({ queryKey: keys.scene(bookId, sceneId) });
+      void qc.invalidateQueries({ queryKey: keys.scenes(bookId) });
+      void qc.invalidateQueries({ queryKey: keys.resources(bookId) });
+      if (sceneId && pending.some((p) => p.type === "audio-script-create")) {
+        void qc.invalidateQueries({ queryKey: keys.audio(bookId, sceneId) });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't accept.");
     }
   }
 
@@ -333,6 +373,24 @@ export function ConversationModal({
                 onAcceptAll={acceptAll}
               />
             ))}
+            {busy && (streamPhase || toolLog.length > 0) && (
+              <div className="space-y-1 rounded-control bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
+                {streamPhase && (
+                  <div>
+                    {streamPhase}
+                    {!streaming && (
+                      <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
+                    )}
+                  </div>
+                )}
+                {toolLog.map((entry, i) => (
+                  <div key={`${entry.at}-${i}`} className="font-mono text-[0.8125rem]">
+                    {entry.name}
+                    {entry.argsPreview ? ` · ${entry.argsPreview}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
             {streaming && (
               <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
                 {streaming}

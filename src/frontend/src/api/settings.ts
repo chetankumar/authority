@@ -1,6 +1,12 @@
 import { apiGet, apiSend } from "./client";
 
-export type Provider = "anthropic" | "openai" | "gemini" | "openai-compatible" | "ollama";
+export type Provider =
+  | "anthropic"
+  | "openai"
+  | "gemini"
+  | "openrouter"
+  | "openai-compatible"
+  | "ollama";
 export type OutputType = "chat" | "edit-proposals" | "metadata-proposals" | "audio-script";
 
 export interface UserSettings {
@@ -73,6 +79,22 @@ export interface Placeholder {
   description: string;
 }
 
+export interface ProviderModelInfo {
+  id: string;
+  name: string;
+}
+
+export interface ProviderModelCatalog {
+  syncedAt: string | null;
+  models: ProviderModelInfo[];
+}
+
+export interface ProviderModelSyncInput {
+  provider: Provider;
+  baseUrl?: string | null;
+  apiKey?: string;
+}
+
 // -- user -------------------------------------------------------------------
 export const getUser = () => apiGet<UserSettings>("/settings/user");
 export const patchUser = (patch: UserPatch) => apiSend<UserSettings>("PATCH", "/settings/user", patch);
@@ -89,6 +111,15 @@ export const patchModel = (id: string, body: Partial<ModelInput>) =>
   apiSend<ModelConfig>("PATCH", `/settings/models/${id}`, body);
 export const deleteModel = (id: string) => apiSend<void>("DELETE", `/settings/models/${id}`);
 export const testModel = (id: string) => apiSend<ModelTestResult>("POST", `/settings/models/${id}/test`);
+
+// -- provider model catalogs (cache file; not app.json) ---------------------
+export const getProviderModels = (provider: Provider, baseUrl?: string | null) => {
+  const params = new URLSearchParams({ provider });
+  if (baseUrl) params.set("baseUrl", baseUrl);
+  return apiGet<ProviderModelCatalog>(`/settings/provider-models?${params}`);
+};
+export const syncProviderModels = (body: ProviderModelSyncInput) =>
+  apiSend<ProviderModelCatalog>("POST", "/settings/provider-models/sync", body);
 
 // -- ai (utility model + task-specific model slots) --------------------------
 export const getAI = () => apiGet<AISettings>("/settings/ai");

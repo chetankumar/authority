@@ -19,11 +19,14 @@ from app.models.settings import ModelConfig
 __all__ = ["KeyResolutionError", "ModelFactory", "resolve_api_key"]
 
 # Cloud providers read these environment variables when no key is entered.
-_DEFAULT_ENV: dict[Provider, str] = {
+DEFAULT_ENV: dict[Provider, str] = {
     Provider.anthropic: "ANTHROPIC_API_KEY",
     Provider.openai: "OPENAI_API_KEY",
     Provider.gemini: "GOOGLE_API_KEY",
+    Provider.openrouter: "OPENROUTER_API_KEY",
 }
+# Back-compat alias for any importers of the private name.
+_DEFAULT_ENV = DEFAULT_ENV
 
 
 def resolve_api_key(cfg: ModelConfig) -> str | None:
@@ -34,7 +37,7 @@ def resolve_api_key(cfg: ModelConfig) -> str | None:
     - **Empty** falls back to the provider's default env var (e.g.
       ``ANTHROPIC_API_KEY``); for providers that don't need a key, returns None.
     """
-    return resolve_secret(cfg.apiKey, default_env=_DEFAULT_ENV.get(cfg.provider))
+    return resolve_secret(cfg.apiKey, default_env=DEFAULT_ENV.get(cfg.provider))
 
 
 class ModelFactory:
@@ -56,6 +59,15 @@ class ModelFactory:
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             return ChatGoogleGenerativeAI(model=cfg.modelName, api_key=key, max_retries=0)
+
+        if cfg.provider == Provider.openrouter:
+            from langchain_openrouter import ChatOpenRouter
+
+            return ChatOpenRouter(
+                model=cfg.modelName,
+                openrouter_api_key=key,
+                max_retries=0,
+            )
 
         if cfg.provider == Provider.openai_compatible:
             from langchain_openai import ChatOpenAI

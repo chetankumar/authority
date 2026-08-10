@@ -303,6 +303,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 **Body:** message list. User messages right-aligned wash; context excerpts render as bordered quote blocks above the text, labeled "From {scene title}". Assistant messages left, model label in `--ink-faint` above, streaming text with a blinking cursor. Only a run's **first** system message (the resolved prompt) collapses to one line — "Job prompt · show" — expandable; other system messages (an escalation question, an error) render plainly, since the author needs to read them.
 **Proposal cards** inside assistant messages: bordered `--attn-wash` cards. Edit: side-by-side find (strikethrough) / replace + rationale line. Metadata: "Mood: ~~tense~~ → **elegiac**" + rationale. Todo: "☐ {action}". Audio-script: structured per-line table (speaker name, type, text preview, `generation_status` badge). Buttons per card [Reject] [Accept]; message footer [Accept all ({n})] when >1 pending. Applied → `--ok-wash` + ✓; rejected → faded; not-found → amber "This text is no longer in the scene."
 **Composer:** textarea (Enter sends, Shift+Enter newline) · [Send].
+**Stream activity (ephemeral):** during AI generation, waiting heartbeats (~3s until first chunk), a thinking line, and tool-call rows (name + truncated args preview) appear in a quiet strip beside the streaming bubble; they are not saved into the conversation JSON.
 
 | Control | Behavior | Why it exists |
 |---|---|---|
