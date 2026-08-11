@@ -49,13 +49,19 @@ export function ConversationModal({
   const [error, setError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const pendingContext = useRef(initialContext ?? null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const titleFocused = useRef(false);
+  const busyRef = useRef(false);
+  busyRef.current = busy;
 
   useEffect(() => {
+    setMinimized(false);
+    setConfirmStop(false);
     void getConversation(bookId, conversationId).then((c) => {
       setConv(c);
       setTitleDraft(c.title);
@@ -73,6 +79,20 @@ export function ConversationModal({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conv?.messages, streaming, streamPhase, toolLog]);
+
+  // Esc while expanded: busy → minimize (keep SSE); idle → close.
+  // When minimized, Esc does nothing — click the chip to restore.
+  useEffect(() => {
+    if (minimized) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (confirmDelete || confirmStop) return;
+      if (busyRef.current) setMinimized(true);
+      else onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [minimized, confirmDelete, confirmStop, onClose]);
 
   // A bookkeeping run is driven by the background worker, not by this modal —
   // so if the author opens it mid-run, nothing here would notice it finishing.
@@ -281,9 +301,35 @@ export function ConversationModal({
     }
   }
 
+  function minimize() {
+    setMinimized(true);
+    setConfirmStop(false);
+  }
+
+  /** × Close — busy requires confirm so we don't silently abort the SSE. */
+  function requestClose() {
+    if (busy) setConfirmStop(true);
+    else onClose();
+  }
+
+  /** Scrim — busy minimizes (keep stream); idle closes. */
+  function requestBackdropClose() {
+    if (busy) minimize();
+    else onClose();
+  }
+
+  function dockStatus(): string {
+    if (!busy) return "Done — click to open";
+    if (streamPhase) return streamPhase;
+    const lastTool = toolLog[toolLog.length - 1];
+    if (lastTool) return lastTool.name;
+    if (streaming) return "Streaming…";
+    return "Working…";
+  }
+
   if (!conv) {
     return (
-      <Modal title="Conversation" width={800} onClose={onClose}>
+      <Modal title="Conversation" width={800} onClose={onClose} closeOnEsc={false}>
         <p className="text-[0.875rem] text-ink-soft">Loading…</p>
       </Modal>
     );
@@ -300,113 +346,139 @@ export function ConversationModal({
 
   return (
     <>
-      <Modal
-        title=""
-        width={800}
-        onClose={onClose}
-        footer={
-          <div className="flex w-full flex-col gap-2">
-            {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
-            <div className="flex gap-2">
-              <textarea
-                value={draft}
-                rows={2}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
+      {minimized ? (
+        <button
+          type="button"
+          onClick={() => setMinimized(false)}
+          className={[
+            "fixed bottom-6 right-6 z-40 flex max-w-sm flex-col gap-0.5 rounded-card border px-4 py-3 text-left shadow-overlay",
+            "border-line bg-surface hover:bg-accent-wash",
+            busy ? "ring-2 ring-attn" : "",
+          ].join(" ")}
+          title="Restore conversation"
+        >
+          <span className="truncate text-[0.875rem] font-semibold text-ink">
+            {titleDraft || conv.title}
+          </span>
+          <span className={`truncate text-[0.8125rem] ${busy ? "text-attn" : "text-ink-soft"}`}>
+            {dockStatus()}
+            {busy && (
+              <span className="ml-1 inline-block h-2.5 w-1 animate-pulse bg-attn align-middle" />
+            )}
+          </span>
+        </button>
+      ) : (
+        <Modal
+          title=""
+          width={800}
+          onClose={requestClose}
+          onBackdropClose={requestBackdropClose}
+          onMinimize={minimize}
+          closeOnEsc={false}
+          footer={
+            <div className="flex w-full flex-col gap-2">
+              {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
+              <div className="flex gap-2">
+                <textarea
+                  value={draft}
+                  rows={2}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                  placeholder="Write a note or ask the AI…"
+                  className="min-h-[2.5rem] flex-1 rounded-control border border-line bg-surface px-3 py-2 text-[0.875rem] text-ink outline-none focus:border-accent"
+                  disabled={busy}
+                />
+                <Button variant="primary" onClick={send} disabled={busy || !draft.trim()}>
+                  {busy ? "…" : "Send"}
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div className="flex max-h-[60vh] flex-col">
+            <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
+              <input
+                value={titleDraft}
+                title={titleDraft}
+                onFocus={() => {
+                  titleFocused.current = true;
                 }}
-                placeholder="Write a note or ask the AI…"
-                className="min-h-[2.5rem] flex-1 rounded-control border border-line bg-surface px-3 py-2 text-[0.875rem] text-ink outline-none focus:border-accent"
-                disabled={busy}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={() => void onTitleBlur()}
+                className="min-w-0 flex-1 truncate bg-transparent text-[1rem] font-semibold text-ink outline-none focus:overflow-visible focus:text-clip"
               />
-              <Button variant="primary" onClick={send} disabled={busy || !draft.trim()}>
-                {busy ? "…" : "Send"}
+              <label className="flex items-center gap-2 text-[0.8125rem] text-ink-soft">
+                <input
+                  type="checkbox"
+                  checked={conv.aiParticipant.enabled}
+                  onChange={(e) => void toggleAi(e.target.checked)}
+                />
+                AI
+              </label>
+              <select
+                value={conv.aiParticipant.modelId ?? ""}
+                onChange={(e) => void setModel(e.target.value)}
+                className="rounded-control border border-line bg-surface px-2 py-1 text-[0.8125rem]"
+              >
+                <option value="">Model…</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={busy || deleting}>
+                Delete
               </Button>
             </div>
-          </div>
-        }
-      >
-        <div className="flex max-h-[60vh] flex-col">
-          <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
-            <input
-              value={titleDraft}
-              title={titleDraft}
-              onFocus={() => {
-                titleFocused.current = true;
-              }}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={() => void onTitleBlur()}
-              className="min-w-0 flex-1 truncate bg-transparent text-[1rem] font-semibold text-ink outline-none focus:overflow-visible focus:text-clip"
-            />
-            <label className="flex items-center gap-2 text-[0.8125rem] text-ink-soft">
-              <input
-                type="checkbox"
-                checked={conv.aiParticipant.enabled}
-                onChange={(e) => void toggleAi(e.target.checked)}
-              />
-              AI
-            </label>
-            <select
-              value={conv.aiParticipant.modelId ?? ""}
-              onChange={(e) => void setModel(e.target.value)}
-              className="rounded-control border border-line bg-surface px-2 py-1 text-[0.8125rem]"
-            >
-              <option value="">Model…</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={busy || deleting}>
-              Delete
-            </Button>
-          </div>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
-            {conv.messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                isPrompt={m.id === promptMessageId}
-                showPrompt={showPrompt}
-                onTogglePrompt={() => setShowPrompt((s) => !s)}
-                onAccept={onAccept}
-                onReject={onReject}
-                onAcceptAll={acceptAll}
-              />
-            ))}
-            {busy && (streamPhase || toolLog.length > 0) && (
-              <div className="space-y-1 rounded-control bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
-                {streamPhase && (
-                  <div>
-                    {streamPhase}
-                    {!streaming && (
-                      <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
-                    )}
-                  </div>
-                )}
-                {toolLog.map((entry, i) => (
-                  <div key={`${entry.at}-${i}`} className="font-mono text-[0.8125rem]">
-                    {entry.name}
-                    {entry.argsPreview ? ` · ${entry.argsPreview}` : ""}
-                  </div>
-                ))}
-              </div>
-            )}
-            {streaming && (
-              <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
-                {streaming}
-                <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
-              </div>
-            )}
-            <div ref={bottomRef} />
+            <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
+              {conv.messages.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  isPrompt={m.id === promptMessageId}
+                  showPrompt={showPrompt}
+                  onTogglePrompt={() => setShowPrompt((s) => !s)}
+                  onAccept={onAccept}
+                  onReject={onReject}
+                  onAcceptAll={acceptAll}
+                />
+              ))}
+              {busy && (streamPhase || toolLog.length > 0) && (
+                <div className="space-y-1 rounded-control bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
+                  {streamPhase && (
+                    <div>
+                      {streamPhase}
+                      {!streaming && (
+                        <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
+                      )}
+                    </div>
+                  )}
+                  {toolLog.map((entry, i) => (
+                    <div key={`${entry.at}-${i}`} className="font-mono text-[0.8125rem]">
+                      {entry.name}
+                      {entry.argsPreview ? ` · ${entry.argsPreview}` : ""}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {streaming && (
+                <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
+                  {streaming}
+                  <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
+      )}
 
       {confirmDelete && (
         <ConfirmDialog
@@ -415,6 +487,18 @@ export function ConversationModal({
           confirmLabel={deleting ? "Deleting…" : "Delete"}
           onConfirm={() => void onDelete()}
           onCancel={() => !deleting && setConfirmDelete(false)}
+        />
+      )}
+
+      {confirmStop && (
+        <ConfirmDialog
+          title="Stop listening to this run?"
+          message="You'll stop receiving live updates. The reply may not be saved if generation hasn't finished."
+          confirmLabel="Stop and close"
+          cancelLabel="Keep listening"
+          confirmVariant="danger"
+          onConfirm={onClose}
+          onCancel={() => setConfirmStop(false)}
         />
       )}
     </>

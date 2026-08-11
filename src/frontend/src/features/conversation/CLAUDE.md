@@ -4,11 +4,12 @@ The universal thread: notes, chats, AI-Job runs, and bookkeeping runs are all th
 
 ## Layout
 
-- **Header:** editable title (blur → `PATCH /conversations/{id}`) · relative timestamp · model select + **AI participant switch** · ×.
+- **Header:** editable title (blur → `PATCH /conversations/{id}`) · relative timestamp · model select + **AI participant switch** · Minimize (–) · ×.
 - **Body:** message list. User messages right-aligned wash; context excerpts render as bordered quote blocks labeled "From {scene title}". Assistant messages left, model label above, streaming text with blinking cursor. Only the **first** system message of a run (the resolved prompt) collapses to "Job prompt · show"; other system messages — an escalation question, an error — render plainly, since the author needs to read them.
 - **Proposal cards** in assistant messages (`--attn-wash`): edit = side-by-side find (strikethrough)/replace + rationale; metadata = "Mood: ~~tense~~ → **elegiac**"; todo = "☐ {action}"; resource-create = filename + a scrollable preview of the full file content + rationale — nothing is written until Accept. [Reject] [Accept] per card; footer [Accept all ({n})] when >1 pending. Applied → `--ok-wash` ✓; rejected → faded; not-found → amber "This text is no longer in the scene." Accepting invalidates `['resources', bookId]` alongside the scene keys, since any proposal type might be a resource-create.
 - **Composer:** textarea (Enter sends, Shift+Enter newline) · [Send].
 - **Stream activity (ephemeral):** while the AI is generating, SSE may emit waiting heartbeats, a thinking line, and an append-only tool log (tool name + truncated args). These live only in the stream UI — they are not saved into the conversation.
+- **Dock chip (minimized):** fixed bottom-right; title + live status. Same React tree — SSE stays open. Click restores the full modal.
 
 ## Controls
 
@@ -16,4 +17,5 @@ The universal thread: notes, chats, AI-Job runs, and bookkeeping runs are all th
 - Model select → `PATCH {aiParticipant.modelId}` (defaults: the run's model on AI-Job/bookkeeping runs, else last-used).
 - Send → `POST /messages`: switch off = plain append (note path); switch on = SSE stream (tokens live → final `message` with proposal cards; `error` → inline danger row). While generating, ephemeral SSE `status` events may show waiting heartbeats, thinking, and a live tool log — not persisted in the thread.
 - Accept/Reject/Accept-all → `POST /proposals/{id}/accept|reject`. Each resolution appends a system message to the thread (e.g. "Author accepted edit proposal …"). No auto-send after Accept — the author continues the thread manually when ready.
-- Close/click-out just closes — every message persists on send; pending proposals survive and badge the accordion.
+- **Minimize** (–) · Esc/scrim while busy → hide the modal shell, keep the component mounted so the message SSE continues; dock chip shows title + status.
+- **× Close** while busy → confirm (“Stop listening…”) then `onClose` (parent clears id → abort). Idle × / Esc / scrim → close immediately. Pending proposals survive and badge the accordion.

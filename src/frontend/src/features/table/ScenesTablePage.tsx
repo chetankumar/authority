@@ -2,7 +2,7 @@
 // payload the graph uses. Placement filter (All/Placed/Floating) + Archived toggle;
 // column visibility/order/width persist to db/ui.json; row click → editor; ✎ → Scene
 // Modal; row Archive/Unarchive.
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AgGridReact } from "ag-grid-react";
@@ -66,12 +66,16 @@ export default function ScenesTablePage() {
   const [segment, setSegment] = useState<Segment>("all");
   const [showArchived, setShowArchived] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [columnTick, setColumnTick] = useState(0);
   const [modal, setModal] = useState<{ sceneId: string | null } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Scene | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const apiRef = useRef<GridApi<Scene> | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const columnsRef = useRef<HTMLDivElement>(null);
+  const gridReadyRef = useRef(false);
+  const columnStateAppliedRef = useRef(false);
 
   const chapterName = useMemo(
     () => new Map((book.data?.chapters ?? []).map((c) => [c.id, c.title || "Untitled chapter"])),
@@ -81,6 +85,60 @@ export default function ScenesTablePage() {
     () => new Map((book.data?.parts ?? []).map((p) => [p.id, p.title || "Untitled part"])),
     [book.data],
   );
+  const chapterPartId = useMemo(
+    () => new Map((book.data?.chapters ?? []).map((c) => [c.id, c.partId])),
+    [book.data],
+  );
+
+  const chapterNameRef = useRef(chapterName);
+  const partNameRef = useRef(partName);
+  const chapterPartIdRef = useRef(chapterPartId);
+  chapterNameRef.current = chapterName;
+  partNameRef.current = partName;
+  chapterPartIdRef.current = chapterPartId;
+
+  const updateSceneRef = useRef(updateScene);
+  updateSceneRef.current = updateScene;
+  const setModalRef = useRef(setModal);
+  setModalRef.current = setModal;
+  const setConfirmDeleteRef = useRef(setConfirmDelete);
+  setConfirmDeleteRef.current = setConfirmDelete;
+
+  useEffect(() => {
+    apiRef.current?.refreshCells({ columns: ["chapter", "part"], force: true });
+  }, [chapterName, partName, chapterPartId]);
+
+  useEffect(() => {
+    gridReadyRef.current = false;
+    columnStateAppliedRef.current = false;
+  }, [bookId]);
+
+  useEffect(() => {
+    if (!gridReadyRef.current || !apiRef.current || columnStateAppliedRef.current) return;
+    const saved = (uiQ.data as { tableColumnState?: unknown })?.tableColumnState;
+    if (Array.isArray(saved)) {
+      apiRef.current.applyColumnState({ state: saved as never, applyOrder: true });
+      columnStateAppliedRef.current = true;
+    }
+  }, [uiQ.data]);
+
+  useEffect(() => {
+    if (!columnsOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (columnsRef.current && !columnsRef.current.contains(e.target as Node)) {
+        setColumnsOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setColumnsOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [columnsOpen]);
 
   const rows = useMemo(() => {
     let scenes = data?.scenes ?? [];
@@ -122,8 +180,24 @@ export default function ScenesTablePage() {
         width: 120,
         valueGetter: (p) => (p.data?.characters?.length ? `${p.data.characters.length}` : ""),
       },
-      { colId: "chapter", headerName: "Chapter", width: 140, valueGetter: (p) => (p.data?.chapterId ? chapterName.get(p.data.chapterId) ?? "" : "") },
-      { colId: "part", headerName: "Part", width: 140, valueGetter: (p) => (p.data?.partId ? partName.get(p.data.partId) ?? "" : "") },
+      {
+        colId: "chapter",
+        headerName: "Chapter",
+        width: 140,
+        valueGetter: (p) =>
+          p.data?.chapterId ? chapterNameRef.current.get(p.data.chapterId) ?? "" : "",
+      },
+      {
+        colId: "part",
+        headerName: "Part",
+        width: 140,
+        valueGetter: (p) => {
+          const s = p.data;
+          if (!s) return "";
+          const pid = s.partId ?? (s.chapterId ? chapterPartIdRef.current.get(s.chapterId) : null);
+          return pid ? partNameRef.current.get(pid) ?? "" : "";
+        },
+      },
       { field: "mood", headerName: "Mood", width: 120 },
       { field: "location", headerName: "Location", width: 140, hide: true },
       { field: "dateTime", headerName: "Date / Time", width: 140, hide: true },
@@ -148,7 +222,7 @@ export default function ScenesTablePage() {
                 title="Edit metadata"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setModal({ sceneId: s.id });
+                  setModalRef.current({ sceneId: s.id });
                 }}
                 className="rounded px-1 text-ink-soft hover:bg-accent-wash"
               >
@@ -158,7 +232,7 @@ export default function ScenesTablePage() {
                 title={archived ? "Unarchive" : "Archive"}
                 onClick={(e) => {
                   e.stopPropagation();
-                  updateScene.mutate({ sceneId: s.id, body: { status: archived ? "active" : "archived" } });
+                  updateSceneRef.current.mutate({ sceneId: s.id, body: { status: archived ? "active" : "archived" } });
                 }}
                 className="rounded px-1 text-ink-soft hover:bg-accent-wash"
               >
@@ -169,7 +243,7 @@ export default function ScenesTablePage() {
                   title="Delete scene"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setConfirmDelete(s);
+                    setConfirmDeleteRef.current(s);
                   }}
                   className="rounded px-1 text-danger hover:bg-danger-wash"
                 >
@@ -181,7 +255,7 @@ export default function ScenesTablePage() {
         },
       },
     ],
-    [chapterName, partName, updateScene],
+    [],
   );
 
   const persist = useCallback(() => {
@@ -195,8 +269,13 @@ export default function ScenesTablePage() {
 
   const onGridReady = (e: GridReadyEvent<Scene>) => {
     apiRef.current = e.api;
+    gridReadyRef.current = true;
+    if (columnStateAppliedRef.current) return;
     const saved = (uiQ.data as { tableColumnState?: unknown })?.tableColumnState;
-    if (Array.isArray(saved)) e.api.applyColumnState({ state: saved as never, applyOrder: true });
+    if (Array.isArray(saved)) {
+      e.api.applyColumnState({ state: saved as never, applyOrder: true });
+      columnStateAppliedRef.current = true;
+    }
   };
 
   const columnList = columnDefs.filter((c) => c.colId !== "actions" && c.headerName);
@@ -223,30 +302,35 @@ export default function ScenesTablePage() {
           </label>
         </div>
         <div className="relative flex items-center gap-2">
-          <Button variant="secondary" onClick={() => setColumnsOpen((o) => !o)}>
-            Columns ▾
-          </Button>
-          {columnsOpen && (
-            <div className="absolute right-24 top-9 z-30 w-52 rounded-card border border-line bg-surface p-2 shadow-overlay">
-              {columnList.map((c) => {
-                const id = (c.colId ?? c.field) as string;
-                const visible = !apiRef.current?.getColumn(id)?.isVisible?.() === false;
-                return (
-                  <label key={id} className="flex items-center gap-2 px-1 py-1 text-[0.8125rem] text-ink">
-                    <input
-                      type="checkbox"
-                      defaultChecked={visible}
-                      onChange={(e) => {
-                        apiRef.current?.setColumnsVisible([id], e.target.checked);
-                        persist();
-                      }}
-                    />
-                    {c.headerName}
-                  </label>
-                );
-              })}
-            </div>
-          )}
+          <div ref={columnsRef} className="relative">
+            <Button variant="secondary" onClick={() => setColumnsOpen((o) => !o)}>
+              Columns ▾
+            </Button>
+            {columnsOpen && (
+              <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-card border border-line bg-surface p-2 shadow-overlay">
+                {columnList.map((c) => {
+                  const id = (c.colId ?? c.field) as string;
+                  // columnTick keeps controlled checkboxes in sync after toggles
+                  void columnTick;
+                  const visible = apiRef.current?.getColumn(id)?.isVisible() ?? false;
+                  return (
+                    <label key={id} className="flex items-center gap-2 px-1 py-1 text-[0.8125rem] text-ink">
+                      <input
+                        type="checkbox"
+                        checked={visible}
+                        onChange={(e) => {
+                          apiRef.current?.setColumnsVisible([id], e.target.checked);
+                          persist();
+                          setColumnTick((t) => t + 1);
+                        }}
+                      />
+                      {c.headerName}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <Button variant="primary" onClick={() => setModal({ sceneId: null })}>
             ＋ Add scene
           </Button>

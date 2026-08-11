@@ -6,7 +6,7 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06 §1.5](../../../../docs/claude-tech-s
 
 ## Components to build
 
-- **Modal** — centered; 560px (forms) / 720px (Scene Modal) / 800px (Conversation); scrim via `--scrim` token (no raw color); Esc closes unless streaming/unsaved (then confirm); title left, × right, actions bottom-right (primary rightmost); traps focus.
+- **Modal** — centered; 560px (forms) / 720px (Scene Modal) / 800px (Conversation); scrim via `--scrim` token (no raw color); Esc closes by default (`closeOnEsc`); optional `onMinimize` (– left of ×); optional `onBackdropClose` (scrim, defaults to `onClose`); title left, × right, actions bottom-right (primary rightmost); traps focus. Conversation Modal owns busy Esc→minimize / ×→confirm itself via these hooks.
 - **Popover** — anchored, 280px, close on outside-click/Esc (Bookkeeping, column chooser).
 - **Toast** — bottom-right, 4s, one-line past-tense confirmation; errors persist until dismissed.
 - **Badge** — count pills; amber (`--attn`) = pending decision, `--ink-faint` = neutral count.
