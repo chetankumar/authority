@@ -213,15 +213,15 @@ Archived scenes: not rendered (the table's Archived filter is their home).
 
 Toolbar: left — segmented filter **All / Placed / Floating** + **Archived** toggle; right — [Columns ▾] popover (checkbox list of available columns) + [＋ Add scene] (primary).
 
-Grid: default columns Seq · Title · Description · Characters · Chapter · Part · Mood; available also Location, Date/Time, Emotional Arc, Summary, Words, Updated. Seq ascending default; non-trunk rows carry a small placement chip (`unanchored ~`, `floating`, `orphan`); archived rows `--ink-faint` with strikethrough title (visible only with the toggle). Column state changes → debounced `PATCH /books/{id}/ui`; restored on load.
+Grid: default columns Seq · Title · Description · Characters · Chapter · Part · Mood; available also Location, Date/Time, Emotional Arc, Summary, Words, Updated. Seq ascending default; non-trunk rows carry a small placement chip (`unanchored ~`, `floating`, `orphan`); archived rows `--ink-faint` with strikethrough title (visible only with the toggle). **Part** shows the scene's direct part assignment, or — when the scene is in a chapter — the chapter's part (display-only; the scene record keeps `partId: null`). Column visibility/order/width → debounced `PATCH /books/{id}/ui` as `tableColumnState`; restored on load via `applyColumnState`.
 
 | Control | Behavior | Why it exists |
 |---|---|---|
 | Row click | → editor | The table is a launchpad; the common act is the cheap one |
 | Row action "Edit metadata" ✎ | Scene Modal | Fix facts without opening prose |
 | Row menu → Archive / Unarchive | `PATCH scenes/{id} {status}` → toast "Scene archived" | The compile gate demands a place-or-archive decision; this is where "set aside" lives |
-| Filter segments | Client-side placement filter | "What's still unplaced?" is a planning question asked constantly — one click, not a query |
-| Column chooser | AG Grid column API + ui.json persistence | Authors differ (mood-driven vs. location-driven); the ledger adapts and remembers per book |
+| Filter segments | Client-side filter on computed `placement` (`all` / `placed` = trunk+unanchored / `floating` = floating+orphan) | "What's still unplaced?" is a planning question asked constantly — one click, not a query |
+| Column chooser | Checkbox panel; outside-click/Esc close. Toggles flip one column's `hide` in a full `applyColumnState` array; checkboxes read `getColumnState()`. Optional ColDefs use **`initialHide`** (not `hide` — stateful `hide` re-applies on React re-render and breaks multi-column selection). Debounced persist to `ui.json` `tableColumnState`. | Authors differ (mood-driven vs. location-driven); the ledger adapts and remembers per book |
 | Seq header click | Re-sort by Seq | The "restore story order" gesture after any exploration |
 
 ---

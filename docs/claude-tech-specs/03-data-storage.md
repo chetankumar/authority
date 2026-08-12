@@ -388,7 +388,15 @@ There is no job file. A *run* — an AI-Job the author triggers, or an automatic
 
 ## db/ui.json
 
-Per-book UI preferences, portable with the book: AG Grid column state (visibility, order, widths), right-pane visibility, and future keys. Written debounced.
+Per-book UI preferences, portable with the book. Written debounced (~1s). Known keys:
+
+| Key | Used by | Contents |
+|---|---|---|
+| `tableColumnState` | Scene Table | AG Grid column state array (visibility, order, widths) from `getColumnState()` |
+| `tasksShowSceneTodos` | Tasks page | Boolean — include scene-parented todos in the book-level ledger |
+| *(editor)* | Editor | Right-pane visibility and other editor chrome (see Editor implementation) |
+
+No server-side validation beyond JSON-ness — shape is client-owned (doc 04 §4).
 
 ## Data safety & concurrency
 

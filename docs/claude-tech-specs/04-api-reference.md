@@ -287,7 +287,7 @@ Source of truth is the file (not `book.json`). See doc 03.
 Streams the cover with correct content-type; **404** if none (client renders placeholder).
 
 ### GET /api/books/{id}/ui · PATCH /api/books/{id}/ui
-GET returns `db/ui.json` verbatim (client-defined shape: AG Grid column state, right-pane visibility). PATCH shallow-merges and persists; client debounces (~1s). No validation beyond JSON-ness — this file is the client's.
+GET returns `db/ui.json` verbatim (client-defined shape). Known keys: `tableColumnState` (Scene Table — AG Grid column state from `getColumnState()`), `tasksShowSceneTodos` (Tasks page toggle), editor right-pane prefs. PATCH shallow-merges and persists; client debounces (~1s). No validation beyond JSON-ness — this file is the client's.
 
 ---
 
