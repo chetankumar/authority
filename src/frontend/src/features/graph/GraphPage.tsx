@@ -8,6 +8,7 @@ import * as d3 from "d3";
 import { Button } from "../../components/ui";
 import { useScenes } from "../../queries/scenes";
 import { SceneModal } from "../sceneModal/SceneModal";
+import { hardChainEdgeD } from "./edgePaths";
 import { computeLayout, NODE_H, NODE_W, type LayoutNode } from "./layout";
 
 function truncate(text: string, max = 22) {
@@ -108,22 +109,36 @@ export default function GraphPage() {
             const from = layout.nodes.find((n) => n.id === e.from);
             const to = layout.nodes.find((n) => n.id === e.to);
             if (!from || !to) return null;
-            const start = borderPoint(to, from);
-            const end = borderPoint(from, to);
+            if (e.soft) {
+              const start = borderPoint(to, from);
+              const end = borderPoint(from, to);
+              return (
+                <line
+                  key={e.id}
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
+                  stroke="var(--edge-soft)"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  markerEnd={e.arrow ? "url(#arrow-soft)" : undefined}
+                >
+                  {e.label && <title>{e.label}</title>}
+                </line>
+              );
+            }
             return (
-              <line
+              <path
                 key={e.id}
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-                stroke={e.soft ? "var(--edge-soft)" : "var(--accent)"}
-                strokeWidth={e.soft ? 1.5 : 1.5}
-                strokeDasharray={e.soft ? "4 4" : undefined}
-                markerEnd={e.arrow ? (e.soft ? "url(#arrow-soft)" : "url(#arrow)") : undefined}
+                d={hardChainEdgeD(from, to)}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth={1.5}
+                markerEnd={e.arrow ? "url(#arrow)" : undefined}
               >
                 {e.label && <title>{e.label}</title>}
-              </line>
+              </path>
             );
           })}
 
