@@ -141,7 +141,7 @@ export function ConversationModal({
       if (!add.length) return c;
       return { ...c, messages: [...c.messages, ...add] };
     });
-  }, [stream?.streamedMessages]);
+  }, [stream?.streamedMessages, conv]);
 
   useEffect(() => {
     if (sessionTitle) applyTitle(sessionTitle);

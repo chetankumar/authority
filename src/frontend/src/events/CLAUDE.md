@@ -1,6 +1,6 @@
 # events — book SSE integration
 
-`useBookEvents(bookId)`: opens exactly one `EventSource` per open book against `GET /books/{id}/events` and translates events into TanStack Query cache patches.
+`useBookEvents(bookId)`: opens exactly one `EventSource` per open book against `GET /books/{id}/events` and translates events into TanStack Query cache patches. Live chat tokens are a **separate** listener (`POST /conversations/{id}/messages`, owned by [`ConversationSessionProvider`](../features/conversation/ConversationSessionContext.tsx)) — they are never emitted on this channel.
 
 Parent: [src](../CLAUDE.md). Spec: [doc 06 §2](../../../../docs/claude-tech-specs/06-frontend-pages.md), backend [events](../../../backend/app/api/events/CLAUDE.md).
 

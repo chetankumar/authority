@@ -6,7 +6,7 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06](../../../../docs/claude-tech-specs/0
 
 ## Global shell (in App.tsx, doc 06 §3)
 
-Top bar (48px): logo + "Authority" → `/`; book-title breadcrumb → `/book/{id}`; **git badge** (only when dirty, amber, → `/book/{id}/git`, fed by `git-status` SSE); "Welcome, {name}". Left nav (208px ↔ 56px rail, auto-rails on the editor): outside a book → Home · Settings; inside a book → Scene Graph · Scene Table · Character Sheet · Metadata · Tasks · Resources · Git. Disconnected banner when `/health` polling fails.
+Top bar (48px): logo + "Authority" → `/`; book-title breadcrumb → `/book/{id}`; **git badge** (only when dirty, amber, → `/book/{id}/git`, fed by `git-status` SSE); "Welcome, {name}". Left nav (208px ↔ 56px rail, auto-rails on the editor): outside a book → Home · Settings; inside a book → Scene Graph · Scene Table · Character Sheet · Metadata · Tasks · Resources · Git. Disconnected banner when `/health` polling fails. Conversation dock chips + the focused Conversation Modal are also mounted here (book-scoped stream store), not on individual pages.
 
 ## Feature catalog + routes
 

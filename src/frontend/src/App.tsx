@@ -24,6 +24,8 @@ export default function App() {
   const disconnected = health.isError;
 
   // One event channel per open book; feeds the git badge (doc 06 §2).
+  // Message streams (POST /conversations/{id}/messages) are a separate
+  // listener, owned by ConversationSessionProvider below.
   useBookEvents(bookId);
 
   useTabCloseGuard();
