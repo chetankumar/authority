@@ -6,7 +6,7 @@ Everything *about* a scene that isn't its prose. Opened from graph single-click,
 
 Left — Title*, Description* (textarea), Location, Date/Time, Mood, Emotional Arc. Right — **Sequence** (Previous/Next SearchableSelects, sentinels pinned; splice hint), **Soft placement** (type + scene + ✕ rows; [+ Add placement]), **Structure** (Chapter/Part selects — selecting one clears/disables the other). Footer: [Archive scene] (ghost, left) · [Cancel] [Save scene].
 - Save — create `POST /scenes`; edit `PATCH /scenes/{id}`; soft-placement rows diff → `POST/DELETE /relationships`.
-- Prev/Next → splice semantics server-side; `affectedScenes` patch the graph.
+- Prev/Next → splice semantics server-side; `affectedScenes` patch the graph. **Create defaults:** graph/table Add scene → Previous = last trunk scene (or Start if empty), Next = The End; editor "New next scene" (`initialPrevious`) → Previous = that scene, Next = its successor. Either side is clearable ("— unplaced —").
 - Archive → `PATCH {status:"archived"}` (reversible, no confirm) + inline note about chain healing.
 
 ## Characters

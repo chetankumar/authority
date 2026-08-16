@@ -134,14 +134,14 @@ CLICK     [Create this folder]
 
 ## J8 — First scene
 
-**CLICK** **[＋ Add scene]** → Scene Modal (create). Title "The Arrival", description filled, Previous = *Start* → **[Save scene]**.
+**CLICK** **[＋ Add scene]** → Scene Modal (create). Title "The Arrival", description filled, Previous = *Start*, Next = *The End* → **[Save scene]**.
 
 ```
-→ HTTP    POST /api/books/{b}/scenes  { title, description, previousSceneId:"scn-START" }
+→ HTTP    POST /api/books/{b}/scenes  { title, description, previousSceneId:"scn-START", nextSceneId:"scn-END" }
 → SERVER  SceneService (lock): 1. validate (title/desc non-empty; chapter-xor-part n/a;
           sentinel rules ok)  2. id scn-1f2e9b · create empty file
           [scenes/1f2e9b-the-arrival.md] · hash/wordCount of empty
-          3. ChainService.splice: Start currently has no next → Start→scn-1f2e9b
+          3. ChainService.splice: Start currently has no next → Start→scn-1f2e9b→The End
           4. persist [db/scenes.json] · GitService dirty-check → EventHub git-status
 → REPLY   201 { scene (seq:1, placement:"trunk"), affectedScenes:[] }
 → UI      Node fades in under (Start), solid arrow connecting. Top-bar badge
@@ -150,7 +150,7 @@ CLICK     [Create this folder]
 
 ## J9 — Second scene, softly placed
 
-**CLICK** [＋ Add scene] → "The Cellar", description, no hard links; Soft placement row: *definitely after* → "The Arrival" → Save.
+**CLICK** [＋ Add scene] → Sequence defaults to last scene (*The Arrival*) → *The End*. Clear both to leave unplaced. Title "The Cellar", description; Soft placement row: *definitely after* → "The Arrival" → Save.
 
 ```
 → HTTP    POST /scenes { title, description, softRelations:[{type:"after", sceneId:"scn-1f2e9b"}] }

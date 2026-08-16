@@ -1,7 +1,7 @@
 // Scene Modal (doc 06 §8) — everything about a scene that isn't its prose.
 // Create shows Basics only; edit shows Basics · Characters · Summary · Dependencies
 // (Dependencies still soon). Characters rows carry per-scene involvement.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Modal } from "../../components/Modal";
@@ -34,7 +34,7 @@ interface Props {
   bookId: string;
   /** null → create mode. */
   sceneId: string | null;
-  /** Prefill Previous in create mode (editor "Next with no neighbor" flow). */
+  /** Prefill Previous in create mode (editor "Next with no neighbor" flow). Next snaps to that scene's successor. */
   initialPrevious?: string | null;
   onClose: () => void;
   onSaved?: (scene: Scene) => void;
@@ -158,6 +158,22 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
     setNextSceneId(n);
     if (autofillNodes) setPreviousSceneId(n ? predecessorOf(n) : null);
   };
+
+  // Create mode: snap Sequence once scenes have loaded. Editor "New next scene"
+  // passes initialPrevious; graph/table Add scene append after the trunk tail.
+  const createDefaultsApplied = useRef(false);
+  useEffect(() => {
+    if (isEdit || createDefaultsApplied.current) return;
+    if (!scenesQ.isSuccess) return;
+    createDefaultsApplied.current = true;
+    if (initialPrevious) {
+      setPreviousSceneId(initialPrevious);
+      setNextSceneId(successorOf(initialPrevious));
+    } else {
+      setPreviousSceneId(predecessorOf(END_ID));
+      setNextSceneId(END_ID);
+    }
+  }, [isEdit, scenesQ.isSuccess, initialPrevious, scenes]);
 
   const setSoft = (i: number, patch: Partial<SoftRow>) =>
     setSoftRows((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));

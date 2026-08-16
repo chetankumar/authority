@@ -11,7 +11,7 @@ Vertical trunk top-center flowing down (Start pinned top-center; The End anchors
 - Node **single-click** → Scene Modal (edit). **double-click** → `/book/{id}/scene/{sid}` (editor).
 - Sentinel pills — non-interactive.
 - Canvas drag/wheel/pinch → pan/zoom (D3 zoom; no node dragging).
-- **＋ Add scene** (primary, floating) → Scene Modal (create) → `POST /scenes` → node appears via cache patch (200ms fade-in).
+- **＋ Add scene** (primary, floating) → Scene Modal (create); Sequence defaults to last trunk scene → The End (Start → The End if empty) → `POST /scenes` → node appears via cache patch (200ms fade-in).
 - ⤢ Fit to view; edge hover tooltip "definitely after {title}".
 
 Archived scenes are not rendered (the table's Archived filter is their home).

@@ -17,7 +17,7 @@ TipTap + tiptap-markdown, contenteditable (Grammarly-compatible). Inline editabl
 
 ## Prev / Next
 
-Save current, then navigate + scroll to top; **Next with no neighbor** → Scene Modal (create) with Previous prefilled → navigate into the new scene on save; Prev with no neighbor → disabled ("This is the first scene").
+Save current, then navigate + scroll to top; **Next with no neighbor** → Scene Modal (create) with Previous prefilled to this scene and Next snapped to its successor (The End when this is the last trunk scene) → navigate into the new scene on save; Prev with no neighbor → disabled ("This is the first scene").
 
 ## Right pane accordion
 

@@ -4,7 +4,7 @@ The working ledger: sort, filter, scan, bulk-see. Toolbar above a full-height AG
 
 ## Toolbar
 
-Left — segmented filter **All / Placed / Floating** + **Archived** toggle. Right — [Columns ▾] popover (checkbox list) + [＋ Add scene] (primary).
+Left — segmented filter **All / Placed / Floating** + **Archived** toggle. Right — [Columns ▾] popover (checkbox list) + [＋ Add scene] (primary). Add scene opens Scene Modal (create) with Sequence defaulted to last trunk scene → The End (Start → The End if empty).
 
 **Placement filter:** each scene's `placement` is computed server-side (ChainService) — never stored. **All** shows every active scene; **Placed** = `trunk` + `unanchored`; **Floating** = `floating` + `orphan`. Client-side filter over the cached `GET /scenes` list.
 

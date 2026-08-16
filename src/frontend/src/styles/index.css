@@ -43,6 +43,7 @@
   font-size: 1.05rem;
   line-height: 1.75;
   color: var(--ink);
+  padding-bottom: 3rem; /* Grammarly pill clearance */
 }
 .prose-sheet p {
   margin: 0 0 1.1em;

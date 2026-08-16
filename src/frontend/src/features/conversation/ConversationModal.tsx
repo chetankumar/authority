@@ -53,11 +53,28 @@ export function ConversationModal({
   const [minimized, setMinimized] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const pendingContext = useRef(initialContext ?? null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const titleFocused = useRef(false);
   const busyRef = useRef(false);
   busyRef.current = busy;
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+
+  const NEAR_BOTTOM_PX = 40;
+
+  function updateAwayFromBottom() {
+    const el = listRef.current;
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setAwayFromBottom(gap > NEAR_BOTTOM_PX);
+  }
+
+  function scrollToBottom() {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setAwayFromBottom(false);
+  }
 
   useEffect(() => {
     setMinimized(false);
@@ -76,8 +93,9 @@ export function ConversationModal({
     return () => abortRef.current?.();
   }, [bookId, conversationId]);
 
+  // Content grew — refresh the jump button, never yank the viewport.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    updateAwayFromBottom();
   }, [conv?.messages, streaming, streamPhase, toolLog]);
 
   // Esc while expanded: busy → minimize (keep SSE); idle → close.
@@ -171,6 +189,8 @@ export function ConversationModal({
     if (!activeConv) setDraft("");
     const context = pendingContext.current ? [pendingContext.current] : undefined;
     pendingContext.current = null;
+    // One intentional jump so the new turn is in view; stream updates stay put.
+    requestAnimationFrame(() => scrollToBottom());
 
     abortRef.current = sendMessageStream(
       bookId,
@@ -400,7 +420,7 @@ export function ConversationModal({
             </div>
           }
         >
-          <div className="flex max-h-[60vh] flex-col">
+          <div className="relative flex max-h-[60vh] flex-col">
             <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-line pb-3">
               <input
                 value={titleDraft}
@@ -437,45 +457,59 @@ export function ConversationModal({
               </Button>
             </div>
 
-            <div className="min-h-0 flex-1 space-y-3 overflow-auto pr-1">
-              {conv.messages.map((m) => (
-                <MessageBubble
-                  key={m.id}
-                  message={m}
-                  isPrompt={m.id === promptMessageId}
-                  showPrompt={showPrompt}
-                  onTogglePrompt={() => setShowPrompt((s) => !s)}
-                  onAccept={onAccept}
-                  onReject={onReject}
-                  onAcceptAll={acceptAll}
-                />
-              ))}
-              {busy && (streamPhase || toolLog.length > 0) && (
-                <div className="space-y-1 rounded-control bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
-                  {streamPhase && (
-                    <div>
-                      {streamPhase}
-                      {!streaming && (
-                        <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
-                      )}
-                    </div>
-                  )}
-                  {toolLog.map((entry, i) => (
-                    <div key={`${entry.at}-${i}`} className="font-mono text-[0.8125rem]">
-                      {entry.name}
-                      {entry.argsPreview ? ` · ${entry.argsPreview}` : ""}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {streaming && (
-                <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
-                  {streaming}
-                  <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
-                </div>
-              )}
-              <div ref={bottomRef} />
+            <div
+              ref={listRef}
+              onScroll={updateAwayFromBottom}
+              className="min-h-0 flex-1 space-y-3 overflow-auto pr-1"
+            >
+                {conv.messages.map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    message={m}
+                    isPrompt={m.id === promptMessageId}
+                    showPrompt={showPrompt}
+                    onTogglePrompt={() => setShowPrompt((s) => !s)}
+                    onAccept={onAccept}
+                    onReject={onReject}
+                    onAcceptAll={acceptAll}
+                  />
+                ))}
+                {busy && (streamPhase || toolLog.length > 0) && (
+                  <div className="space-y-1 rounded-control bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
+                    {streamPhase && (
+                      <div>
+                        {streamPhase}
+                        {!streaming && (
+                          <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
+                        )}
+                      </div>
+                    )}
+                    {toolLog.map((entry, i) => (
+                      <div key={`${entry.at}-${i}`} className="font-mono text-[0.8125rem]">
+                        {entry.name}
+                        {entry.argsPreview ? ` · ${entry.argsPreview}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {streaming && (
+                  <div className="rounded-control bg-paper px-3 py-2 text-[0.875rem] text-ink">
+                    {streaming}
+                    <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
+                  </div>
+                )}
             </div>
+            {awayFromBottom && (
+              <button
+                type="button"
+                onClick={scrollToBottom}
+                aria-label="Scroll to latest"
+                title="Scroll to latest"
+                className="absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface text-ink-soft shadow-overlay outline-none hover:bg-accent-wash focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                ↓
+              </button>
+            )}
           </div>
         </Modal>
       )}
