@@ -14,7 +14,7 @@ import { useToast } from "../../components/Toast";
 import { Button } from "../../components/ui";
 import { useBookConversations } from "../../queries/conversations";
 import { useDeleteResource, useResources, useUploadResource } from "../../queries/resources";
-import { ConversationModal } from "../conversation/ConversationModal";
+import { useConversationSessions } from "../conversation/ConversationSessionContext";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -39,7 +39,7 @@ export default function ResourcesPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ResourceFile | null>(null);
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const chatSessions = useConversationSessions();
 
   const uploadFiles = (files: FileList | null) => {
     if (!files?.length) return;
@@ -77,7 +77,7 @@ export default function ResourcesPage() {
         parentId: bookId,
         aiParticipant: { enabled: true, modelId },
       });
-      setConversationId(conv.id);
+      chatSessions.open(conv.id, { title: conv.title });
     } catch {
       toast.error("Couldn't start a chat.");
     }
@@ -186,7 +186,7 @@ export default function ResourcesPage() {
                   type="button"
                   className="flex w-full items-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-left text-[0.875rem] hover:bg-accent-wash"
                   title={c.title}
-                  onClick={() => setConversationId(c.id)}
+                  onClick={() => chatSessions.open(c.id, { title: c.title })}
                 >
                   <span className="min-w-0 flex-1 truncate text-ink">{c.title}</span>
                   {c.pendingProposals > 0 && (
@@ -212,19 +212,6 @@ export default function ResourcesPage() {
             });
           }}
           onCancel={() => setPendingDelete(null)}
-        />
-      )}
-
-      {conversationId && (
-        // No sceneId: this thread has no scene, and the modal's every scene-keyed
-        // branch is already guarded on that being absent.
-        <ConversationModal
-          bookId={bookId}
-          conversationId={conversationId}
-          onClose={() => {
-            setConversationId(null);
-            void threads.refetch();
-          }}
         />
       )}
     </div>

@@ -18,7 +18,7 @@ import { Button } from "../../components/ui";
 import { keys } from "../../queries/keys";
 import { useChapters, useParts } from "../../queries/structure";
 import { useBookTodos, useCreateTodo, useDeleteTodo, useUpdateTodo } from "../../queries/todos";
-import { ConversationModal } from "../conversation/ConversationModal";
+import { useConversationSessions } from "../conversation/ConversationSessionContext";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -54,7 +54,7 @@ export default function TasksPage() {
   const [newParentType, setNewParentType] = useState<NewParentType>("book");
   const [newParentId, setNewParentId] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<Todo | null>(null);
-  const [activeConversation, setActiveConversation] = useState<{ id: string; sceneId?: string } | null>(null);
+  const conversations = useConversationSessions();
 
   const uiQ = useQuery({ queryKey: keys.bookUi(bookId), queryFn: () => getBookUi(bookId), enabled: !!bookId });
   const parts = useParts(bookId);
@@ -90,14 +90,15 @@ export default function TasksPage() {
   };
 
   const openConversation = async (t: Todo) => {
+    const sceneId = t.parentType === "scene" ? t.parentId : undefined;
     if (t.conversationId) {
-      setActiveConversation({ id: t.conversationId, sceneId: t.parentType === "scene" ? t.parentId : undefined });
+      conversations.open(t.conversationId, { sceneId, title: t.action });
       return;
     }
     try {
       const conv = await createConversation(bookId, { kind: "task-discussion", parentType: t.parentType, parentId: t.parentId });
       await updateTodo.mutateAsync({ todoId: t.id, body: { conversationId: conv.id } });
-      setActiveConversation({ id: conv.id, sceneId: t.parentType === "scene" ? t.parentId : undefined });
+      conversations.open(conv.id, { sceneId, title: conv.title });
     } catch {
       toast.error("Couldn't start a conversation.");
     }
@@ -345,15 +346,6 @@ export default function TasksPage() {
             setConfirmDelete(null);
           }}
           onCancel={() => setConfirmDelete(null)}
-        />
-      )}
-
-      {activeConversation && (
-        <ConversationModal
-          bookId={bookId}
-          conversationId={activeConversation.id}
-          sceneId={activeConversation.sceneId}
-          onClose={() => setActiveConversation(null)}
         />
       )}
     </div>

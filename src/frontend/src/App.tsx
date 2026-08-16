@@ -8,6 +8,8 @@ import { useGitStatus } from "./queries/git";
 import { useBookEvents } from "./events/useBookEvents";
 import { useTheme } from "./theme";
 import { useTabCloseGuard } from "./hooks/useTabCloseGuard";
+import { ConversationHost } from "./features/conversation/ConversationHost";
+import { ConversationSessionProvider } from "./features/conversation/ConversationSessionContext";
 import type { ThemePref } from "./api/settings";
 
 // Global shell (doc 06 §3): top bar + left nav + disconnected banner + outlet.
@@ -27,20 +29,23 @@ export default function App() {
   useTabCloseGuard();
 
   return (
-    <div className="flex h-full flex-col bg-paper text-ink">
-      <TopBar bookId={bookId} />
-      {disconnected && (
-        <div className="w-full bg-danger-wash px-6 py-2 text-[0.8125rem] text-danger">
-          Backend not responding — check the terminal window.
+    <ConversationSessionProvider key={bookId ?? "none"} bookId={bookId}>
+      <div className="flex h-full flex-col bg-paper text-ink">
+        <TopBar bookId={bookId} />
+        {disconnected && (
+          <div className="w-full bg-danger-wash px-6 py-2 text-[0.8125rem] text-danger">
+            Backend not responding — check the terminal window.
+          </div>
+        )}
+        <div className="flex min-h-0 flex-1">
+          <LeftNav bookId={bookId} collapsed={isEditor} />
+          <main className="min-w-0 flex-1 overflow-auto">
+            <Outlet />
+          </main>
         </div>
-      )}
-      <div className="flex min-h-0 flex-1">
-        <LeftNav bookId={bookId} collapsed={isEditor} />
-        <main className="min-w-0 flex-1 overflow-auto">
-          <Outlet />
-        </main>
+        {bookId && <ConversationHost />}
       </div>
-    </div>
+    </ConversationSessionProvider>
   );
 }
 

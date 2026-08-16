@@ -25,7 +25,7 @@ import { usePatchBook } from "../../queries/structure";
 import { useCreateSceneTodo, useDeleteTodo, useSceneTodos, useUpdateTodo } from "../../queries/todos";
 import { AudioModal } from "../audio/AudioModal";
 import { SceneModal } from "../sceneModal/SceneModal";
-import { ConversationModal } from "../conversation/ConversationModal";
+import { useConversationSessions } from "../conversation/ConversationSessionContext";
 import { EmDash, applyEmDashInSource } from "./emDash";
 
 type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: string } | { kind: "error" };
@@ -65,9 +65,8 @@ export default function EditorPage() {
   const [jobsMenuOpen, setJobsMenuOpen] = useState(false);
   const [bookkeepingOpen, setBookkeepingOpen] = useState(false);
   const [audioOpen, setAudioOpen] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [chatContext, setChatContext] = useState<{ sceneId: string; excerpt: string } | null>(null);
   const [newTodoText, setNewTodoText] = useState("");
+  const conversations = useConversationSessions();
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState<Todo | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
 
@@ -268,6 +267,8 @@ export default function EditorPage() {
     });
   }, [editor, syncLatestFromEditor, requestSave, resolveSaveWaiters]);
 
+  useEffect(() => conversations.registerAwaitSave(sceneId, awaitSave), [conversations, sceneId, awaitSave]);
+
   // Hydrate the right-pane preference from ui.json.
   useEffect(() => {
     void getBookUi(bookId).then((ui) => {
@@ -443,8 +444,11 @@ export default function EditorPage() {
         parentId: sceneId,
         aiParticipant: { enabled: true, modelId },
       });
-      setChatContext(excerpt ? { sceneId, excerpt } : null);
-      setConversationId(conv.id);
+      conversations.open(conv.id, {
+        sceneId,
+        title: conv.title,
+        initialContext: excerpt ? { sceneId, excerpt } : null,
+      });
     } catch {
       toast.error("Couldn't start a chat.");
     }
@@ -452,15 +456,13 @@ export default function EditorPage() {
 
   const openTodoConversation = async (t: Todo) => {
     if (t.conversationId) {
-      setChatContext(null);
-      setConversationId(t.conversationId);
+      conversations.open(t.conversationId, { sceneId, title: t.action });
       return;
     }
     try {
       const conv = await createConversation(bookId, { kind: "task-discussion", parentType: "scene", parentId: sceneId });
       await updateTodo.mutateAsync({ todoId: t.id, body: { conversationId: conv.id } });
-      setChatContext(null);
-      setConversationId(conv.id);
+      conversations.open(conv.id, { sceneId, title: conv.title });
     } catch {
       toast.error("Couldn't start a conversation.");
     }
@@ -487,8 +489,7 @@ export default function EditorPage() {
         scope: excerpt ? "selection" : "full",
         selectionText: excerpt ?? undefined,
       });
-      setChatContext(null);
-      setConversationId(res.conversationId);
+      conversations.open(res.conversationId, { sceneId });
     } catch {
       toast.error("Couldn't run that job.");
     }
@@ -667,10 +668,7 @@ export default function EditorPage() {
                       type="button"
                       className="flex w-full items-center gap-2 rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
                       title={n.title}
-                      onClick={() => {
-                        setChatContext(null);
-                        setConversationId(n.id);
-                      }}
+                      onClick={() => conversations.open(n.id, { sceneId, title: n.title })}
                     >
                       <span className="min-w-0 flex-1 truncate text-ink">{n.title}</span>
                       {n.pendingProposals > 0 && (
@@ -759,10 +757,7 @@ export default function EditorPage() {
                       type="button"
                       className="flex w-full items-center gap-2 rounded-control px-2 py-1 text-left text-[0.8125rem] text-ink-soft hover:bg-accent-wash"
                       title={r.title}
-                      onClick={() => {
-                        setChatContext(null);
-                        setConversationId(r.id);
-                      }}
+                      onClick={() => conversations.open(r.id, { sceneId, title: r.title })}
                     >
                       <span className="min-w-0 flex-1 truncate text-ink">{r.title}</span>
                       <span
@@ -787,7 +782,7 @@ export default function EditorPage() {
           onClose={() => setAudioOpen(false)}
           onOpenConversation={(id) => {
             setAudioOpen(false);
-            setConversationId(id);
+            conversations.open(id, { sceneId });
           }}
         />
       )}
@@ -798,20 +793,6 @@ export default function EditorPage() {
           initialPrevious={sceneId}
           onClose={() => setCreateNext(false)}
           onSaved={(s) => navigate(`/book/${bookId}/scene/${s.id}`)}
-        />
-      )}
-      {conversationId && (
-        <ConversationModal
-          bookId={bookId}
-          conversationId={conversationId}
-          sceneId={sceneId}
-          initialContext={chatContext}
-          awaitSave={awaitSave}
-          onClose={() => {
-            setConversationId(null);
-            setChatContext(null);
-            void notes.refetch();
-          }}
         />
       )}
       {confirmDeleteTodo && (

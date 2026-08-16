@@ -5,7 +5,6 @@ import {
   deleteConversation,
   getConversation,
   patchConversation,
-  sendMessageStream,
   type Conversation,
   type Message,
   type Proposal,
@@ -19,42 +18,40 @@ import { Button } from "../../components/ui";
 import { useToast } from "../../components/Toast";
 import { keys } from "../../queries/keys";
 import { MarkdownBody } from "./MarkdownBody";
+import { useConversationSessions } from "./ConversationSessionContext";
 
 export function ConversationModal({
   bookId,
   conversationId,
   sceneId,
-  initialContext,
-  awaitSave,
   onClose,
+  onMinimize,
 }: {
   bookId: string;
   conversationId: string;
   sceneId?: string;
-  initialContext?: { sceneId: string; excerpt: string } | null;
-  /** Flush open editor to disk before applying edit proposals. */
-  awaitSave?: () => Promise<void>;
   onClose: () => void;
+  onMinimize: () => void;
 }) {
   const toast = useToast();
   const qc = useQueryClient();
+  const { send: sendStream, setTitle, streams, sessions, awaitSaveFor } = useConversationSessions();
+  const stream = streams[conversationId];
+  const busy = !!stream?.busy;
+  const streaming = stream?.streaming ?? "";
+  const streamPhase = stream?.streamPhase ?? null;
+  const toolLog = stream?.toolLog ?? [];
+  const streamError = stream?.error ?? null;
   const [conv, setConv] = useState<Conversation | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [draft, setDraft] = useState("");
-  const [streaming, setStreaming] = useState("");
-  const [streamPhase, setStreamPhase] = useState<string | null>(null);
-  const [toolLog, setToolLog] = useState<{ name: string; argsPreview?: string; at: number }[]>([]);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
-  const [minimized, setMinimized] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const pendingContext = useRef(initialContext ?? null);
   const listRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<(() => void) | null>(null);
   const titleFocused = useRef(false);
   const busyRef = useRef(false);
   busyRef.current = busy;
@@ -77,11 +74,11 @@ export function ConversationModal({
   }
 
   useEffect(() => {
-    setMinimized(false);
     setConfirmStop(false);
     void getConversation(bookId, conversationId).then((c) => {
       setConv(c);
       setTitleDraft(c.title);
+      setTitle(conversationId, c.title);
       // A fresh AI-Job run arrives at `open` with its prompt already inside
       // and nothing sent. Prefill "start" so approving it is just hitting
       // Send — edit the box first if you'd rather add instructions.
@@ -90,8 +87,7 @@ export function ConversationModal({
       }
     });
     void listModels().then(setModels);
-    return () => abortRef.current?.();
-  }, [bookId, conversationId]);
+  }, [bookId, conversationId, setTitle]);
 
   // Content grew — refresh the jump button, never yank the viewport.
   useEffect(() => {
@@ -99,18 +95,16 @@ export function ConversationModal({
   }, [conv?.messages, streaming, streamPhase, toolLog]);
 
   // Esc while expanded: busy → minimize (keep SSE); idle → close.
-  // When minimized, Esc does nothing — click the chip to restore.
   useEffect(() => {
-    if (minimized) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (confirmDelete || confirmStop) return;
-      if (busyRef.current) setMinimized(true);
+      if (busyRef.current) onMinimize();
       else onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [minimized, confirmDelete, confirmStop, onClose]);
+  }, [confirmDelete, confirmStop, onClose, onMinimize]);
 
   // A bookkeeping run is driven by the background worker, not by this modal —
   // so if the author opens it mid-run, nothing here would notice it finishing.
@@ -126,11 +120,39 @@ export function ConversationModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conv, busy]);
 
+  const sessionTitle = sessions.find((s) => s.id === conversationId)?.title;
+
   function applyTitle(title: string) {
     if (titleFocused.current) return;
     setTitleDraft(title);
     setConv((c) => (c ? { ...c, title } : c));
   }
+
+  // Live tokens and mid-stream messages live in the book-scoped store, so
+  // remounting this modal (minimize, switch session, change scene) does not
+  // drop them. Fold store-appended messages into the loaded thread by id.
+  useEffect(() => {
+    const extra = stream?.streamedMessages;
+    if (!extra?.length) return;
+    setConv((c) => {
+      if (!c) return c;
+      const have = new Set(c.messages.map((m) => m.id));
+      const add = extra.filter((m) => !have.has(m.id));
+      if (!add.length) return c;
+      return { ...c, messages: [...c.messages, ...add] };
+    });
+  }, [stream?.streamedMessages]);
+
+  useEffect(() => {
+    if (sessionTitle) applyTitle(sessionTitle);
+  }, [sessionTitle]);
+
+  const doneSeq = stream?.doneSeq ?? 0;
+  useEffect(() => {
+    if (doneSeq === 0) return;
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doneSeq]);
 
   async function refresh() {
     const c = await getConversation(bookId, conversationId);
@@ -149,6 +171,7 @@ export function ConversationModal({
     const updated = await patchConversation(bookId, conversationId, { title });
     setConv(updated);
     setTitleDraft(updated.title);
+    setTitle(conversationId, updated.title);
   }
 
   async function toggleAi(enabled: boolean) {
@@ -177,73 +200,13 @@ export function ConversationModal({
     setConv(updated);
   }
 
-  function sendContent(content: string, activeConv?: Conversation | null) {
-    const text = content.trim();
-    const current = activeConv ?? conv;
-    if (!text || busy || !current) return;
-    setBusy(true);
-    setError(null);
-    setStreaming("");
-    setStreamPhase("Working…");
-    setToolLog([]);
-    if (!activeConv) setDraft("");
-    const context = pendingContext.current ? [pendingContext.current] : undefined;
-    pendingContext.current = null;
-    // One intentional jump so the new turn is in view; stream updates stay put.
-    requestAnimationFrame(() => scrollToBottom());
-
-    abortRef.current = sendMessageStream(
-      bookId,
-      conversationId,
-      { content: text, context },
-      {
-        onToken: (t) => {
-          setStreamPhase(null);
-          setStreaming((s) => s + t);
-        },
-        onStatus: (status) => {
-          if (status.phase === "waiting") {
-            const sec = status.elapsedSec ?? 0;
-            setStreamPhase(sec > 0 ? `Waiting… ${sec}s` : "Waiting…");
-          } else if (status.phase === "thinking") {
-            setStreamPhase("Thinking…");
-          } else if (status.phase === "tool" && status.name) {
-            setToolLog((log) => [
-              ...log,
-              { name: status.name!, argsPreview: status.argsPreview, at: Date.now() },
-            ]);
-          } else if (status.phase) {
-            setStreamPhase("Working…");
-          }
-        },
-        onTitle: (title) => applyTitle(title),
-        onMessage: (msg) => {
-          if (msg.author === "user") {
-            setConv((c) => (c ? { ...c, messages: [...c.messages, msg] } : c));
-          } else {
-            setStreaming("");
-            setConv((c) => (c ? { ...c, messages: [...c.messages, msg] } : c));
-          }
-        },
-        onError: (e) => {
-          setError(e);
-          setBusy(false);
-          setStreamPhase(null);
-          setToolLog([]);
-        },
-        onDone: () => {
-          setBusy(false);
-          setStreaming("");
-          setStreamPhase(null);
-          setToolLog([]);
-          void refresh();
-        },
-      },
-    );
-  }
-
   function send() {
-    sendContent(draft);
+    const text = draft.trim();
+    if (!text || busy || !conv) return;
+    setError(null);
+    setDraft("");
+    requestAnimationFrame(() => scrollToBottom());
+    sendStream(conversationId, text);
   }
 
   async function onDelete() {
@@ -261,8 +224,8 @@ export function ConversationModal({
 
   async function onAccept(p: Proposal) {
     try {
-      if (p.type === "edit" && awaitSave) {
-        await awaitSave();
+      if (p.type === "edit") {
+        await awaitSaveFor(sceneId);
       }
       const res = await acceptProposal(bookId, p.id);
       if (res.proposal.status === "not-found") {
@@ -299,8 +262,8 @@ export function ConversationModal({
 
   async function acceptAll(pending: Proposal[]) {
     try {
-      if (awaitSave && pending.some((p) => p.type === "edit")) {
-        await awaitSave();
+      if (pending.some((p) => p.type === "edit")) {
+        await awaitSaveFor(sceneId);
       }
       for (const p of pending) {
         const res = await acceptProposal(bookId, p.id);
@@ -321,11 +284,6 @@ export function ConversationModal({
     }
   }
 
-  function minimize() {
-    setMinimized(true);
-    setConfirmStop(false);
-  }
-
   /** × Close — busy requires confirm so we don't silently abort the SSE. */
   function requestClose() {
     if (busy) setConfirmStop(true);
@@ -334,17 +292,8 @@ export function ConversationModal({
 
   /** Scrim — busy minimizes (keep stream); idle closes. */
   function requestBackdropClose() {
-    if (busy) minimize();
+    if (busy) onMinimize();
     else onClose();
-  }
-
-  function dockStatus(): string {
-    if (!busy) return "Done — click to open";
-    if (streamPhase) return streamPhase;
-    const lastTool = toolLog[toolLog.length - 1];
-    if (lastTool) return lastTool.name;
-    if (streaming) return "Streaming…";
-    return "Working…";
   }
 
   if (!conv) {
@@ -366,38 +315,18 @@ export function ConversationModal({
 
   return (
     <>
-      {minimized ? (
-        <button
-          type="button"
-          onClick={() => setMinimized(false)}
-          className={[
-            "fixed bottom-6 right-6 z-40 flex max-w-sm flex-col gap-0.5 rounded-card border px-4 py-3 text-left shadow-overlay",
-            "border-line bg-surface hover:bg-accent-wash",
-            busy ? "ring-2 ring-attn" : "",
-          ].join(" ")}
-          title="Restore conversation"
-        >
-          <span className="truncate text-[0.875rem] font-semibold text-ink">
-            {titleDraft || conv.title}
-          </span>
-          <span className={`truncate text-[0.8125rem] ${busy ? "text-attn" : "text-ink-soft"}`}>
-            {dockStatus()}
-            {busy && (
-              <span className="ml-1 inline-block h-2.5 w-1 animate-pulse bg-attn align-middle" />
-            )}
-          </span>
-        </button>
-      ) : (
-        <Modal
+      <Modal
           title=""
           width={800}
           onClose={requestClose}
           onBackdropClose={requestBackdropClose}
-          onMinimize={minimize}
+          onMinimize={onMinimize}
           closeOnEsc={false}
           footer={
             <div className="flex w-full flex-col gap-2">
-              {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
+              {(error || streamError) && (
+                <p className="text-[0.8125rem] text-danger">{error || streamError}</p>
+              )}
               <div className="flex gap-2">
                 <textarea
                   value={draft}
@@ -512,7 +441,6 @@ export function ConversationModal({
             )}
           </div>
         </Modal>
-      )}
 
       {confirmDelete && (
         <ConfirmDialog
