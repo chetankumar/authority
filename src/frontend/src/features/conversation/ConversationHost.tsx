@@ -6,8 +6,13 @@ import {
 
 const CHIP_STACK_PX = 72;
 
-/** Dock chips + the one focused conversation modal. Lives in the book shell so
- *  streams survive scene and page changes. */
+/**
+ * Renders the conversation UI that must outlive any one page: the open modal,
+ * plus a chip in the corner for every other chat that is still going.
+ *
+ * Mounted from App, not from the editor, so changing scene or visiting Tasks
+ * does not tear the chats down.
+ */
 export function ConversationHost() {
   const { bookId, sessions, focusedId, streams, focus, close, minimize } = useConversationSessions();
   if (!bookId || sessions.length === 0) return null;

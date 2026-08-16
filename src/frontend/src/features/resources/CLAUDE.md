@@ -10,8 +10,8 @@ Header with **[Chat]** and **[Upload file]**, a drag-and-drop dropzone, the file
 
 - **Upload file** / drop — any file type, up to 25 MB (422 over that). A name collision is never an overwrite: the server suffixes (`notes.md` → `notes-2.md`) and the toast says so when the saved name differs from what was picked.
 - **Delete** → `ConfirmDialog` ("moves to `.trash/`, recoverable from there or from git") → `DELETE`.
-- **Chat** → same pattern as the editor's `startChat` ([EditorPage.tsx](../editor/EditorPage.tsx)), except `parentType: "book", parentId: bookId` and no selection excerpt. Calls `open(id)` on the book-scoped conversation store (no `sceneId`).
-- **Chat rows** → same store, by conversation id.
+- **Chat** → same pattern as the editor's start-chat, except the parent is the book (`parentType: "book"`) and there is no selection excerpt. Opens the shared conversation window with no scene attached.
+- **Chat rows** → reopen that thread in the same window.
 
 ## Why the AI can read but not write these files directly
 

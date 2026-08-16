@@ -20,6 +20,7 @@ import { keys } from "../../queries/keys";
 import { MarkdownBody } from "./MarkdownBody";
 import { useConversationSessions } from "./ConversationSessionContext";
 
+/** The conversation window. Live replies are owned by ConversationSessionProvider, not here. */
 export function ConversationModal({
   bookId,
   conversationId,
@@ -35,6 +36,8 @@ export function ConversationModal({
 }) {
   const toast = useToast();
   const qc = useQueryClient();
+  // Live reply text comes from the shared App store, not from local state, so
+  // hiding this window does not cancel the AI.
   const { send: sendStream, setTitle, streams, sessions, awaitSaveFor } = useConversationSessions();
   const stream = streams[conversationId];
   const busy = !!stream?.busy;
@@ -128,9 +131,9 @@ export function ConversationModal({
     setConv((c) => (c ? { ...c, title } : c));
   }
 
-  // Live tokens and mid-stream messages live in the book-scoped store, so
-  // remounting this modal (minimize, switch session, change scene) does not
-  // drop them. Fold store-appended messages into the loaded thread by id.
+  // Messages that arrived while this window was hidden (minimize, another
+  // chat in front, or a different scene) still sit on the shared stream.
+  // Fold them into the loaded thread once, by id, so we don't duplicate.
   useEffect(() => {
     const extra = stream?.streamedMessages;
     if (!extra?.length) return;
@@ -147,6 +150,8 @@ export function ConversationModal({
     if (sessionTitle) applyTitle(sessionTitle);
   }, [sessionTitle]);
 
+  // If this chat finished a reply while the modal was closed, reload the
+  // saved thread so proposal cards and the final text show up.
   const doneSeq = stream?.doneSeq ?? 0;
   useEffect(() => {
     if (doneSeq === 0) return;

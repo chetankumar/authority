@@ -66,6 +66,7 @@ export default function EditorPage() {
   const [bookkeepingOpen, setBookkeepingOpen] = useState(false);
   const [audioOpen, setAudioOpen] = useState(false);
   const [newTodoText, setNewTodoText] = useState("");
+  // Shared with App: opening Chat here does not cancel a job already running.
   const conversations = useConversationSessions();
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState<Todo | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
@@ -267,6 +268,8 @@ export default function EditorPage() {
     });
   }, [editor, syncLatestFromEditor, requestSave, resolveSaveWaiters]);
 
+  // So an edit proposal can save this scene's prose before it applies, even
+  // if the chat window is sitting on App rather than this page.
   useEffect(() => conversations.registerAwaitSave(sceneId, awaitSave), [conversations, sceneId, awaitSave]);
 
   // Hydrate the right-pane preference from ui.json.

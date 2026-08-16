@@ -1,6 +1,6 @@
 # events — book SSE integration
 
-`useBookEvents(bookId)`: opens exactly one `EventSource` per open book against `GET /books/{id}/events` and translates events into TanStack Query cache patches. Live chat tokens are a **separate** listener (`POST /conversations/{id}/messages`, owned by [`ConversationSessionProvider`](../features/conversation/ConversationSessionContext.tsx)) — they are never emitted on this channel.
+`useBookEvents(bookId)`: one EventSource per open book (`GET /books/{id}/events`). It updates lists and badges (git, conversation status, scene metadata). It does **not** carry the live text of an AI reply — that is a separate connection per chat, held by [`ConversationSessionProvider`](../features/conversation/ConversationSessionContext.tsx) so hiding the chat window does not stop the model.
 
 Parent: [src](../CLAUDE.md). Spec: [doc 06 §2](../../../../docs/claude-tech-specs/06-frontend-pages.md), backend [events](../../../backend/app/api/events/CLAUDE.md).
 

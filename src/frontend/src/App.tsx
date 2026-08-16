@@ -23,9 +23,9 @@ export default function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: getHealth, refetchInterval: 5000 });
   const disconnected = health.isError;
 
-  // One event channel per open book; feeds the git badge (doc 06 §2).
-  // Message streams (POST /conversations/{id}/messages) are a separate
-  // listener, owned by ConversationSessionProvider below.
+  // Book-wide events (git badge, conversation list chips). Live AI replies
+  // use a different connection, held by ConversationSessionProvider below,
+  // so closing the chat window does not stop the model.
   useBookEvents(bookId);
 
   useTabCloseGuard();

@@ -16,10 +16,15 @@ import {
   type MessageContext,
 } from "../../api/conversations";
 
+/**
+ * One open conversation the author can see — either as the big modal or as a
+ * small chip in the corner.
+ */
 export interface ConversationSession {
   id: string;
   sceneId?: string;
   title: string;
+  /** Selection excerpt to attach to the first send, then cleared. */
   initialContext?: MessageContext | null;
 }
 
@@ -29,6 +34,7 @@ export interface ToolLogEntry {
   at: number;
 }
 
+/** Live reply for one conversation. Survives the modal being hidden. */
 export interface ConversationStream {
   busy: boolean;
   streaming: string;
@@ -36,6 +42,7 @@ export interface ConversationStream {
   toolLog: ToolLogEntry[];
   error: string | null;
   streamedMessages: Message[];
+  /** Bumped when a reply finishes so the open modal can reload the saved thread. */
   doneSeq: number;
 }
 
@@ -48,14 +55,24 @@ export interface OpenConversationOpts {
 interface ConversationSessionsApi {
   bookId: string | null;
   sessions: ConversationSession[];
+  /** Which conversation is showing as the full modal. Null = all are chips. */
   focusedId: string | null;
   streams: Record<string, ConversationStream>;
+  /** Show this conversation. If it is already open, just bring it to the front. */
   open: (id: string, extras?: OpenConversationOpts) => void;
+  /** Drop this conversation from the dock. Stops its live reply if one is running. */
   close: (id: string) => void;
+  /** Hide the modal; chips stay, replies keep running. */
   minimize: () => void;
+  /** Expand this conversation's modal (hides whichever was showing). */
   focus: (id: string) => void;
+  /** Send a user message and start (or continue) the live AI reply. */
   send: (id: string, content: string) => void;
   setTitle: (id: string, title: string) => void;
+  /**
+   * The scene editor registers its "flush unsaved prose" function here so an
+   * edit proposal can save the open scene before applying.
+   */
   registerAwaitSave: (sceneId: string, fn: () => Promise<void>) => () => void;
   awaitSaveFor: (sceneId?: string) => Promise<void>;
 }
@@ -74,6 +91,20 @@ function emptyStream(): ConversationStream {
   };
 }
 
+/**
+ * Holds every open AI conversation for the book you are in.
+ *
+ * The chat window used to own the network request that streams the AI's reply.
+ * Closing the window, opening a second chat, or leaving the scene cancelled
+ * that request. This provider lives in App instead, so replies keep running
+ * while you write, start another chat, or move to a different scene.
+ *
+ * Book-wide events (git badge, list updates) stay on a different connection —
+ * see useBookEvents. This file only owns the live reply for each chat.
+ *
+ * Closing one chat stops that chat only. Leaving the book (or refreshing the
+ * tab) stops all of them.
+ */
 export function ConversationSessionProvider({
   bookId,
   children,
@@ -183,6 +214,8 @@ export function ConversationSessionProvider({
       });
 
       let finished = false;
+      // The stream helper can fire both `error`/`done` and a trailing `done`
+      // when the connection closes. Run cleanup once.
       const finish = (fn: () => void) => {
         if (finished) return;
         finished = true;

@@ -11,7 +11,7 @@ This page's base list is book-level todos only — `parentType` ∈ `chapter | p
 - **Also show scene todos** — checkbox; survives reload via `ui.json`.
 - **Parent chip** navigates: scene → editor; chapter/part/book → Metadata.
 - **Status controls:** checkbox → done; row-menu Close → closed; both `PATCH /todos/{id}` (resolves either storage tier from the flat id, like `DELETE /relationships/{id}`). (done = accomplished; closed = dismissed / "not applicable".)
-- **Row menu:** Open conversation (💬 → `open(id)` on the book-scoped conversation store, creating a `task-discussion` conversation on first use and linking it back via `PATCH {conversationId}`, set-once); Delete → confirm → `DELETE` (for mistakes only).
+- **Row menu:** Open conversation (💬) — opens the shared chat window; creates a `task-discussion` thread on first use and links it back via `PATCH {conversationId}` (set-once). Delete → confirm → `DELETE` (for mistakes only).
 - **[＋ Add task]** → inline row: action text + parent-type picker (**Book / Chapter / Part only** — `parentType: scene` is rejected here with 422; add scene todos from the editor instead) + parent picker → `POST /todos`.
 - Origin icons are static provenance — the ⛓ rows are the dependency system talking.
 

@@ -24,10 +24,10 @@ Parent: [frontend](../CLAUDE.md). Spec: [06 Frontend §2](../../../docs/claude-t
 
 ## SSE integration
 
-Two separate listeners (do not multiplex tokens onto the book channel):
+Two connections, on purpose:
 
-- **Book events** — `useBookEvents` subscribes to `GET /books/{id}/events` and translates events → cache updates: `scene-updated` patches `['scenes']`; `conversation` invalidates `['conversations', bookId, sceneId]` for a scene-parented event, else the whole `['conversations', bookId]` **prefix** — which is exactly what `['conversations', bookId, "book"]` (the Resources page's threads) sits under, so it gets live updates without its own case; `todos-created` invalidates both `['todos', bookId]` and `['sceneTodos', bookId]` (prefix match — a dependency fanout or accepted `todo-create` proposal can land in either storage tier); `git-status` patches `['git']` (drives the top-bar badge); `compile-done` invalidates `['compileCheck']`; `audio-progress` invalidates `['audio', bookId, sceneId]`. On reconnect: refetch active queries.
-- **Message streams** — `POST /conversations/{id}/messages` SSE, owned by [`ConversationSessionProvider`](features/conversation/ConversationSessionContext.tsx) in `App` for the open book. Live tokens stay off the book EventSource. Minimize / scene navigation does not abort; Close or leaving the book does.
+- **Book events** — `useBookEvents` listens to `GET /books/{id}/events` and patches caches: `scene-updated` → `['scenes']`; `conversation` → the matching conversation list (scene-parented by scene id, otherwise the whole `['conversations', bookId]` prefix, which is why Resources chats live at `['conversations', bookId, "book"]`); `todos-created` → both `['todos', bookId]` and `['sceneTodos', bookId]`; `git-status` → `['git']`; `compile-done` → `['compileCheck']`; `audio-progress` → `['audio', bookId, sceneId]`. On reconnect: refetch active queries.
+- **Live chat replies** — each generating conversation has its own `POST /conversations/{id}/messages` stream, held by [`ConversationSessionProvider`](features/conversation/ConversationSessionContext.tsx) in App. Reply tokens do not go on the book event channel. Hiding the chat window or changing scene does not stop the reply; closing that chat, or leaving the book, does.
 
 **SSE is the fast path, not the only one.** `useGitStatus` also polls `GET /git/status` every 10s (`refetchInterval`), so a dropped event can't leave the amber badge silently lying (doc 07 §28). Poll and event write identical server truth into the same key — redundant by design.
 
