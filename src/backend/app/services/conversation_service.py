@@ -42,6 +42,7 @@ _TITLE_USER_PREFIX = (
     "Example: for 'Please give an editorial review of this scene' → Scene editorial review\n\n"
     "Request:\n"
 )
+_EXECUTE_TOOL_NAMES = frozenset({"set_scene_summary", "set_scene_characters"})
 
 
 def _now() -> str:
@@ -53,6 +54,33 @@ def _first_words(text: str, n: int = 5) -> str:
     if not words:
         return "Untitled"
     return " ".join(words[:n])
+
+
+def _bookkeeping_recap(successes: dict[str, dict[str, Any]], characters: list[Any]) -> str:
+    """Markdown of what execute tools actually wrote — shown in the thread."""
+    by_id = {c.id: getattr(c, "name", c.id) for c in characters}
+    sections: list[str] = []
+    if "set_scene_summary" in successes:
+        summary = str(successes["set_scene_summary"].get("summary") or "").strip()
+        sections.append("Saved summary:\n\n" + (summary or "(empty)"))
+    if "set_scene_characters" in successes:
+        raw = successes["set_scene_characters"].get("characters") or []
+        if not raw:
+            sections.append("Saved character involvement: none (cleared the scene's cast).")
+        else:
+            lines = ["Saved character involvement:", ""]
+            for item in raw:
+                if isinstance(item, dict):
+                    cid = str(item.get("characterId") or "")
+                    involvement = str(item.get("involvement") or "").strip()
+                else:
+                    cid = str(getattr(item, "characterId", "") or "")
+                    involvement = str(getattr(item, "involvement", "") or "").strip()
+                name = by_id.get(cid, cid)
+                suffix = f" — {involvement}" if involvement else ""
+                lines.append(f"- **{name}**{suffix}")
+            sections.append("\n".join(lines))
+    return "\n\n".join(sections)
 
 
 class ConversationService:
@@ -292,6 +320,7 @@ class ConversationService:
 
             queue: asyncio.Queue[tuple[str, Any] | None] = asyncio.Queue()
             tool_calls = 0
+            execute_successes: dict[str, dict[str, Any]] = {}
 
             async def on_token(text: str) -> None:
                 await queue.put(("token", text))
@@ -302,6 +331,8 @@ class ConversationService:
             async def on_tool(name: str, args: dict, result: str) -> None:
                 nonlocal tool_calls
                 tool_calls += 1
+                if name in _EXECUTE_TOOL_NAMES and not (result or "").startswith("Rejected:"):
+                    execute_successes[name] = args if isinstance(args, dict) else {}
 
             async def run() -> None:
                 try:
@@ -374,6 +405,11 @@ class ConversationService:
                         display, parsed = parse_audio_script(content, scene_id)
                         if parsed:
                             content, proposals = display, [*parsed, *proposals]
+
+            if conv.kind == ConversationKind.bookkeeping and execute_successes:
+                recap = _bookkeeping_recap(execute_successes, mgr.get_characters())
+                if recap:
+                    content = f"{content.strip()}\n\n{recap}" if content.strip() else recap
 
             assistant = Message(
                 id=new_id("msg"),

@@ -5,6 +5,7 @@ import {
   deleteConversation,
   getConversation,
   patchConversation,
+  conversationIsWorking,
   type Conversation,
   type Message,
   type Proposal,
@@ -59,6 +60,8 @@ export function ConversationModal({
   const busyRef = useRef(false);
   busyRef.current = busy;
   const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const workerInFlight = !!conv && conversationIsWorking(conv.status);
+  const workingLabel = streamPhase || (workerInFlight && !busy ? "Working…" : null);
 
   const NEAR_BOTTOM_PX = 40;
 
@@ -116,7 +119,7 @@ export function ConversationModal({
   // statuses need no watching.
   useEffect(() => {
     if (!conv || busy) return;
-    const inFlight = conv.status === "queued" || conv.status === "running";
+    const inFlight = conversationIsWorking(conv.status);
     if (!inFlight) return;
     const t = setTimeout(() => void refresh(), 2000);
     return () => clearTimeout(t);
@@ -207,7 +210,7 @@ export function ConversationModal({
 
   function send() {
     const text = draft.trim();
-    if (!text || busy || !conv) return;
+    if (!text || busy || workerInFlight || !conv) return;
     setError(null);
     setDraft("");
     requestAnimationFrame(() => scrollToBottom());
@@ -345,10 +348,10 @@ export function ConversationModal({
                   }}
                   placeholder="Write a note or ask the AI…"
                   className="min-h-[2.5rem] flex-1 rounded-control border border-line bg-surface px-3 py-2 text-[0.875rem] text-ink outline-none focus:border-accent"
-                  disabled={busy}
+                  disabled={busy || workerInFlight}
                 />
-                <Button variant="primary" onClick={send} disabled={busy || !draft.trim()}>
-                  {busy ? "…" : "Send"}
+                <Button variant="primary" onClick={send} disabled={busy || workerInFlight || !draft.trim()}>
+                  {busy || workerInFlight ? "…" : "Send"}
                 </Button>
               </div>
             </div>
@@ -408,11 +411,11 @@ export function ConversationModal({
                     onAcceptAll={acceptAll}
                   />
                 ))}
-                {busy && (streamPhase || toolLog.length > 0) && (
+                {(busy || workerInFlight) && (workingLabel || toolLog.length > 0) && (
                   <div className="space-y-1 rounded-control bg-paper px-3 py-2 text-[0.8125rem] text-ink-soft">
-                    {streamPhase && (
+                    {workingLabel && (
                       <div>
-                        {streamPhase}
+                        {workingLabel}
                         {!streaming && (
                           <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-accent" />
                         )}

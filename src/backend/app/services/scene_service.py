@@ -173,6 +173,7 @@ class SceneService:
             meta_touched = False
             bookkeeping = mgr.get_scene_bookkeeping(scene_id).model_copy()
             bookkeeping_touched = False
+            changed: list[str] = []
 
             if "title" in fields and body.title is not None:
                 if not body.title.strip():
@@ -191,10 +192,12 @@ class SceneService:
                 if name in fields:
                     setattr(meta, name, getattr(body, name) or "")
                     meta_touched = True
+                    changed.append(name)
 
             if "summary" in fields:
                 bookkeeping.summary = body.summary or ""
                 bookkeeping_touched = True
+                changed.append("summary")
             if "characters" in fields and body.characters is not None:
                 seen: set[str] = set()
                 cleaned: list = []
@@ -211,6 +214,7 @@ class SceneService:
                         raise validation({"characters": f"Unknown character id(s): {', '.join(unknown)}"})
                 bookkeeping.characters = cleaned
                 bookkeeping_touched = True
+                changed.append("characters")
 
             if "chapterId" in fields or "partId" in fields:
                 chapter_id = body.chapterId if "chapterId" in fields else record.chapterId
@@ -265,6 +269,9 @@ class SceneService:
             if bookkeeping_touched:
                 bookkeeping.updatedAt = now
                 mgr.save_scene_bookkeeping(scene_id, bookkeeping)
+
+            if self._hub is not None and (bookkeeping_touched or meta_touched) and changed:
+                self._hub.emit(book_id, "scene-updated", {"id": scene_id, "changed": changed})
 
             affected.discard(scene_id)
             return self._mutation_result(mgr, new_records, mgr.get_relationships(), scene_id, affected)

@@ -25,5 +25,5 @@ Both Notes and AI Jobs read the one `GET /scenes/{id}/conversations` list, filte
 
 - **Notes** (kinds note/chat) → opens that thread in the shared chat window (the window lives in App, so a running reply survives leaving this scene).
 - **To-dos** (`GET`/`POST /scenes/{id}/todos`, persisted in this scene's own `scenes/{id}/todos.json` — doc 03 §Todos storage split, not the book-level [Tasks page](../tasks/CLAUDE.md)'s file): inline "Add a task for this scene…" field above the list; checkbox = done, 🗑 = delete (confirm), ✕ = closed (`PATCH`); dependency rows ⛓ + amber; 💬 opens the linked conversation, creating a `task-discussion` one on first use.
-- **AI Jobs** (kinds ai-job/bookkeeping): title · status chip (queued / running / done / failed; `waiting` shows as amber "needs you") → opens that run's conversation. Status updates via the book event channel.
+- **AI Jobs** (kinds ai-job/bookkeeping): title · status chip (`working…` while queued/running, done/failed, and `waiting` shown as amber "needs you") → opens that run's conversation. Status updates via the book event channel.
 - Amber count badges on headers = open/pending items (AI Jobs counts `queued`/`running`/`waiting`).

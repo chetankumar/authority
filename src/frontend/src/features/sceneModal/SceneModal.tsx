@@ -2,6 +2,7 @@
 // Create shows Basics only; edit shows Basics · Characters · Summary · Dependencies
 // (Dependencies still soon). Characters rows carry per-scene involvement.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Modal } from "../../components/Modal";
@@ -29,6 +30,9 @@ import {
   useUpdateScene,
 } from "../../queries/scenes";
 import { usePlotlines } from "../../queries/structure";
+import { useSceneConversations } from "../../queries/conversations";
+import { keys } from "../../queries/keys";
+import { conversationIsWorking } from "../../api/conversations";
 
 interface Props {
   bookId: string;
@@ -60,6 +64,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   const plotlinesQ = usePlotlines(bookId);
   const charactersQ = useCharacters(bookId);
   const toast = useToast();
+  const qc = useQueryClient();
+  const convosQ = useSceneConversations(bookId, sceneId ?? "");
 
   const scenes = scenesQ.data?.scenes ?? [];
   const relationships = scenesQ.data?.relationships ?? [];
@@ -93,6 +99,7 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   );
   const [error, setError] = useState<string | null>(null);
   const [enriching, setEnriching] = useState<"summary" | "characters" | null>(null);
+  const [enrichConvIds, setEnrichConvIds] = useState<string[]>([]);
   const [unrecognized, setUnrecognized] = useState<string[]>([]);
 
   // Keep Characters/Summary local state in sync when SSE patches the scene.
@@ -101,6 +108,22 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
     setSummary(existing.summary ?? "");
     setSceneCharacters(existing.characters?.map((c) => ({ ...c })) ?? []);
   }, [existing?.summary, existing?.characters, existing?.updatedAt]);
+
+  // AI-redo stays on "Working…" until the queued bookkeeping run finishes —
+  // the POST only queues it; the worker does the model call afterwards.
+  useEffect(() => {
+    if (!enriching || enrichConvIds.length === 0) return;
+    const list = convosQ.data ?? [];
+    const stillGoing = enrichConvIds.some((id) => {
+      const row = list.find((c) => c.id === id);
+      if (!row) return true;
+      return conversationIsWorking(row.status);
+    });
+    if (!stillGoing) {
+      setEnriching(null);
+      setEnrichConvIds([]);
+    }
+  }, [enriching, enrichConvIds, convosQ.data]);
 
   const createScene = useCreateScene(bookId);
   const updateScene = useUpdateScene(bookId);
@@ -288,8 +311,13 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
     setEnriching(scope);
     setUnrecognized([]);
     try {
-      await enrichScene(bookId, sceneId!, scope);
-      toast.success(scope === "summary" ? "Summary enrichment queued" : "Character enrichment queued");
+      const { conversationIds } = await enrichScene(bookId, sceneId!, scope);
+      void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId!) });
+      if (conversationIds.length) {
+        setEnrichConvIds(conversationIds);
+      } else {
+        setEnriching(null);
+      }
     } catch (e) {
       const msg =
         e instanceof ApiError
@@ -297,8 +325,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
           : "Couldn't start enrichment.";
       toast.error(msg);
       setError(msg);
-    } finally {
       setEnriching(null);
+      setEnrichConvIds([]);
     }
   }
 

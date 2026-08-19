@@ -10,7 +10,7 @@ import { Markdown } from "tiptap-markdown";
 
 import { getBookUi, patchBookUi } from "../../api/books";
 import { enrichSceneAuto, END_ID, START_ID, saveContent } from "../../api/scenes";
-import { createConversation, runAiJob } from "../../api/conversations";
+import { createConversation, runAiJob, conversationIsWorking } from "../../api/conversations";
 import { getAI, listModels } from "../../api/settings";
 import type { Todo } from "../../api/todos";
 import { ApiError } from "../../api/client";
@@ -764,9 +764,15 @@ export default function EditorPage() {
                     >
                       <span className="min-w-0 flex-1 truncate text-ink">{r.title}</span>
                       <span
-                        className={`shrink-0 text-[0.6875rem] ${r.status === "waiting" ? "text-attn" : "text-ink-faint"}`}
+                        className={`shrink-0 text-[0.6875rem] ${
+                          r.status === "waiting" || conversationIsWorking(r.status) ? "text-attn" : "text-ink-faint"
+                        }`}
                       >
-                        {r.status === "waiting" ? "needs you" : r.status}
+                        {r.status === "waiting"
+                          ? "needs you"
+                          : conversationIsWorking(r.status)
+                            ? "working…"
+                            : r.status}
                       </span>
                     </button>
                   </li>

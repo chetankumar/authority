@@ -11,7 +11,7 @@ Left — Title*, Description* (textarea), Location, Date/Time, Mood, Emotional A
 
 ## Characters
 
-Rows: name + involvement textarea + ✕; SearchableSelect "Add character…" → `PATCH {characters}` (`[{characterId, involvement}]`). **↻ AI-redo** → `POST /scenes/{id}/enrich {scope:"characters"}` → spinner; `scene-updated` patches rows live; unrecognized names → amber note.
+Rows: name + involvement textarea + ✕; SearchableSelect "Add character…" → `PATCH {characters}` (`[{characterId, involvement}]`). **↻ AI-redo** → `POST /scenes/{id}/enrich {scope:"characters"}` → button stays **Working…** until the bookkeeping conversation leaves `queued`/`running`; `scene-updated` patches rows live; unrecognized names → amber note.
 
 ## Summary
 

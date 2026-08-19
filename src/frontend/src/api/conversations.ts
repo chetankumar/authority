@@ -9,6 +9,11 @@ export type ConversationStatus =
   | "done"
   | "failed"
   | "archived";
+
+/** Worker- or send-driven generation — show "Working…" until a terminal status. */
+export function conversationIsWorking(status: ConversationStatus): boolean {
+  return status === "queued" || status === "running";
+}
 export type ParentType = "scene" | "chapter" | "part" | "book";
 export type ProposalType =
   | "edit"
