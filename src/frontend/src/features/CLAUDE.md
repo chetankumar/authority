@@ -6,7 +6,7 @@ Parent: [src](../CLAUDE.md). Spec: [doc 06](../../../../docs/claude-tech-specs/0
 
 ## Global shell (in App.tsx, doc 06 §3)
 
-Top bar (48px): logo + "Authority" → `/`; book-title breadcrumb → `/book/{id}`; **git badge** (only when dirty, amber, → `/book/{id}/git`, fed by `git-status` SSE); "Welcome, {name}". Left nav (208px ↔ 56px rail, auto-rails on the editor): outside a book → Home · Settings; inside a book → Scene Graph · Scene Table · Character Sheet · Metadata · Tasks · Resources · Git. Disconnected banner when `/health` polling fails. Open chats (the modal and any corner chips) are drawn here too, so they survive changing page or scene.
+Top bar (48px): logo + "Authority" → `/`; book-title breadcrumb → `/book/{id}`; **search box** (inside a book; submit a question → answer + hits); **git badge** (only when dirty, amber, → `/book/{id}/git`, fed by `git-status` SSE); "Welcome, {name}". Left nav (208px ↔ 56px rail, auto-rails on the editor): outside a book → Home · Settings; inside a book → Scene Graph · Scene Table · Character Sheet · Metadata · Tasks · Resources · Git. Disconnected banner when `/health` polling fails. Open chats (the modal and any corner chips) are drawn here too, so they survive changing page or scene.
 
 ## Feature catalog + routes
 
@@ -25,3 +25,4 @@ Top bar (48px): logo + "Authority" → `/`; book-title breadcrumb → `/book/{id
 | [`git/`](git/CLAUDE.md) | `/book/{id}/git` | §14 |
 | [`resources/`](resources/CLAUDE.md) | `/book/{id}/resources` | §15 |
 | [`audio/`](audio/) | component (Editor **Audio** modal — not a route) | doc 06 Audio Modal; [`audio-system.md`](../../../../docs/audio-system.md) |
+| [`search/`](search/CLAUDE.md) | component (header SearchBox — not a route) | doc 06 §3 |

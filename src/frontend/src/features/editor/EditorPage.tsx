@@ -23,6 +23,7 @@ import { useSceneConversations } from "../../queries/conversations";
 import { useJobs as useAiJobDefinitions } from "../../queries/settings";
 import { usePatchBook } from "../../queries/structure";
 import { useCreateSceneTodo, useDeleteTodo, useSceneTodos, useUpdateTodo } from "../../queries/todos";
+import { useIndexScene, useSearchIndex } from "../../queries/search";
 import { AudioModal } from "../audio/AudioModal";
 import { SceneModal } from "../sceneModal/SceneModal";
 import { useConversationSessions } from "../conversation/ConversationSessionContext";
@@ -69,6 +70,11 @@ export default function EditorPage() {
   // Shared with App: opening Chat here does not cancel a job already running.
   const conversations = useConversationSessions();
   const [confirmDeleteTodo, setConfirmDeleteTodo] = useState<Todo | null>(null);
+  const indexScene = useIndexScene(bookId);
+  const searchIndex = useSearchIndex(bookId);
+  const indexingThis =
+    searchIndex.data?.status === "running" &&
+    (searchIndex.data.sceneId === sceneId || searchIndex.data.total > 1);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
 
   const loadedScene = useRef<string | null>(null);
@@ -587,6 +593,17 @@ export default function EditorPage() {
             )}
           </div>
           <ToolButton label="Chat" onClick={() => void startChat()} />
+          <ToolButton
+            label={indexingThis || indexScene.isPending ? "Indexing…" : "Index"}
+            disabled={indexingThis || indexScene.isPending}
+            title="Wipe and rebuild this scene's search index"
+            onClick={() => {
+              void indexScene.mutateAsync(sceneId).then(
+                () => toast.success("Scene queued for indexing"),
+                (e) => toast.error(e instanceof Error ? e.message : "Couldn't index this scene"),
+              );
+            }}
+          />
           <div className="ml-auto">
             <ToolButton label="◫" onClick={togglePane} title="Toggle side pane" />
           </div>

@@ -60,6 +60,9 @@ export function useBookEvents(bookId: string | null): void {
             }
             break;
           }
+          case "search-index":
+            void qc.invalidateQueries({ queryKey: keys.searchIndex(bookId) });
+            break;
           default:
             break;
         }
@@ -72,6 +75,7 @@ export function useBookEvents(bookId: string | null): void {
         qc.invalidateQueries({ queryKey: ["todos", bookId] });
         qc.invalidateQueries({ queryKey: ["sceneTodos", bookId] });
         qc.invalidateQueries({ queryKey: ["audio", bookId] });
+        qc.invalidateQueries({ queryKey: keys.searchIndex(bookId) });
       },
     });
   }, [bookId, qc]);

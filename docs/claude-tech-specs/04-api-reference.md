@@ -55,6 +55,8 @@ Routers hold no logic. Every router validates via Pydantic, then delegates:
 | **GitService** | GitPython wrapper: status/stage/unstage/discard/diff/commit/push/pull/log; post-write status checks |
 | **CompileService** | Completeness check (errors/warnings); build to `compiled-book/` |
 | **EventHub** | Per-book SSE pub/sub; all services emit through it |
+| **SearchService** | Per-book Chroma index (`search-index/`); chunk + summarize; hybrid retrieve; one-shot Q&A from matched slices |
+| **SearchIndexWorker** | Queues index-scene / rebuild / delete; emits `search-index` SSE |
 
 **Mutation lifecycle (every write endpoint):** router → Pydantic validation → service acquires the book's asyncio lock → read in-memory state → validate business rules → mutate copies → BookDataManager persists changed files atomically (`.tmp` + fsync + `os.replace`) → release lock → GitService dirty-check → EventHub emit → response. Reads take no lock.
 
@@ -264,7 +266,7 @@ Removes the definition. Historical job records/conversations keep the id + a nam
 
 ### POST /api/books — multipart
 **Fields:** `title` (string, required) · `cover` (image file, optional).
-**Logic (BookService):** 1) 422 empty title / booksHome unset; 403 booksHome unwritable. 2) Generate `bok-{6hex}`; slugify title; create `{6hex}-{slug}/` (409 `already-exists` on impossible collision). 3) Scaffold: `config/book.json` (id, title, empty systemPrompt/storySummary, empty narrator voice fields, bookkeeping both **true**, empty parts/chapters), `scenes/.gitkeep`, `db/` seeded empty collections + `conversations/index.json`, `assets/cover.{ext}` if uploaded (stored as-is), `compiled-book/.gitkeep`, `.gitignore` (`*.tmp` + `*.mp3`). 4) GitService: `git init` (folder is fresh by construction) → `add -A` → commit `"initialized"`. 5) BookScanner cache add. **Response** BookSummary, 201.
+**Logic (BookService):** 1) 422 empty title / booksHome unset; 403 booksHome unwritable. 2) Generate `bok-{6hex}`; slugify title; create `{6hex}-{slug}/` (409 `already-exists` on impossible collision). 3) Scaffold: `config/book.json` (id, title, empty systemPrompt/storySummary, empty narrator voice fields, bookkeeping both **true**, empty parts/chapters), `scenes/.gitkeep`, `db/` seeded empty collections + `conversations/index.json`, `assets/cover.{ext}` if uploaded (stored as-is), `compiled-book/.gitkeep`, `.gitignore` (`*.tmp` + `*.mp3` + `search-index/`). 4) GitService: `git init` (folder is fresh by construction) → `add -A` → commit `"initialized"`. 5) BookScanner cache add. **Response** BookSummary, 201.
 
 *Discovered books* (folder dropped into booksHome, e.g. cloned): never re-initialized; existing `.git` and settings left completely untouched; they simply appear on the next scan.
 
@@ -280,7 +282,7 @@ Removes the definition. Historical job records/conversations keep the id + a nam
 
 ### GET /api/books/{id}/gitignore · PUT /api/books/{id}/gitignore
 **GET Response** `{ "patterns": string[] }` parsed from the book root `.gitignore` (missing/empty → `[]`).
-**PUT Request** `{ "patterns": string[] }` — normalized (trim, drop blanks); always re-injects required defaults `*.tmp` and `*.mp3` if absent; atomic write to `.gitignore`; `notify_changed`. **Response** `{ "patterns": string[] }`.
+**PUT Request** `{ "patterns": string[] }` — normalized (trim, drop blanks); always re-injects required defaults `*.tmp`, `*.mp3`, and `search-index/` if absent; atomic write to `.gitignore`; `notify_changed`. **Response** `{ "patterns": string[] }`.
 Source of truth is the file (not `book.json`). See doc 03.
 
 ### GET /api/books/{id}/cover
@@ -519,6 +521,7 @@ One connection per open book. Event types and payloads:
 | `todos-created` | `{ todos: [Todo] }` | dependency fanout or accepted todo-create |
 | `git-status` | `GitStatus` (§2.2, includes `summary`) | **(a)** the git-status worker's 5s debounce fired after a `book-changed`; **(b)** immediately, in-request, after an explicit stage/unstage/commit/push/pull |
 | `compile-done` | `{ report: CompileReport }` | successful compile |
+| `search-index` | `{ status, sceneId?, done, total, error? }` | search index job progress (index / rebuild / delete) |
 
 Clients patch TanStack Query caches from these; on reconnect, refetch active queries (channel is stateless).
 
@@ -615,3 +618,24 @@ Empty key resolves to env `ELEVENLABS_API_KEY`.
 
 ### POST /api/books/{b}/characters/{id}/voice/suggest
 One-shot utility-model suggestion from craft fields + cached voices. **Response** `{ voiceId, rationale }`. Writes nothing.
+
+---
+
+## 17. Search
+
+Derived index + Q&A. Not a conversation. Handled by `SearchService` + `SearchIndexWorker`. Embeddings: local Chroma MiniLM. Chunk summaries and answers use `sceneSummaryModelId` → `utilityModelId`.
+
+### POST /api/books/{b}/search
+**Request** `{ "question": required }`. Hybrid retrieve (semantic + keyword) over chunk summaries and prose; one-shot answer from matched slices (not whole scenes). **Response** `{ "answer", "hits": [{ sceneId, title, seq, chunkIndex, kind, snippet, score, stale }], "indexedSceneCount" }`. Empty index or no matches: honest `answer`, empty `hits`. 422 blank question.
+
+### GET /api/books/{b}/search/index
+**Response** `{ "status": "idle"|"running"|"failed", "sceneId"?, "done", "total", "error"?, "indexedSceneCount", "scenes": [{ id, contentHash, chunkCount, indexedAt }] }`.
+
+### POST /api/books/{b}/search/index/rebuild
+Enqueue wipe+reindex of every **active** scene. 422 `no-utility-model`. **202** index status.
+
+### DELETE /api/books/{b}/search/index
+Enqueue drop of `search-index/`. **204**.
+
+### POST /api/books/{b}/scenes/{id}/index
+Wipe that scene's vectors, then rebuild (~100-line chunks; summary + prose documents). 422 `no-utility-model`. **202**.

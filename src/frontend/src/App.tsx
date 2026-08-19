@@ -10,6 +10,7 @@ import { useTheme } from "./theme";
 import { useTabCloseGuard } from "./hooks/useTabCloseGuard";
 import { ConversationHost } from "./features/conversation/ConversationHost";
 import { ConversationSessionProvider } from "./features/conversation/ConversationSessionContext";
+import { SearchBox } from "./features/search/SearchBox";
 import type { ThemePref } from "./api/settings";
 
 // Global shell (doc 06 §3): top bar + left nav + disconnected banner + outlet.
@@ -61,8 +62,8 @@ function TopBar({ bookId }: { bookId: string | null }) {
   const greeting = user.data?.name ? `Welcome, ${user.data.name}` : "Welcome";
   const book = useBook(bookId ?? "");
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-line bg-surface px-6">
-      <div className="flex items-center gap-2 font-ui text-ink">
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-surface px-6">
+      <div className="flex min-w-0 items-center gap-2 font-ui text-ink">
         <Link to="/" className="flex items-center gap-2 font-semibold">
           <img src="/authority-logo.png" alt="Authority" className="h-7 w-7 rounded-full" />
           <span>Authority</span>
@@ -70,13 +71,14 @@ function TopBar({ bookId }: { bookId: string | null }) {
         {bookId && book.data && (
           <>
             <span className="text-ink-faint">›</span>
-            <Link to={`/book/${bookId}`} className="max-w-xs truncate text-ink-soft hover:text-ink">
+            <Link to={`/book/${bookId}`} className="max-w-[10rem] truncate text-ink-soft hover:text-ink">
               {book.data.title}
             </Link>
           </>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      {bookId ? <SearchBox bookId={bookId} /> : <div className="flex-1" />}
+      <div className="flex shrink-0 items-center gap-3">
         {bookId && <GitBadge bookId={bookId} />}
         <ThemeToggle />
         <span className="text-[0.8125rem] text-ink-soft">{greeting}</span>

@@ -101,7 +101,7 @@ frontend/src/
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ ◆ Authority › {Book title}        [⚠ 7 pending · Commit?]  Welcome, Chetan │  top bar, 48px
+│ ◆ Authority › {Book title}   [Ask this book…]   [⚠ Commit?]  Welcome, Chetan │  top bar, 48px
 ├───────────┬──────────────────────────────────────────────────┤
 │ left nav  │                                                  │
 │ 208px /   │                 page content                     │
@@ -113,6 +113,7 @@ frontend/src/
 |---|---|---|---|
 | Logo + "Authority" | Top bar, left | Click → `/` (bookshelf) | Universal escape hatch; breadcrumb root |
 | Book title breadcrumb | Right of logo, inside a book | Click → `/book/{id}` (graph) | Orients the author; one-click back to the book's home view |
+| **Search** | Top bar, center; only inside a book | Input; Enter submits `POST /search {question}`. Results panel: AI answer on top, clickable hits below (navigate to the scene). Esc/outside-click closes. Not a saved conversation | Ask the book a question without leaving the current page |
 | **Git badge** | Top bar, center-right; only when dirty | Shows `GitStatus.summary` + " · Commit now?" in `--attn` (e.g. "7-new, 1-updated, 3-deleted · Commit now?"); click → `/book/{id}/git`. Fed by `git-status` SSE, **plus** a 10s `refetchInterval` on `GET git/status` as a safety net so a dropped event can't leave the badge lying; initial state from the same query. Clean → renders nothing | The nudge that makes deliberate commits happen without auto-commit; amber = decision awaits. It updates itself ~5s after the author stops typing (debounced worker) and instantly after an explicit commit — a badge that's silently stale is worse than no badge, hence the poll |
 | "Welcome, {name}" | Top bar, right | Static; from `GET /settings/user`; "Welcome" if unset | Confirms whose studio this is; motivates User Settings on first run |
 | **Theme toggle** | Top bar, right (before the greeting) | Sun/moon control cycling `light → dark → system`; writes the choice via `PATCH /settings/appearance` (doc 04 §3) and sets `data-theme` on `<html>` immediately; `system` tracks `prefers-color-scheme` live. Icon reflects the resolved theme | One instant, always-visible switch; theme is app-wide, so it lives in the global chrome rather than a settings page |
@@ -261,7 +262,7 @@ Top list — "This scene depends on": rows *{scene title} — {reason}* with ✎
 ```
 ┌─ icon rail ─┬────────────────────────────────────────────┬─ right pane 320px ─┐
 │ (auto-      │  tool panel: [AI-Jobs ▾][Audio][Metadata]   │ ▸ Notes        (3) │
-│  collapsed  │              [Bookkeeping][Chat]    [◫]    │ ▸ To-dos       (2)●│
+│  collapsed  │              [Bookkeeping][Chat][Index] [◫]│ ▸ To-dos       (2)●│
 │  left nav)  ├────────────────────────────────────────────┤ ▸ AI Jobs      (1) │
 │             │  TipTap toolbar: B I H₁ H₂ " • …           │                    │
 │             │  ┌────────── 68ch sheet ──────────┐        │  (● = amber count  │
@@ -282,6 +283,7 @@ The sheet: `--surface` on `--paper`, Literata, 68ch measure, generous top margin
 | **Metadata** | Tool panel | Opens the Scene Modal | Facts about the scene without leaving the room |
 | **Bookkeeping** | Tool panel | Popover of toggles: "Update summary when leaving scene" / "Update character involvement when leaving scene" → `PATCH /books/{id} {bookkeeping}`; footer note "Applies to this whole book". Manual ↻ AI-redo lives on the Scene Modal Characters/Summary tabs | Standing consent must be inspectable and revocable exactly where its effects are felt; book-level scope is stated because the button sits on a scene page |
 | **Chat** | Tool panel | `POST /conversations {kind:"chat", parent: scene, aiParticipant: {enabled:true, modelId: chatDefaultModel}}` → Conversation Modal with AI on and the chat default model preselected (falls back to the utility model, then the first configured model). If a selection is active, it rides the first message as `context` and renders as a quoted block | The "I'm stuck" button; selection-as-context is the v1 answer to inline markers |
+| **Index** | Tool panel | `POST /scenes/{id}/index` — wipe then rebuild this scene's search vectors. Spinner while this scene (or a full rebuild) is running | Explicit refresh of lookup after rewriting; not autosave |
 | ◫ pane toggle | Tool panel, right edge | Show/hide right pane; persisted in ui.json | Zen switch: full-width prose on demand, memory per book |
 | TipTap toolbar | Above sheet | Standard marks/blocks; Ctrl/Cmd+B/I etc. | Familiar; deliberately small — novels are mostly paragraphs |
 | Inline title | Top of sheet | Blur/Enter → `PATCH {title}` (slug-renames the file server-side) | The title is prose-adjacent; renaming shouldn't require a modal |
@@ -367,7 +369,7 @@ A list of this character's relationships to others, each rendered as "*{this cha
 | **Parts tab:** ordered rows, drag-and-drop reorder, ✎, 🗑, [＋ Add part] | Drag-and-drop → `POST /parts/reorder` with new ID order; 🗑 → `DELETE`, 409 → Blocked dialog | Drag-and-drop for reorder: direct, tactile, seq-based ordering underneath |
 | **Chapters tab:** rows grouped under part headings + "Unassigned" group; each row has a Part select | Same CRUD; Part select → `PATCH {partId}` | The grouping *is* the book's table of contents taking shape; "Unassigned" keeps un-homed chapters visible, not lost |
 | **Plotlines tab:** rows with scene-count badges; CRUD modal (title*, description) | `DELETE` 409-blocked while scenes linked | Scene counts expose thin sideplots at a glance |
-| **Book tab:** Story summary · Book system prompt · Narrator voice (SearchableSelect) · **Git ignore** textarea (one pattern per line; `*.tmp`/`*.mp3` always kept) | [Save] → `PATCH /books/{id}` for texts/narrator; gitignore → `PUT /books/{id}/gitignore` | Book-level AI context, narrator casting for audio, and ignore rules for regenerable mp3s |
+| **Book tab:** Story summary · Book system prompt · Narrator voice · Git ignore · **Search index** (status, Rebuild, Delete) | [Save] → `PATCH /books/{id}` for texts/narrator; gitignore → `PUT /gitignore`; Rebuild → `POST /search/index/rebuild`; Delete → confirm → `DELETE /search/index` | Book-level AI context, narrator, ignore rules, and the derived search cache |
 
 ---
 

@@ -45,3 +45,4 @@ Two producers: the **book event channel** ([events](events/CLAUDE.md), §12) and
 | [`compile/`](compile/CLAUDE.md) | Completeness check + compile | §14 |
 | [`resources/`](resources/CLAUDE.md) | Files beside the book (upload/list/download/delete) | §15 |
 | [`audio/`](audio/) | Scene audio drama (manifest, generate, FileResponse mp3s); book gitignore is on books router | §16 |
+| [`search/`](search/CLAUDE.md) | Book Q&A + index status/rebuild/wipe | §17 |

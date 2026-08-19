@@ -8,7 +8,14 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
-from app.api.deps import get_conversation_service, get_enrichment_service, get_scene_service, get_todo_service
+from app.api.deps import (
+    get_conversation_service,
+    get_enrichment_service,
+    get_scene_service,
+    get_search_index_worker,
+    get_search_service,
+    get_todo_service,
+)
 from app.models.conversation import ConversationSummary
 from app.models.enums import ParentType
 from app.models.scene import (
@@ -26,7 +33,10 @@ from app.models.todo import SceneTodoCreate, Todo
 from app.services.conversation_service import ConversationService
 from app.services.enrichment_service import EnrichmentService
 from app.services.scene_service import SceneService
+from app.models.search import SearchIndexStatus
+from app.services.search_service import SearchService
 from app.services.todo_service import TodoService
+from app.worker.search_index_worker import SearchIndexWorker
 
 router = APIRouter(prefix="/books/{book_id}/scenes", tags=["scenes"])
 
@@ -62,6 +72,23 @@ async def delete_scene(book_id: str, scene_id: str, svc: SceneService = Service)
 @router.put("/{scene_id}/content", response_model=ContentSaveResult)
 async def save_content(book_id: str, scene_id: str, body: ContentUpdate, svc: SceneService = Service) -> ContentSaveResult:
     return await svc.save_content(book_id, scene_id, body.content)
+
+
+@router.post("/{scene_id}/index", response_model=SearchIndexStatus, status_code=202)
+async def index_scene(
+    book_id: str,
+    scene_id: str,
+    svc: SearchService = Depends(get_search_service),
+    worker: SearchIndexWorker = Depends(get_search_index_worker),
+) -> SearchIndexStatus:
+    """Wipe-then-rebuild this scene's search vectors. Enqueued; 202."""
+    svc.require_scene(book_id, scene_id)
+    svc.require_summary_model()
+    worker.enqueue_scene(book_id, scene_id)
+    return svc.index_status(
+        book_id,
+        {"status": "running", "sceneId": scene_id, "done": 0, "total": 1, "error": None},
+    )
 
 
 @router.post("/{scene_id}/enrich", response_model=EnrichResponse, status_code=202)

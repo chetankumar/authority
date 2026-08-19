@@ -24,9 +24,11 @@ from app.services.scene_service import SceneService
 from app.services.settings_service import SettingsService
 from app.services.structure_service import StructureService
 from app.services.todo_service import TodoService
+from app.services.search_service import SearchService
 from app.worker.audio_worker import AudioWorker
 from app.worker.conversation_worker import ConversationWorker
 from app.worker.git_status_worker import GitStatusWorker
+from app.worker.search_index_worker import SearchIndexWorker
 
 
 @lru_cache(maxsize=1)
@@ -158,3 +160,13 @@ def get_ai_job_service() -> AiJobService:
 @lru_cache(maxsize=1)
 def get_conversation_worker() -> ConversationWorker:
     return ConversationWorker(get_conversation_service(), get_book_registry())
+
+
+@lru_cache(maxsize=1)
+def get_search_service() -> SearchService:
+    return SearchService(get_book_registry(), get_settings_service(), get_ai_orchestrator())
+
+
+@lru_cache(maxsize=1)
+def get_search_index_worker() -> SearchIndexWorker:
+    return SearchIndexWorker(get_search_service(), get_event_hub())

@@ -33,7 +33,7 @@ DEFAULT_GAP_MS = 500
 SPEAKER_CHANGE_GAP_MS = 650
 SFX_GAP_MS = 400
 
-REQUIRED_GITIGNORE = ("*.tmp", "*.mp3")
+REQUIRED_GITIGNORE = ("*.tmp", "*.mp3", "search-index/")
 
 SFX_PROMPTS: dict[str, tuple[str, float]] = {
     "WZZIP!": ("Sharp magical whoosh zip teleport, quick sci-fi swoosh", 0.6),

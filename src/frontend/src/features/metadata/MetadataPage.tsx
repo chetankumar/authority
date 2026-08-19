@@ -29,8 +29,14 @@ import {
   type BlockedRef,
 } from "../../components/BlockedDeletionDialog";
 import { SearchableSelect } from "../../components/SearchableSelect";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { Button, Field, Input, Select } from "../../components/ui";
+import {
+  useDeleteSearchIndex,
+  useRebuildSearchIndex,
+  useSearchIndex,
+} from "../../queries/search";
 
 const TABS = [
   { key: "parts", label: "Parts" },
@@ -717,7 +723,11 @@ function BookTab({ bookId }: { bookId: string }) {
   const voicesQ = useElevenLabsVoices();
   const gitignoreQ = useGitignore(bookId);
   const putGitignore = usePutGitignore(bookId);
+  const searchIndex = useSearchIndex(bookId);
+  const rebuildIndex = useRebuildSearchIndex(bookId);
+  const deleteIndex = useDeleteSearchIndex(bookId);
   const toast = useToast();
+  const [confirmDeleteIndex, setConfirmDeleteIndex] = useState(false);
 
   const [storySummary, setStorySummary] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -774,6 +784,7 @@ function BookTab({ bookId }: { bookId: string }) {
   }
 
   return (
+    <>
     <div className="space-y-5">
       <Field label="Story summary">
         <textarea
@@ -817,7 +828,7 @@ function BookTab({ bookId }: { bookId: string }) {
 
       <Field
         label="Git ignore"
-        hint="*.mp3 keeps generated audio out of git. manifest.json is still tracked. *.tmp and *.mp3 are always kept."
+        hint="*.mp3 keeps generated audio out of git. search-index/ is the derived search cache. manifest.json is still tracked. Required patterns are always kept."
       >
         <textarea
           className="w-full rounded-control border border-line bg-surface px-2 py-2 font-mono text-[0.8125rem] text-ink outline-none focus:border-accent"
@@ -846,10 +857,53 @@ function BookTab({ bookId }: { bookId: string }) {
         </label>
       </div>
 
+      <div className="space-y-2">
+        <p className="text-[0.75rem] tracking-[0.02em] text-ink-soft">Search index</p>
+        <p className="text-[0.8125rem] text-ink-soft">
+          {searchIndex.data?.status === "running"
+            ? `Indexing ${searchIndex.data.done}/${searchIndex.data.total}…`
+            : `${searchIndex.data?.indexedSceneCount ?? 0} scenes indexed`}
+          {searchIndex.data?.error ? ` — ${searchIndex.data.error}` : ""}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            disabled={searchIndex.data?.status === "running" || rebuildIndex.isPending}
+            onClick={() => {
+              void rebuildIndex.mutateAsync().then(
+                () => toast.success("Rebuild started"),
+                (e) => toast.error(e instanceof Error ? e.message : "Couldn't rebuild the index"),
+              );
+            }}
+          >
+            Rebuild index
+          </Button>
+          <Button variant="ghost" onClick={() => setConfirmDeleteIndex(true)}>
+            Delete index
+          </Button>
+        </div>
+      </div>
+
       <Button variant="primary" onClick={handleSave} disabled={!isDirty && !gitignoreDirty}>
         Save
       </Button>
     </div>
+    {confirmDeleteIndex && (
+      <ConfirmDialog
+        title="Delete search index?"
+        message="Removes the derived search cache for this book. Scenes are unchanged. You can rebuild from this tab."
+        confirmLabel="Delete index"
+        onConfirm={() => {
+          setConfirmDeleteIndex(false);
+          void deleteIndex.mutateAsync().then(
+            () => toast.success("Index deleted"),
+            (e) => toast.error(e instanceof Error ? e.message : "Couldn't delete the index"),
+          );
+        }}
+        onCancel={() => setConfirmDeleteIndex(false)}
+      />
+    )}
+    </>
   );
 }
 

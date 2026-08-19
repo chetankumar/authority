@@ -87,13 +87,18 @@ a3f9c2-my-great-novel/
     reference-map.png
   compiled-book/                 # build artifact; committed; wiped each compile
     part-1-beginnings/chapter-1-the-arrival.md
-  .gitignore                     # *.tmp + *.mp3 (editable via Metadata → Book; mp3s are regenerable artifacts)
+  search-index/                  # derived Chroma cache; gitignored; rebuildable
+    catalog.json
+    chroma.sqlite3
+  .gitignore                     # *.tmp + *.mp3 + search-index/ (editable via Metadata → Book)
   .git/
 ```
 
 Scene filenames: `{sceneHash}-{slug}.md`. Slug follows title renames; hash never changes. The per-scene folder is named by the **full scene id** (`scn-1f2e9b`, not the bare hex) — matches the `conversations/cnv-*.json` naming convention and stays self-describing without cross-referencing `db/scenes.json`. Empty scaffold folders carry `.gitkeep`.
 
-**`.gitignore`:** seeded on book create with `*.tmp` and `*.mp3`. Source of truth is the file itself (not `book.json`). `GET/PUT /api/books/{b}/gitignore` exposes patterns to Metadata → Book; required patterns are re-injected on save if missing. Existing books get `*.mp3` appended via `ensure_gitignore_patterns` on open.
+**`.gitignore`:** seeded on book create with `*.tmp`, `*.mp3`, and `search-index/`. Source of truth is the file itself (not `book.json`). `GET/PUT /api/books/{b}/gitignore` exposes patterns to Metadata → Book; required patterns are re-injected on save if missing. Existing books get missing required patterns appended via `ensure_gitignore_patterns` on open.
+
+**`search-index/`:** derived lookup cache (Chroma + `catalog.json`), not manuscript truth. Never committed. Clone/zip still writes; search is empty until the author indexes. SearchService is the only writer. Re-indexing a scene deletes that scene's vectors first.
 
 ## config/book.json
 

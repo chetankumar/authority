@@ -23,3 +23,7 @@ httpx==0.28.1
 elevenlabs
 python-dotenv
 pydub
+
+# Per-book search index (derived, gitignored). SQLite under Chroma is an
+# exception to JSON-only manuscript persistence (doc 07).
+chromadb==0.6.3

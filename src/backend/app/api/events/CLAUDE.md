@@ -17,6 +17,7 @@ One SSE connection per open book. Any service emits through the [EventHub](../..
 | `todos-created` | `{ todos:[Todo] }` | dependency fanout or accepted todo-create |
 | `git-status` | `GitStatus` (incl. `summary`) | the [git-status worker](../../worker/CLAUDE.md)'s 5s debounce fired, **or** an explicit stage/unstage/commit/push/pull emitted in-request |
 | `compile-done` | `{ report: CompileReport }` | successful compile |
+| `search-index` | `{ status, sceneId?, done, total, error? }` | search index job progress |
 
 Frame format: `event: {type}\ndata: {json}\n\n`.
 

@@ -23,7 +23,8 @@ Provider model-name suggestions (Settings autocomplete) are cached in `{appDataR
 |---|---|
 | `utilityModelId` | The general-purpose fallback (below) **and** sundry system tasks that don't warrant their own slot — today, chat conversation title-naming |
 | `commitMessageModelId` | Git commit-message suggestion |
-| `sceneSummaryModelId` | Enrichment's scene-summarization pass |
+| `sceneSummaryModelId` | Enrichment's scene-summarization pass **and** search chunk summaries + search answers |
+
 | `characterParsingModelId` | Enrichment's character-matching run — the same model that asks the author in-thread when a match is ambiguous or unrecognized |
 | `chatDefaultModelId` | Preselected model when the author opens a new chat from the editor (a UI default only — the author can still change it in the conversation) |
 
@@ -152,8 +153,14 @@ Bound via LangChain tool-calling on every assistant invocation.
 ## Streaming & events
 
 - **Message streaming:** `POST /conversations/{id}/messages` responds as an SSE stream: `token` events, then `message` (final persisted message incl. proposals).
-- **Book channel:** `GET /books/{id}/events` — `conversation`, `scene-updated`, `todos-created`, `git-status`, `compile-done`. One connection per open book; drives badges, accordion statuses, live metadata patches.
+- **Book channel:** `GET /books/{id}/events` — `conversation`, `scene-updated`, `todos-created`, `git-status`, `compile-done`, `search-index`. One connection per open book; drives badges, accordion statuses, live metadata patches.
 
 ## Worker
 
 `ConversationWorker` — single asyncio task; per-book FIFO, concurrency 1 per book (≤2 global). Drains conversations at status `queued` (automatic bookkeeping runs; explicit AI-Job runs never queue — they run when the author sends). Runs each via `ConversationService.send_message` with no body. Terminal status `failed` (error appended as a visible system message) or `waiting` (AI asked a question); no automatic retry.
+
+`SearchIndexWorker` — standing task; concurrency 1. Drains index-scene / rebuild-all / delete-index. Chunk summarization is `invoke_once` (not a bookkeeping conversation). Ask/answer is in-request, not this worker.
+
+## Book search (index + ask)
+
+Indexing is explicit (editor **Index**, Metadata rebuild). Split scene prose into ~100-line chunks; one-shot a detailed retrieval summary per chunk; store summary **and** prose in Chroma. Re-index deletes that scene first. Header search: submit a question → hybrid retrieve → answer from matched slices → results panel (answer on top, clickable hits). Not saved as a conversation. Whole scenes are not passed to the answer model.

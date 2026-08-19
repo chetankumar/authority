@@ -23,3 +23,7 @@ Separate standing task: consumes `book-changed`, 5s debounce, emits `git-status`
 ## Audio worker
 
 Standing task (`audio_worker.py`): drains batch / single-line synthesis jobs for scene audio drama (doc [`audio-system.md`](../../../../docs/audio-system.md), doc 04 §16). Calls `AudioService.synthesize_line` (and optional stitch); emits `audio-progress` SSE. Accept of an `audio-script-create` proposal never goes through this worker — that only merges `manifest.json`.
+
+## Search index worker
+
+Standing task (`search_index_worker.py`): drains index-scene / rebuild-all / delete-index. Calls `SearchService`; emits `search-index` SSE. Ask/answer is in-request, not this worker.

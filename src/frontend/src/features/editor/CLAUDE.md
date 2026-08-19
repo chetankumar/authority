@@ -9,7 +9,7 @@ Auto-collapsed left nav (icon rail) · center writing column · right pane (320p
 ## Tool panel
 
 - **AI-Jobs ▾** — menu from `GET /settings/ai-jobs`. Pick one → the server prepares a conversation (prompt already inside, composer prefilled `start`) and the chat window opens. Nothing runs until the author sends. A job already running in the corner keeps going.
-- **Metadata** → Scene Modal. **Bookkeeping** → popover of leave-scene toggles → `PATCH /books/{id} {bookkeeping}`; footer "Applies to this whole book". Manual ↻ AI-redo is on the Scene Modal Characters/Summary tabs. **Chat** → starts a new scene chat (a selected passage rides along as context). **◫** pane toggle (persisted in ui.json).
+- **Metadata** → Scene Modal. **Bookkeeping** → popover of leave-scene toggles → `PATCH /books/{id} {bookkeeping}`; footer "Applies to this whole book". Manual ↻ AI-redo is on the Scene Modal Characters/Summary tabs. **Chat** → starts a new scene chat (a selected passage rides along as context). **Index** → wipe-then-rebuild this scene's search vectors. **◫** pane toggle (persisted in ui.json).
 
 ## Writing surface
 

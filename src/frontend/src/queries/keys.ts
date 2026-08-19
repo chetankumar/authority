@@ -29,4 +29,5 @@ export const keys = {
   compileCheck: (bookId: string) => ["compileCheck", bookId] as const,
   audio: (bookId: string, sceneId: string) => ["audio", bookId, sceneId] as const,
   gitignore: (bookId: string) => ["gitignore", bookId] as const,
+  searchIndex: (bookId: string) => ["searchIndex", bookId] as const,
 };
