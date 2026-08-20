@@ -98,8 +98,11 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
       .map((r) => ({ type: r.type, sceneId: r.toSceneId, existingRelId: r.id })),
   );
   const [error, setError] = useState<string | null>(null);
-  const [enriching, setEnriching] = useState<"summary" | "characters" | null>(null);
-  const [enrichConvIds, setEnrichConvIds] = useState<string[]>([]);
+  // Per-field bookkeeping IDs so Summary and Characters AI-redo never lock each other.
+  // "__pending__" marks the brief POST window before conversationIds arrive.
+  const [enrichConvIds, setEnrichConvIds] = useState<
+    Record<"summary" | "characters", string[]>
+  >({ summary: [], characters: [] });
   const [unrecognized, setUnrecognized] = useState<string[]>([]);
 
   // Keep Characters/Summary local state in sync when SSE patches the scene.
@@ -109,22 +112,33 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
     setSceneCharacters(existing.characters?.map((c) => ({ ...c })) ?? []);
   }, [existing?.summary, existing?.characters, existing?.updatedAt]);
 
-  // AI-redo stays on "Working…" until the queued bookkeeping run finishes —
-  // the POST only queues it; the worker does the model call afterwards.
+  // Each field's "Working…" clears when that field's tracked run leaves queued/running.
+  // Missing ids (list loaded, conversation gone) count as finished so Working can't stick.
   useEffect(() => {
-    if (!enriching || enrichConvIds.length === 0) return;
-    const list = convosQ.data ?? [];
-    const stillGoing = enrichConvIds.some((id) => {
-      const row = list.find((c) => c.id === id);
-      if (!row) return true;
-      return conversationIsWorking(row.status);
+    const list = convosQ.data;
+    if (!list) return;
+    setEnrichConvIds((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const scope of ["summary", "characters"] as const) {
+        if (prev[scope].length === 0) continue;
+        const stillGoing = prev[scope].some((id) => {
+          if (id === "__pending__") return true;
+          const row = list.find((c) => c.id === id);
+          if (!row) return false;
+          return conversationIsWorking(row.status);
+        });
+        if (!stillGoing) {
+          next[scope] = [];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
-    if (!stillGoing) {
-      setEnriching(null);
-      setEnrichConvIds([]);
-    }
-  }, [enriching, enrichConvIds, convosQ.data]);
+  }, [convosQ.data]);
 
+  const summaryWorking = enrichConvIds.summary.length > 0;
+  const charactersWorking = enrichConvIds.characters.length > 0;
   const createScene = useCreateScene(bookId);
   const updateScene = useUpdateScene(bookId);
   const deleteSceneMut = useDeleteScene(bookId);
@@ -308,16 +322,16 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
   async function runEnrich(scope: "summary" | "characters") {
     if (!isEdit) return;
     setError(null);
-    setEnriching(scope);
     setUnrecognized([]);
+    // Optimistic Working… for this scope only; other field stays independent.
+    setEnrichConvIds((prev) => ({ ...prev, [scope]: ["__pending__"] }));
     try {
       const { conversationIds } = await enrichScene(bookId, sceneId!, scope);
       void qc.invalidateQueries({ queryKey: keys.conversations(bookId, sceneId!) });
-      if (conversationIds.length) {
-        setEnrichConvIds(conversationIds);
-      } else {
-        setEnriching(null);
-      }
+      setEnrichConvIds((prev) => ({
+        ...prev,
+        [scope]: conversationIds.length ? conversationIds : [],
+      }));
     } catch (e) {
       const msg =
         e instanceof ApiError
@@ -325,11 +339,9 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
           : "Couldn't start enrichment.";
       toast.error(msg);
       setError(msg);
-      setEnriching(null);
-      setEnrichConvIds([]);
+      setEnrichConvIds((prev) => ({ ...prev, [scope]: [] }));
     }
   }
-
   const castById = useMemo(() => new Map(cast.map((c) => [c.id, c])), [cast]);
   const addCharacterOptions: Option[] = cast
     .filter((c) => !sceneCharacters.some((r) => r.characterId === c.id))
@@ -590,9 +602,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
             <Button
               variant="ghost"
               onClick={() => void runEnrich("characters")}
-              disabled={enriching !== null}
             >
-              {enriching === "characters" ? "↻ Working…" : "↻ AI-redo"}
+              {charactersWorking ? "↻ Working…" : "↻ AI-redo"}
             </Button>
           </div>
 
@@ -673,9 +684,8 @@ export function SceneModal({ bookId, sceneId, initialPrevious = null, onClose, o
             <Button
               variant="ghost"
               onClick={() => void runEnrich("summary")}
-              disabled={enriching !== null}
             >
-              {enriching === "summary" ? "↻ Working…" : "↻ AI-redo"}
+              {summaryWorking ? "↻ Working…" : "↻ AI-redo"}
             </Button>
           </div>
           <textarea

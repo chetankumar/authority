@@ -11,11 +11,11 @@ Left — Title*, Description* (textarea), Location, Date/Time, Mood, Emotional A
 
 ## Characters
 
-Rows: name + involvement textarea + ✕; SearchableSelect "Add character…" → `PATCH {characters}` (`[{characterId, involvement}]`). **↻ AI-redo** → `POST /scenes/{id}/enrich {scope:"characters"}` → button stays **Working…** until the bookkeeping conversation leaves `queued`/`running`; `scene-updated` patches rows live; unrecognized names → amber note.
+Rows: name + involvement textarea + ✕; SearchableSelect "Add character…" → `PATCH {characters}` (`[{characterId, involvement}]`). **↻ AI-redo** → `POST /scenes/{id}/enrich {scope:"characters"}` → button shows **Working…** (label only; never disabled) until that field's bookkeeping conversation leaves `queued`/`running`; Summary AI-redo stays independent and clickable the whole time; repeat clicks queue another run. `scene-updated` patches rows live; unrecognized names → amber note.
 
 ## Summary
 
-Textarea + [Save summary] (`PATCH {summary}`) · ↻ AI-redo (`enrich {scope:"summary"}`) · hint reflecting the leave-scene bookkeeping toggle.
+Textarea + [Save summary] (`PATCH {summary}`) · ↻ AI-redo (`enrich {scope:"summary"}`) — same per-field Working… label, never disabled, never locks Characters · hint reflecting the leave-scene bookkeeping toggle.
 
 ## Dependencies
 
